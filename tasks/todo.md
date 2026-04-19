@@ -1,170 +1,280 @@
-# Tasks / Todo - Football Prediction System
+# Tasks / Todo - Event-Driven Football Prediction System
 
 ---
 
-## CURRENT PRIORITY: Web UI Rebuild
+## ARCHITECTURE: Event-Driven Architecture
 
-### Status: IN PROGRESS - Most fixes applied
+### Why Event-Driven?
+- **Real-time updates**: WebSocket support for live predictions/odds
+- **Multi-user**: Natural fan-out to multiple clients
+- **Scalability**: Decoupled handlers can scale independently
+- **Audit trail**: Events provide built-in history
 
-**Fixed Issues:**
-- ✅ `btts_yes` → `odd_btts_yes` in api_predictions (line 541)
-- ✅ Added `@app.before_request` to call `load_caches()` before each request
-- ✅ Fixed DetachedInstanceError in betting_page - extracted `round_number` before session closes
-- ✅ Fixed `None` odds issue in api_predictions - skip fixtures without odds
-
-**Remaining Issues:**
-- [ ] Verify all pages work with gunicorn
-- [ ] Commit to git for rollback safety
+### Core Principles
+1. Events are immutable facts
+2. Handlers react to events, never block emission
+3. Caching layered on top for performance
+4. Market-specific models trained independently
 
 ---
 
-## UI Research Summary (from agent)
+## PHASE 1: Event Foundation (Week 1-2)
 
-### Recommended Hybrid Approach
+### 1.1 Event Base System
+- [ ] Create `src/events/base.py` - BaseEvent class with timestamp, type, payload
+- [ ] Create `src/events/registry.py` - Event type registry
+- [ ] Tests: `tests/events/test_base.py`
+- [ ] Manual test: Emit event, verify handlers called
 
-**For Betting + Admin pages**: "Command Center" (Technical/Bot Focus)
-- Dashboard with real-time widgets
-- Bot status indicator prominent
-- Bankroll, Active Bets, Today's Predictions cards
-- Admin with model performance, API health
+### 1.2 Fixture Events
+- [ ] Create `src/events/fixture_events.py`
+  - `FixtureScheduled` - New fixture added
+  - `FixtureUpdated` - Fixture details changed
+  - `FixtureCompleted` - Match finished (FT)
+- [ ] Create `src/handlers/fixture_handler.py`
+- [ ] Tests: `tests/events/test_fixture.py`
+- [ ] Manual test: Fetch fixture → emit event → verify DB updated
 
-**For Predictions + Tracking pages**: "Card-Based" (Clean/Scannable)
-- Left sidebar navigation
-- Match cards with confidence bars
-- Timeline view for tracking predictions→results
+### 1.3 Odds Events
+- [ ] Create `src/events/odds_events.py`
+  - `OddsUpdated` - Odds changed for fixture
+  - `OddsStale` - Odds older than threshold
+- [ ] Create `src/handlers/odds_handler.py`
+- [ ] Tests: `tests/events/test_odds.py`
+- [ ] Manual test: Update odds → emit event → verify predictions recalculated
 
-### Color System
+### 1.4 Settlement Events
+- [ ] Create `src/events/settlement_events.py`
+  - `PredictionCreated` - New prediction generated
+  - `PredictionSettled` - Prediction resolved
+  - `BetSettled` - Bet resolved with P&L
+- [ ] Create `src/handlers/settlement_handler.py`
+- [ ] Tests: `tests/events/test_settlement.py`
+- [ ] Manual test: Complete fixture → settle predictions → verify P&L
+
+### 1.5 Model Events
+- [ ] Create `src/events/model_events.py`
+  - `ModelTrained` - New model version trained
+  - `ModelDegraded` - Drift detected
+  - `ModelActivated` - Model made live
+- [ ] Create `src/handlers/model_handler.py`
+- [ ] Tests: `tests/events/test_model.py`
+
+### 1.6 Git Checkpoint
+- [ ] Commit all Phase 1 work
+- [ ] Tag: `v0.1-event-base`
+
+---
+
+## PHASE 2: Handler Infrastructure (Week 3-4)
+
+### 2.1 Settle Handler (From daily_run)
+- [ ] Refactor `scripts/settle_fixtures.py` to emit events
+- [ ] Create `src/handlers/settle_handler.py`
+  - Consumes `FixtureCompleted`
+  - Updates predictions
+  - Calculates P&L
+- [ ] Tests: `tests/handlers/test_settle.py`
+- [ ] Manual test: Run settle → verify all events processed
+
+### 2.2 Odds Handler
+- [ ] Refactor odds fetching to emit events
+- [ ] Create `src/handlers/odds_handler.py`
+  - Consumes `OddsUpdated`
+  - Triggers prediction recalculation if EV changed
+- [ ] Tests: `tests/handlers/test_odds.py`
+- [ ] Manual test: Poll odds → verify predictions update
+
+### 2.3 Backfill Handler
+- [ ] Create `src/handlers/backfill_handler.py`
+  - Handles historic data recovery
+  - Short-term backfill (2h-24h history)
+- [ ] Tests: `tests/handlers/test_backfill.py`
+
+### 2.4 Git Checkpoint
+- [ ] Commit all Phase 2 work
+- [ ] Tag: `v0.2-handlers`
+
+---
+
+## PHASE 3: Prediction Caching (Week 5-6)
+
+### 3.1 Cache Infrastructure
+- [ ] Create `src/cache/prediction_cache.py`
+  - TTL-based cache per market
+  - Cache invalidation on events
+  - Market-specific TTLs (BTTS: 2h, H2H: 1h)
+- [ ] Tests: `tests/cache/test_prediction.py`
+
+### 3.2 Cache Integration
+- [ ] Integrate cache into web_ui predictions API
+- [ ] Event-driven cache invalidation
+- [ ] Tests: `tests/cache/test_integration.py`
+- [ ] Manual test: Load predictions → verify cache works
+
+### 3.3 Git Checkpoint
+- [ ] Commit all Phase 3 work
+- [ ] Tag: `v0.3-cache`
+
+---
+
+## PHASE 4: Multi-Market Expansion (Week 7-8)
+
+### 4.1 API-Football Market Discovery
+- [ ] Research all bet_type IDs from API
+- [ ] Document markets in `docs/markets/`
+- [ ] Create placeholder event types for future markets
+
+### 4.2 Markets to Implement
+Based on API-Football coverage:
+
+**Current Markets (Working):**
+- H2H (bet_type=1) - Match Winner ✅
+- BTTS (bet_type=5) - Both Teams To Score ✅
+- O/U 2.5 (bet_type=4) - Over/Under 2.5 ✅
+
+**Markets to Add:**
+- O/U 1.5 (bet_type=?) - Over/Under 1.5 ⚠️
+- Asian Handicap (bet_type=3) - Line-based handicap ⚠️
+- Correct Score (bet_type=6) - Exact score ⚠️
+- HT/FT (bet_type=7) - Half Time/Full Time ⚠️
+- Double Chance (bet_type=?) - 2 of 3 outcomes ⚠️
+- Draw No Bet (bet_type=?) - No draw option ⚠️
+- Goalscorer (bet_type=?) - First/anytime scorer ⚠️
+
+### 4.3 Feature Requirements per Market
 ```
-Background:  #0d1117 (dark)
-Cards:       #161b22 (slightly lighter)
-Borders:    #30363d (subtle)
-Win:         #3fb950 (green)
-Loss:        #f85149 (red)
-EV+:         #58a6ff (blue)
-Pending:     #d29922 (amber)
+Market         | Features Needed
+--------------|----------------------------------
+H2H           | Elo, form, home/away splits, h2h
+BTTS          | Goals scored, goals conceded, form
+O/U 1.5       | Scoring frequency, low-scoring teams
+O/U 2.5       | Average goals, form
+Asian Handicap| Elo difference, home advantage
+Correct Score | Poisson, goal distribution
+HT/FT         | First half form, second half form
+Goalscorer    | Player goals, assists, injuries
 ```
 
-### Page Layouts
-
-**1. Predictions Page**
-- League filter dropdown + time range selector
-- Market tabs: 1X2 | BTTS | O/U 2.5 | O/U 1.5
-- Prediction cards: Team names, time, league badge, prediction, confidence bar, EV badge
-- Cards with green glow = positive EV, red border = negative EV
-
-**2. Betting Page (Bot Automated)**
-- Bankroll card (large, prominent): Balance, ROI, Round #
-- Bot status indicator: Running/Paused/Error with last action time
-- Pending bets table: Match, Market, Pick, Stake, Odds, EV
-- Buttons: Place Bets (auto), Settle Bets, Manual Override
-- Recent activity log (collapsible)
-
-**3. Tracking Page**
-- Date range filter + market filter + league filter
-- Timeline view: prediction → result
-- Win/Loss/EV per bet with color coding
-- Running ROI calculation
-- Stats cards: Win Rate, Total Bets, Avg EV, CLV
-
-**4. Admin Panel**
-- System health cards: API calls remaining, DB status, Last daily run
-- Actions: Run Daily Run, Train Models, Place Bets, Settle
-- League management: Enable/disable leagues
-- Config editor
-
-**5. Debug Page**
-- Terminal-style log output
-- Recent API responses
-- Model performance metrics
-- Fixture/odds data inspection
+### 4.4 Git Checkpoint
+- [ ] Commit market research
+- [ ] Tag: `v0.4-markets`
 
 ---
 
-## BACKLOG (After UI Rebuild)
+## PHASE 5: Model Training Infrastructure (Week 9-10)
 
-### Phase A: Core Data Pipeline
-- [ ] Fix settle_fixtures.py - runs every 2 hours
-- [ ] Update predictions in background during settle_fixtures
-- [ ] Fix daily_run to only run once daily (not twice hourly)
+### 5.1 Market-Specific Training
+- [ ] Create `src/models/trainer.py` improvements
+  - Market-specific feature selection
+  - Per-market calibration tracking
+- [ ] Add market parameter to training pipeline
 
-### Phase B: Prediction Caching
-- [ ] Predictions stored in DB, not computed on page load
-- [ ] Background job updates stale predictions (>4 hours)
-- [ ] Page loads instantly from cache
+### 5.2 Drift Detection
+- [ ] Create `src/models/drift_detector.py`
+  - Brier score per market over time
+  - Alert threshold per market
+- [ ] Tests: `tests/models/test_drift.py`
+- [ ] Manual test: Degrade model → verify detection
 
-### Phase C: Bankroll Tracking
-- [ ] Balance = initial + settled_pnl - pending_stake (working)
-- [ ] Add total_staked to round stats
-- [ ] Track ROI properly
+### 5.3 Retraining Pipeline
+- [ ] Create `scripts/retrain_models.py`
+  - Per-market retraining trigger
+  - A/B testing new vs active model
+- [ ] Tests: `tests/models/test_retrain.py`
 
-### Phase D: Alerts System
-- [ ] Discord alerts show market name
-- [ ] Limit to 2 alerts per settle run
-- [ ] End each alert with separator line (---)
-
-### Phase E: Cron Jobs
-- [ ] daily_run: once daily at 4 AM
-- [ ] settle_fixtures: every 2 hours (fetch completed, settle bets, update predictions)
-- [ ] auto_bet --bet-only: every 2 hours (check balance first)
-
-### Phase F: Git/Rollback
-- [ ] Commit web_ui.py after rebuild
-- [ ] Add tasks/lessons.md for lessons learned
-- [ ] Document all scripts in docs/
+### 5.4 Git Checkpoint
+- [ ] Commit training infrastructure
+- [ ] Tag: `v0.5-training`
 
 ---
 
-## Completed Items (for reference)
+## PHASE 6: Real-time Web (Week 11+)
 
-### Phase 1-5: MVP ✅
-- DB, backfill, fixtures
-- Elo, form, strength, xG features
-- Dixon-Coles, ML ensemble models
-- Shin, EV, Kelly, value detection
-- Brier Score: 0.230 (target < 0.25)
+### 6.1 WebSocket Integration
+- [ ] Add WebSocket support to web_ui.py
+- [ ] Event broadcast to connected clients
+- [ ] Tests: `tests/web/test_websocket.py`
 
-### Phase 8: Production Pipeline ✅
-- daily_run.py pipeline
-- API budget management
-- SQLite backup
+### 6.2 Multi-User Support
+- [ ] Session management
+- [ ] User-specific alerts
+- [ ] Personal bet history
+- [ ] Tests: `tests/web/test_multiuser.py`
 
-### Phase 10: Betting Markets ✅
-- Market definitions (H2H, BTTS, O/U)
-- Prediction models for all markets
-- Calibration using isotonic regression
-
-### Phase 13: Winning Markets ✅
-- League targeting (Bundesliga, Eredivisie high-scoring)
-- BTTS + Over 2.5 combo
-- League-specific weightings
-
-### Phase 15: Bot Core ✅
-- Historical backtesting
-- Alert system (Telegram/Slack)
-- Bankroll tracking tables
-
-### Phase 16: Data Fixes ✅
-- SQLAlchemy session bug fixed
-- Team names now load correctly
-- Unreliable badge changed to rounded rectangle
-
-### Phase 17-19: Operations ✅
-- Maintenance operation works
-- Train model works (4976 samples)
-- place_bets, settle_bets tested
+### 6.3 Git Checkpoint
+- [ ] Commit real-time features
+- [ ] Tag: `v1.0-realtime`
 
 ---
 
-## Priority Order
-1. **NOW**: Rebuild web_ui.py working (server down)
-2. **NEXT**: Fix cron jobs (settle_fixtures, daily_run)
-3. **LATER**: Add prediction caching
-4. **FUTURE**: Phase 11 Multi-user
+## TESTING STRATEGY
+
+### Unit Tests (Run on every change)
+```bash
+pytest tests/events/ -v
+pytest tests/handlers/ -v
+pytest tests/cache/ -v
+```
+
+### Integration Tests (Run before commit)
+```bash
+pytest tests/ -v --integration
+```
+
+### Manual Test Checklist
+- [ ] Emit FixtureCompleted → verify predictions settled
+- [ ] Update odds → verify EV recalculated
+- [ ] Check prediction page loads from cache
+- [ ] Verify new market appears in dropdown
+- [ ] Check drift detection triggers alert
+
+### Performance Tests
+- [ ] 100 fixtures: < 500ms load time
+- [ ] Cache hit rate: > 90%
+- [ ] Event processing: < 100ms latency
 
 ---
 
-## Notes from Workflow
-- Always restart server after web_ui.py changes
-- Test with curl before assuming it works
-- Commit before major rewrites
-- Keep predictions fast = cache in DB
+## GIT STRATEGY
+
+### Commit Frequency
+- After each phase completion
+- After significant feature
+- After bug fix with test
+
+### Tagging
+- `v0.1-event-base` - Phase 1 complete
+- `v0.2-handlers` - Phase 2 complete
+- `v0.3-cache` - Phase 3 complete
+- `v0.4-markets` - Phase 4 complete
+- `v0.5-training` - Phase 5 complete
+- `v1.0-realtime` - Phase 6 complete
+
+### Rollback Plan
+- Each tag is a deployable state
+- `git checkout v0.1-event-base` to revert
+
+---
+
+## CURRENT PRIORITY
+
+**NEXT**: Phase 1.1 - Event Base System
+
+**IMMEDIATE TASKS**:
+1. Create `src/events/base.py`
+2. Create `src/events/registry.py`
+3. Write basic tests
+4. Manual verification
+5. Git commit with tag
+
+---
+
+## LESSONS LEARNED (Updated)
+
+- [x] Events must be immutable
+- [x] Handlers should not block event emission
+- [x] Cache invalidation should be event-driven
+- [x] Each market needs its own model/features
+- [x] Commit before major refactors
+- [x] Test incrementally, not at end
