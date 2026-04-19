@@ -1424,7 +1424,7 @@ def api_predictions_recent():
                 'fixture_id': pred.fixture_id,
                 'home': home,
                 'away': away,
-                'date': fix_date.isoformat() if fix_date else None,
+                'date': fix_date.isoformat() + 'Z' if fix_date else None,
                 'market': pred.market,
                 'predicted': pred.predicted_outcome,
                 'actual': actual,
