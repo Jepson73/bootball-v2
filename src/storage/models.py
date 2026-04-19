@@ -302,19 +302,52 @@ class ModelDrift(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     market: Mapped[str] = mapped_column(String(20))
-    
+
     period_start: Mapped[datetime] = mapped_column(DateTime)
     period_end: Mapped[datetime] = mapped_column(DateTime)
-    
+
     total_predictions: Mapped[int] = mapped_column(Integer, default=0)
     correct_predictions: Mapped[int] = mapped_column(Integer, default=0)
     expected_wins: Mapped[float] = mapped_column(Float, default=0)
     actual_wins: Mapped[int] = mapped_column(Integer, default=0)
-    
+
     accuracy_pct: Mapped[float] = mapped_column(Float, default=0)
     drift_score: Mapped[float] = mapped_column(Float, default=0)  # positive = over-performing, negative = under-performing
-    
+
     retrain_recommended: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# ── Model calibration tracking ─────────────────────────────────────────────────
+
+class ModelCalibration(Base):
+    """Tracks calibration metrics per market over time.
+
+    Used to detect when calibrator needs retraining.
+    """
+    __tablename__ = "model_calibration"
+    __table_args__ = (
+        UniqueConstraint("market", "period_start", name="uq_model_calibration"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    market: Mapped[str] = mapped_column(String(20))
+
+    period_start: Mapped[datetime] = mapped_column(DateTime)
+    period_end: Mapped[datetime] = mapped_column(DateTime)
+
+    # Calibration metrics
+    brier_score: Mapped[float] = mapped_column(Float, default=0)
+    ece: Mapped[float] = mapped_column(Float, default=0)  # Expected Calibration Error
+    sample_size: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Calibration curve data (JSON string of bin accuracies)
+    reliability_diagram: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Status
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    retrain_recommended: Mapped[bool] = mapped_column(Boolean, default=False)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

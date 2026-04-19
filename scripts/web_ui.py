@@ -33,6 +33,7 @@ from sqlalchemy import select, func
 from config.settings import settings
 from config.leagues import LEAGUES, TIER1_LEAGUE_IDS
 from src.cache.prediction_cache import get_prediction_cache, cache_prediction, get_cached_prediction
+from src.models.calibrator import get_calibration_cache, calibrate_prediction
 from src.storage.db import get_session, init_db
 from src.storage.models import (
     Fixture, FixtureOdds, Standing, PredictionRecord, PlacedBet,
@@ -795,6 +796,21 @@ def api_predictions():
                 if ev <= 0:
                     continue
 
+                # Apply calibration if available
+                calibration = calibrate_prediction(market, prob)
+                calibrated_prob = calibration.calibrated_prob
+                confidence_low = calibration.confidence_low
+                confidence_high = calibration.confidence_high
+                sample_size = calibration.sample_size
+
+                # Calculate confidence strength
+                if sample_size < 1000:
+                    confidence_level = "LOW"
+                elif sample_size < 5000:
+                    confidence_level = "MEDIUM"
+                else:
+                    confidence_level = "HIGH"
+
                 # Store UTC date in cache, format on retrieval
                 pred_result = {
                     'fixture_id': fix.id,
@@ -802,9 +818,16 @@ def api_predictions():
                     'market': market,
                     'pick': pick,
                     'prob': prob,
+                    'calibrated_prob': round(calibrated_prob, 3),
                     'odds': odds,
                     'ev': ev,
                     'ev_positive': ev > 0,
+                    'confidence': {
+                        'low': round(confidence_low, 3),
+                        'high': round(confidence_high, 3),
+                        'level': confidence_level,
+                        'sample_size': sample_size,
+                    },
                 }
 
                 cache_prediction(fix.id, market, pred_result)
