@@ -2416,6 +2416,49 @@ def betting_action():
                 return jsonify({'ok': True, 'placed': placed})
 
             elif action == 'settle':
+                from src.ingestion.client import APIFootballClient
+                from config.leagues import ALL_LEAGUE_IDS
+
+                client = APIFootballClient()
+                from datetime import date as date_type
+                cutoff = datetime.utcnow() - timedelta(days=7)
+                today_str = date_type.today().strftime("%Y-%m-%d")
+                current_year = date_type.today().year
+
+                updated = 0
+                for lid in ALL_LEAGUE_IDS[:8]:
+                    season = current_year if lid in [1602, 253, 98, 176, 113, 1191] else current_year - 1
+                    try:
+                        results = client.get_fixtures(
+                            league_id=lid,
+                            season=season,
+                            from_date=cutoff.strftime("%Y-%m-%d"),
+                            to_date=today_str,
+                            status="FT",
+                        )
+                        for fix_data in results:
+                            fix_info = fix_data.get("fixture", {})
+                            fix_id = fix_info.get("id")
+                            if not fix_id:
+                                continue
+                            goals = fix_data.get("goals", {})
+                            home_goals = goals.get("home")
+                            away_goals = goals.get("away")
+                            if home_goals is None:
+                                continue
+                            existing = s.execute(select(Fixture).where(Fixture.id == fix_id)).scalar_one_or_none()
+                            if existing and existing.status != "FT":
+                                existing.status = "FT"
+                                existing.goals_home = home_goals
+                                existing.goals_away = away_goals
+                                updated += 1
+                    except Exception as e:
+                        logger.warning(f"Error fetching league {lid}: {e}")
+
+                if updated > 0:
+                    s.commit()
+                    logger.info(f"Updated {updated} fixtures from API")
+
                 settled_count = 0
                 pending = s.execute(select(PlacedBet).where(PlacedBet.round_id == round_id).where(PlacedBet.settled == False)).scalars().all()
 
@@ -2442,7 +2485,7 @@ def betting_action():
                 if settled_count > 0:
                     s.commit()
 
-                return jsonify({'ok': True, 'settled': settled_count})
+                return jsonify({'ok': True, 'settled': settled_count, 'fixtures_updated': updated})
 
             elif action == 'new-round':
                 r.is_active = False
