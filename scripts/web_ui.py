@@ -684,24 +684,28 @@ def api_predictions():
             ).scalars().all()
             cached = {p.market: p for p in preds}
 
-            odds_row = s.execute(select(FixtureOdds).where(FixtureOdds.fixture_id == fix.id)).scalars().first()
+            all_odds = s.execute(select(FixtureOdds).where(FixtureOdds.fixture_id == fix.id)).scalars().all()
+            odds_by_type = {row.bet_type: row for row in all_odds}
+            btts_row = odds_by_type.get('btts')
+            ou_row = odds_by_type.get('over_under')
+            h2h_row = odds_by_type.get('h2h')
 
             for market in markets:
                 if market == 'btts':
                     prob = cached.get('btts').our_prob if cached.get('btts') else None
-                    odds = odds_row.odd_btts_yes if odds_row else None
+                    odds = btts_row.odd_btts_yes if btts_row else None
                     pick = 'Yes' if prob and prob > 0.5 else 'No'
                 elif market == 'ou25':
                     prob = cached.get('ou25').our_prob if cached.get('ou25') else None
-                    odds = odds_row.odd_over if odds_row else None
+                    odds = ou_row.odd_over if ou_row else None
                     pick = 'Over' if prob and prob > 0.5 else 'Under'
                 elif market == 'ou15':
                     prob = cached.get('ou15').our_prob if cached.get('ou15') else None
-                    odds = odds_row.odd_over15 if odds_row else None
+                    odds = ou_row.odd_over15 if ou_row else None
                     pick = 'Over' if prob and prob > 0.5 else 'Under'
                 elif market == 'h2h':
                     prob = cached.get('h2h').our_prob if cached.get('h2h') else None
-                    odds = odds_row.odd_home if odds_row else None
+                    odds = h2h_row.odd_home if h2h_row else None
                     pick = 'Home' if prob and prob > 0.5 else 'Away'
 
                 if prob is None or odds is None or odds <= 0:

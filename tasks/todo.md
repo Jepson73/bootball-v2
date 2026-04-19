@@ -137,21 +137,20 @@
 - [ ] Manual test: Run settle → verify all events processed
 
 ### 2.2 Odds Handler
-- [ ] Refactor odds fetching to emit events
-- [ ] Create `src/handlers/odds_handler.py`
+- [x] Create `src/handlers/odds_handler.py`
   - Consumes `OddsUpdated`
   - Triggers prediction recalculation if EV changed
 - [ ] Tests: `tests/handlers/test_odds.py`
 - [ ] Manual test: Poll odds → verify predictions update
 
 ### 2.3 Backfill Handler
-- [ ] Create `src/handlers/backfill_handler.py`
+- [x] Create `src/handlers/backfill_handler.py`
   - Handles historic data recovery
   - Short-term backfill (2h-24h history)
 - [ ] Tests: `tests/handlers/test_backfill.py`
 
 ### 2.4 Git Checkpoint
-- [ ] Commit all Phase 2 work
+- [x] Commit all Phase 2 work
 - [ ] Tag: `v0.2-handlers`
 
 ---
