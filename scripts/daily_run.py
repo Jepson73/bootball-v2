@@ -28,7 +28,7 @@ from sqlalchemy import select
 from config.leagues import ALL_LEAGUE_IDS, LEAGUES
 from src.ingestion.client import APIFootballClient, calls_remaining_today
 from src.storage.db import get_session, init_db
-from src.storage.models import Fixture, FixtureOdds, Standing, ValueBet, Team, PredictionRecord
+from src.storage.models import Fixture, FixtureOdds, Standing, ValueBet, Team, PredictionRecord, ModelVersion
 from src.betting.predict import predict_proba
 from src.betting.value_bets import find_all_market_value_bets
 from src.betting.kelly import fractional_kelly
@@ -329,9 +329,17 @@ class DailyPipeline:
                 ).scalars().first()
                 
                 if not existing_pred:
+                    active_version = ps.execute(
+                        select(ModelVersion).where(
+                            ModelVersion.market == market,
+                            ModelVersion.is_active == True
+                        )
+                    ).scalar_one_or_none()
+                    model_version_id = active_version.id if active_version else None
                     ps.add(PredictionRecord(
                         fixture_id=fixture_id,
                         market=market,
+                        model_version_id=model_version_id,
                         model_name="ensemble",
                         predicted_outcome=predicted_outcome,
                         our_prob=prob,

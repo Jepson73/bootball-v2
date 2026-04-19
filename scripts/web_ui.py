@@ -39,7 +39,8 @@ from src.models.iteration_graph import generate_all_graphs
 from src.storage.db import get_session, init_db
 from src.storage.models import (
     Fixture, FixtureOdds, Standing, PredictionRecord, PlacedBet,
-    BankrollRound, Team, League, SettledBet, UserPreference, WatchedFixture
+    BankrollRound, Team, League, SettledBet, UserPreference, WatchedFixture,
+    ModelVersion
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
@@ -2419,9 +2420,18 @@ def betting_action():
 
                         stake = round(min(50, max(1, kf * 1000)), 2)
 
+                        active_version = s.execute(
+                            select(ModelVersion).where(
+                                ModelVersion.market == cand.market,
+                                ModelVersion.is_active == True
+                            )
+                        ).scalar_one_or_none()
+                        model_version_id = active_version.id if active_version else None
+
                         bet = PlacedBet(
                             round_id=round_id, fixture_id=fix.id,
-                            market=cand.market, outcome=cand.outcome,
+                            market=cand.market, model_version_id=model_version_id,
+                            outcome=cand.outcome,
                             stake=stake, odds=cand.decimal_odd,
                             our_prob=cand.our_prob, ev=cand.ev,
                             kelly_fraction=kf,

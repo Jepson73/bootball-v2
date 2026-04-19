@@ -277,19 +277,25 @@ class PredictionRecord(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id"))
     market: Mapped[str] = mapped_column(String(20))   # h2h, btts, ou25, ou15
+    model_version_id: Mapped[int | None] = mapped_column(ForeignKey("model_versions.id"), nullable=True)
     model_name: Mapped[str] = mapped_column(String(50), default="ensemble")
 
     predicted_outcome: Mapped[str] = mapped_column(String(10))   # H/D/A, Yes/No, Over/Under
     our_prob: Mapped[float] = mapped_column(Float)
-    
+
     sweet_spot: Mapped[bool] = mapped_column(Boolean, default=False)
-    
+
     actual_outcome: Mapped[str | None] = mapped_column(String(10))
     settled: Mapped[bool] = mapped_column(Boolean, default=False)
     won: Mapped[bool | None] = mapped_column(Boolean)
-    
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    model_version: Mapped["ModelVersion | None"] = relationship("ModelVersion", foreign_keys=[model_version_id])
+
+
+# ── Model drift tracking ─────────────────────────────────────────────────────
 
 
 # ── Model drift tracking ─────────────────────────────────────────────────────
@@ -521,6 +527,7 @@ class PlacedBet(Base):
     round_id: Mapped[int] = mapped_column(ForeignKey("bankroll_rounds.id"))
     fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id"))
     market: Mapped[str] = mapped_column(String(20))
+    model_version_id: Mapped[int | None] = mapped_column(ForeignKey("model_versions.id"), nullable=True)
     outcome: Mapped[str] = mapped_column(String(10))
     stake: Mapped[float] = mapped_column(Float)
     odds: Mapped[float] = mapped_column(Float)
@@ -538,6 +545,7 @@ class PlacedBet(Base):
 
     round: Mapped["BankrollRound"] = relationship("BankrollRound", foreign_keys=[round_id])
     fixture: Mapped["Fixture"] = relationship()
+    model_version: Mapped["ModelVersion | None"] = relationship("ModelVersion", foreign_keys=[model_version_id])
 
 
 BankrollRound.bets: Mapped[list["PlacedBet"]] = relationship("PlacedBet", foreign_keys=[PlacedBet.round_id], viewonly=True)
