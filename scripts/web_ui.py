@@ -37,7 +37,7 @@ from src.models.calibrator import get_calibration_cache, calibrate_prediction
 from src.storage.db import get_session, init_db
 from src.storage.models import (
     Fixture, FixtureOdds, Standing, PredictionRecord, PlacedBet,
-    BankrollRound, Team, League, SettledBet, UserPreference
+    BankrollRound, Team, League, SettledBet, UserPreference, WatchedFixture
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
@@ -1412,6 +1412,150 @@ def api_update_preferences():
         s.commit()
 
         return jsonify({'ok': True, 'message': 'Preferences updated'})
+
+
+def _get_odds_for_market(odds_row, market):
+    """Extract odds value for a given market from FixtureOdds row."""
+    if not odds_row:
+        return None
+    if market == 'btts':
+        return odds_row.odd_btts_yes
+    elif market == 'ou25':
+        return odds_row.odd_over
+    elif market == 'ou15':
+        return odds_row.odd_over15
+    elif market == 'h2h':
+        return odds_row.odd_home
+    return None
+
+
+# =============================================================================
+# ROUTES: Watched Fixtures (Following)
+# =============================================================================
+
+@app.route('/api/watch', methods=['POST'])
+@require_auth
+def api_watch_fixture():
+    """Add a fixture to watch list.
+
+    Body: {"fixture_id": int, "market": str, "selection_type": "watch"|"auto"|"manual"}
+    """
+    data = request.get_json()
+    fixture_id = data.get('fixture_id')
+    market = data.get('market', 'btts')
+    selection_type = data.get('selection_type', 'watch')
+
+    if not fixture_id:
+        return jsonify({'error': 'fixture_id required'}), 400
+
+    with get_session() as s:
+        existing = s.execute(
+            select(WatchedFixture).where(
+                WatchedFixture.fixture_id == fixture_id,
+                WatchedFixture.market == market,
+                WatchedFixture.user_id == None
+            )
+        ).scalar_one_or_none()
+
+        if existing:
+            existing.selection_type = selection_type
+            existing.status = 'pending'
+            s.commit()
+            return jsonify({'ok': True, 'message': 'Updated watched fixture'})
+
+        watched = WatchedFixture(
+            fixture_id=fixture_id,
+            market=market,
+            selection_type=selection_type,
+            status='pending'
+        )
+        s.add(watched)
+        s.commit()
+
+        return jsonify({'ok': True, 'message': 'Added to watch list'})
+
+
+@app.route('/api/watch/<int:fixture_id>', methods=['DELETE'])
+@require_auth
+def api_unwatch_fixture(fixture_id):
+    """Remove a fixture from watch list."""
+    market = request.args.get('market', 'btts')
+
+    with get_session() as s:
+        result = s.execute(
+            select(WatchedFixture).where(
+                WatchedFixture.fixture_id == fixture_id,
+                WatchedFixture.market == market,
+                WatchedFixture.user_id == None
+            )
+        )
+        watched = result.scalar_one_or_none()
+
+        if not watched:
+            return jsonify({'error': 'Not found'}), 404
+
+        s.delete(watched)
+        s.commit()
+
+        return jsonify({'ok': True, 'message': 'Removed from watch list'})
+
+
+@app.route('/api/watching', methods=['GET'])
+@require_auth
+def api_get_watched():
+    """Get all watched fixtures with predictions."""
+    days = int(request.args.get('days', 7))
+    market_filter = request.args.get('market')
+
+    with get_session() as s:
+        query = (
+            select(Fixture, WatchedFixture)
+            .join(WatchedFixture, WatchedFixture.fixture_id == Fixture.id)
+            .where(Fixture.date >= datetime.utcnow() - timedelta(days=1))
+            .where(Fixture.date <= datetime.utcnow() + timedelta(days=days))
+            .where(WatchedFixture.status.in_(['pending', 'live']))
+        )
+
+        if market_filter:
+            query = query.where(WatchedFixture.market == market_filter)
+
+        results = s.execute(query.order_by(Fixture.date)).all()
+
+        watched_list = []
+        for fix, watched in results:
+            pred = s.execute(
+                select(PredictionRecord).where(
+                    PredictionRecord.fixture_id == fix.id,
+                    PredictionRecord.market == watched.market
+                )
+            ).scalar_one_or_none()
+
+            odds_row = s.execute(
+                select(FixtureOdds).where(
+                    FixtureOdds.fixture_id == fix.id,
+                    FixtureOdds.bet_type == watched.market
+                )
+            ).scalar_one_or_none()
+
+            item = {
+                'fixture_id': fix.id,
+                'home_name': fix.home_team.name if fix.home_team else 'TBD',
+                'away_name': fix.away_team.name if fix.away_team else 'TBD',
+                'league': fix.league.name if fix.league else 'Unknown',
+                'date': fix.date.isoformat() if fix.date else None,
+                'market': watched.market,
+                'selection_type': watched.selection_type,
+                'status': watched.status,
+                'prediction': {
+                    'pick': pred.predicted_outcome if pred else None,
+                    'prob': pred.our_prob if pred else None,
+                    'calibrated_prob': pred.our_prob if pred else None,
+                    'odds': _get_odds_for_market(odds_row, watched.market) if odds_row else None,
+                } if pred else None,
+            }
+            watched_list.append(item)
+
+        return jsonify(watched_list)
 
 
 # =============================================================================

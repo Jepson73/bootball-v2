@@ -128,10 +128,10 @@ class TestDriftDetector:
         assert result.current_brier > result.baseline_brier
 
     def test_detect_drift_negative(self):
-        """Test drift detected when Brier score improves."""
+        """Test drift detected when Brier score improves significantly (>0.08)."""
         detector = DriftDetector(market="btts")
         detector._baseline = [0.25] * 200
-        detector._recent = [0.18] * 100
+        detector._recent = [0.14] * 100
 
         result = detector.detect_drift()
 

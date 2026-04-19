@@ -509,3 +509,33 @@ class UserPreference(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+# ── User fixture following (Phase 7) ─────────────────────────────────────────
+
+class WatchedFixture(Base):
+    """Tracks which fixtures a user is following/watching.
+
+    Currently user_id is nullable - works in single-user mode.
+    When multi-user is implemented, each user gets their own watched fixtures.
+    """
+    __tablename__ = "watched_fixtures"
+    __table_args__ = (
+        UniqueConstraint("user_id", "fixture_id", "market", name="uq_watched_fixture"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str | None] = mapped_column(String(100), nullable=True)  # NULL = default/global
+
+    fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id"))
+    market: Mapped[str] = mapped_column(String(20))  # btts, h2h, ou25, ou15
+
+    selection_type: Mapped[str] = mapped_column(String(20), default="watch")  # watch | auto | manual
+    status: Mapped[str] = mapped_column(String(20), default="pending")  # pending | live | settled
+
+    notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    fixture: Mapped["Fixture"] = relationship()
