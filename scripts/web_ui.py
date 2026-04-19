@@ -1328,17 +1328,17 @@ def admin_page():
     </div>
 </div>
 
-<h3>Train Individual Market</h3>
+<h3>Train Market</h3>
 <div class="card" style="margin-bottom: 16px;">
     <div style="display: flex; gap: 8px; align-items: center;">
         <select id="trainMarketSelect">
+            <option value="all">All Markets</option>
             <option value="btts">BTTS</option>
             <option value="ou25">Over/Under 2.5</option>
             <option value="ou15">Over/Under 1.5</option>
             <option value="h2h">Head to Head</option>
         </select>
-        <button class="btn btn-primary" onclick="trainSelectedMarket()">Train Selected Market</button>
-        <button class="btn btn-secondary" onclick="trainAllMarkets()">Train All Markets</button>
+        <button class="btn btn-primary" onclick="trainSelectedMarket()">Train</button>
     </div>
     <div style="margin-top: 12px;">
         <span id="trainingIndicator" style="display: none; color: #58a6ff; font-weight: bold;"></span>
@@ -1410,19 +1410,20 @@ function setTrainingIndicator(active, text) {
 
 function trainSelectedMarket() {
     const market = document.getElementById('trainMarketSelect').value;
-    setTrainingIndicator(true, 'Training ' + market + '...');
-    showMsg('Training ' + market + ' with isotonic calibration...', 'info');
+    const isAll = market === 'all';
+    setTrainingIndicator(true, isAll ? 'Training all markets...' : 'Training ' + market + '...');
+    showMsg(isAll ? 'Training all markets...' : 'Training ' + market + '...', 'info');
 
     fetch('/api/admin/train', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({market: market}),
+        body: JSON.stringify(isAll ? {} : {market: market}),
         credentials: 'include'
     })
         .then(r => r.json())
         .then(d => {
             if (d.ok) {
-                var lines = ['Trained ' + market];
+                var lines = isAll ? [d.message] : ['Trained ' + market];
                 for (var mkt in d.results) {
                     var result = d.results[mkt];
                     if (result.error) {
@@ -1431,42 +1432,7 @@ function trainSelectedMarket() {
                         lines.push(mkt + ' v' + result.version + ': Brier=' + result.brier_score + ' (raw=' + result.brier_raw + ') ECE=' + result.ece + ' Acc=' + (result.accuracy * 100).toFixed(1) + '% [' + result.sample_size + ' samples]');
                     }
                 }
-                showMsg(lines.join('\n'), 'success');
-            } else {
-                showMsg('Training failed: ' + (d.error || 'Unknown error'), 'error');
-            }
-            setTrainingIndicator(false);
-            loadModelStats();
-        })
-        .catch(e => {
-            showMsg('Training error: ' + e, 'error');
-            setTrainingIndicator(false);
-        });
-}
-
-function trainAllMarkets() {
-    setTrainingIndicator(true, 'Training all markets...');
-    showMsg('Training all markets with isotonic calibration...', 'info');
-
-    fetch('/api/admin/train', {
-        method: 'POST',
-        headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({}),
-        credentials: 'include'
-    })
-        .then(r => r.json())
-        .then(d => {
-            if (d.ok) {
-                var lines = [d.message];
-                for (var market in d.results) {
-                    var result = d.results[market];
-                    if (result.error) {
-                        lines.push(market + ': ERROR - ' + result.error);
-                    } else {
-                        lines.push(market + ' v' + result.version + ': Brier=' + result.brier_score + ' (raw=' + result.brier_raw + ') ECE=' + result.ece + ' Acc=' + (result.accuracy * 100).toFixed(1) + '% [' + result.sample_size + ' samples]');
-                    }
-                }
-                showMsg(lines.join('\n'), 'success');
+                showMsg(lines.join('\\n'), 'success');
             } else {
                 showMsg('Training failed: ' + (d.error || 'Unknown error'), 'error');
             }
@@ -1696,10 +1662,10 @@ def api_admin_train():
 
 
 def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
-    """Train a market model with isotonic calibration.
+    """Train a market model with optional isotonic calibration.
 
     Uses LightGBM (primary) with sklearn GradientBoosting as fallback.
-    Follows research: Calibration > Accuracy (+34.69% ROI)
+    Binary markets use isotonic calibration; multi-class (h2h) uses argmax.
     """
     import numpy as np
     from sklearn.isotonic import IsotonicRegression
@@ -1737,6 +1703,7 @@ def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
         fixtures = s.execute(
             select(Fixture)
             .where(Fixture.status == 'FT')
+            .where(Fixture.outcome.isnot(None))
             .where(Fixture.goals_home.isnot(None))
             .where(Fixture.goals_away.isnot(None))
             .order_by(Fixture.date.desc())
@@ -1785,10 +1752,19 @@ def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
     X = np.array(X_list)
     y = np.array(y_list)
 
+    all_classes = set(y)
+    num_classes = len(all_classes)
+
     # Train/test split
     split = int(len(X) * 0.8)
     X_train, X_test = X[:split], X[split:]
     y_train, y_test = y[:split], y[split:]
+
+    # Validate both splits have all classes
+    if len(set(y_train)) < num_classes:
+        return {'error': f'Train split missing classes: got {set(y_train)}, expected {all_classes}'}
+    if len(set(y_test)) < num_classes:
+        return {'error': f'Test split missing classes: got {set(y_test)}, expected {all_classes}'}
 
     # Train base model
     if use_lightgbm:
@@ -1798,7 +1774,9 @@ def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
             learning_rate=0.1,
             random_state=42,
             verbose=-1,
-            force_col_wise=True
+            force_col_wise=True,
+            objective='multiclass' if num_classes > 2 else 'binary',
+            num_class=num_classes if num_classes > 2 else None
         )
     else:
         model = GradientBoostingClassifier(
@@ -1812,23 +1790,32 @@ def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
         return {'error': 'Test set has single class'}
 
     raw_probs = model.predict_proba(X_test)
+    num_classes = len(set(y))
 
-    # For binary classification, use the positive class probability
-    if raw_probs.shape[1] == 2:
-        raw_prob_values = raw_probs[:, 1]
+    # For binary classification, use positive class probability
+    if num_classes == 2:
+        if raw_probs.ndim == 1:
+            raw_prob_values = raw_probs
+        else:
+            raw_prob_values = raw_probs[:, 1]
         y_binary = y_test.astype(float)
+        use_calibration = True
     else:
-        # Multi-class: use the probability of the predicted class
-        raw_prob_values = np.max(raw_probs, axis=1)
+        # Multi-class: use mean probability across all classes as overall confidence
+        # (isotonic calibration doesn't work directly on multi-class)
+        raw_prob_values = np.mean(raw_probs, axis=1)
         y_binary = (np.argmax(raw_probs, axis=1) == y_test).astype(float)
+        use_calibration = False
 
-    # Apply isotonic calibration
-    calibrator = IsotonicRegression(out_of_bounds='clip')
-    try:
-        calibrator.fit(raw_prob_values, y_binary)
-    except Exception as e:
-        logger.warning(f"Calibration fit failed: {e}")
-        calibrator = None
+    # Apply isotonic calibration for binary only
+    calibrator = None
+    if use_calibration:
+        calibrator = IsotonicRegression(out_of_bounds='clip')
+        try:
+            calibrator.fit(raw_prob_values, y_binary)
+        except Exception as e:
+            logger.warning(f"Calibration fit failed: {e}")
+            calibrator = None
 
     # Calculate metrics
     if calibrator:
@@ -1837,26 +1824,15 @@ def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
     else:
         calibrated_probs = raw_prob_values
 
-    brier_raw = float(brier_score_loss(y_binary, raw_prob_values))
-    brier_calibrated = float(brier_score_loss(y_binary, calibrated_probs))
-
-    # Calculate ECE
-    def calc_ece(probs, outcomes, n_bins=10):
-        bin_edges = np.linspace(0, 1, n_bins + 1)
-        ece = 0.0
-        for i in range(n_bins):
-            mask = (probs >= bin_edges[i]) & (probs < bin_edges[i + 1])
-            if i == n_bins - 1:
-                mask = (probs >= bin_edges[i]) & (probs <= bin_edges[i + 1])
-            if np.sum(mask) == 0:
-                continue
-            bin_acc = np.mean(outcomes[mask])
-            bin_conf = np.mean(probs[mask])
-            bin_weight = np.sum(mask) / len(probs)
-            ece += bin_weight * abs(bin_acc - bin_conf)
-        return float(ece)
-
-    ece = calc_ece(calibrated_probs, y_binary)
+    if num_classes == 2:
+        brier_raw = float(brier_score_loss(y_binary, raw_prob_values))
+        brier_calibrated = float(brier_score_loss(y_binary, calibrated_probs))
+        ece = calc_ece(calibrated_probs, y_binary)
+    else:
+        # Multi-class: Brier score for each class averaged, no calibration ECE
+        brier_raw = float(brier_score_loss(y_test, raw_probs, multi_class='raw') if hasattr(brier_score_loss, 'multi_class') else np.mean([brier_score_loss(y_test == i, raw_probs[:, i]) for i in range(num_classes)]))
+        brier_calibrated = brier_raw  # No calibration for multi-class yet
+        ece = 0.0  # ECE not implemented for multi-class
 
     # Get next version number
     tracker = get_model_tracker(market)
@@ -1864,11 +1840,12 @@ def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
     version_number = (existing_iterations[0].version_number + 1) if existing_iterations else 1
 
     # Calculate accuracy
-    if len(set(y_test)) == 2:
+    if num_classes == 2:
         y_pred = (calibrated_probs > 0.5).astype(float)
         accuracy = float(np.mean(y_pred == y_binary))
     else:
-        y_pred = np.argmax(calibrated_probs.reshape(-1, 1) if calibrated_probs.ndim > 1 else calibrated_probs, axis=1)
+        # Multi-class: use raw_probs for predictions
+        y_pred = np.argmax(raw_probs, axis=1)
         accuracy = float(np.mean(y_pred == y_test))
 
     # Record to ModelVersion
@@ -2196,8 +2173,9 @@ def api_model_stats():
     from config.markets import get_all_markets, get_active_markets
 
     stats = {}
-    for market_id in get_active_markets():
-        tracker = get_model_tracker(market_id)
+    for market_config in get_active_markets():
+        tracker = get_model_tracker(market_config.market_id)
+        market_id = market_config.market_id
         lifecycle = tracker.get_lifecycle_graph()
         stats[market_id] = {
             "market": market_id,
