@@ -961,6 +961,7 @@ def api_predictions():
 @app.route('/betting')
 @require_auth
 def betting_page():
+    tz_name = request.args.get('tz', 'UTC')
     with get_session() as s:
         r = s.execute(
             select(BankrollRound)
@@ -1070,15 +1071,16 @@ def betting_page():
 
 <script>
 function loadBets() {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
     fetch('/betting/action', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({action: 'status'})
+        body: JSON.stringify({action: 'status', tz: tz})
     })
     .then(r => r.json())
     .then(d => {
         if (d.ok) {
-            document.getElementById('betsBody').innerHTML = (d.bets || []).map(b => 
+            document.getElementById('betsBody').innerHTML = (d.bets || []).map(b =>
                 '<tr>' +
                 '<td>' + b.date + '</td>' +
                 '<td>' + b.home + ' vs ' + b.away + '</td>' +
@@ -2329,6 +2331,7 @@ def betting_action():
             initial = r.initial_bankroll
 
             if action == 'status':
+                tz_name = data.get('tz', 'UTC')
                 pending = s.execute(select(PlacedBet).where(PlacedBet.round_id == round_id).where(PlacedBet.settled == False)).scalars().all()
                 settled = s.execute(select(PlacedBet).where(PlacedBet.round_id == round_id).where(PlacedBet.settled == True)).scalars().all()
 
@@ -2336,12 +2339,24 @@ def betting_action():
                 settled_pnl = sum((b.pnl or 0) for b in settled)
                 balance = initial + settled_pnl - pending_stake
 
+                def format_date(dt, tz):
+                    if dt is None:
+                        return '-'
+                    try:
+                        from zoneinfo import ZoneInfo
+                        if dt.tzinfo is None:
+                            dt = dt.replace(tzinfo=timezone.utc)
+                        local = dt.astimezone(ZoneInfo(tz))
+                        return local.strftime('%Y-%m-%d %H:%M')
+                    except Exception:
+                        return dt.strftime('%Y-%m-%d %H:%M')
+
                 bets_list = []
                 for b in settled + pending:
                     fix = s.execute(select(Fixture).where(Fixture.id == b.fixture_id)).scalar_one_or_none()
                     home = TEAM_NAMES.get(fix.home_team_id, str(fix.home_team_id)) if fix else '?'
                     away = TEAM_NAMES.get(fix.away_team_id, str(fix.away_team_id)) if fix else '?'
-                    fix_date = fix.date.strftime('%Y-%m-%d %H:%M') if fix and fix.date else '-'
+                    fix_date = format_date(fix.date, tz_name) if fix else '-'
                     bets_list.append({
                         'home': home, 'away': away, 'date': fix_date, 'market': b.market,
                         'outcome': b.outcome, 'stake': b.stake, 'odds': b.odds,
