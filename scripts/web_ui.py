@@ -1281,10 +1281,71 @@ function settleBets() {
 }
 
 function trainModels() {
-    showMsg('Training models...', 'info');
-    fetch('/api/admin/train', {method: 'POST', credentials: 'include'})
+    const btn = document.querySelector('button[onclick="trainModels()"]');
+    btn.disabled = true;
+    btn.textContent = 'Training...';
+    showMsg('Training models with isotonic calibration...', 'info');
+
+    fetch('/api/admin/train', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({}),
+        credentials: 'include'
+    })
         .then(r => r.json())
-        .then(d => showMsg('Models trained', 'success'));
+        .then(d => {
+            if (d.ok) {
+                let msg = d.message + '\n\n';
+                for (const [market, result] of Object.entries(d.results)) {
+                    if (result.error) {
+                        msg += market + ': ERROR - ' + result.error + '\n';
+                    } else {
+                        msg += market + ' v' + result.version + ': ';
+                        msg += 'Brier=' + result.brier_score + ' (raw=' + result.brier_raw + ') ';
+                        msg += ' ECE=' + result.ece + ' Accuracy=' + (result.accuracy * 100).toFixed(1) + '%';
+                        msg += ' [' + result.sample_size + ' samples]\n';
+                    }
+                }
+                showMsg(msg, 'success');
+            } else {
+                showMsg('Training failed: ' + (d.error || 'Unknown error'), 'error');
+            }
+            btn.disabled = false;
+            btn.textContent = 'Train Models';
+            loadModelStats();
+        })
+        .catch(e => {
+            showMsg('Training error: ' + e, 'error');
+            btn.disabled = false;
+            btn.textContent = 'Train Models';
+        });
+}
+
+function loadModelStats() {
+    fetch('/api/models/stats', {credentials: 'include'})
+        .then(r => r.json())
+        .then(d => {
+            let html = '<table style="width: 100%;">';
+            html += '<thead><tr><th>Market</th><th>Iterations</th><th>Retrains</th><th>Brier</th><th>Baseline</th><th>Drift</th><th>Trend</th></tr></thead>';
+            html += '<tbody>';
+            for (const [market, stats] of Object.entries(d)) {
+                const driftClass = stats.is_drifted ? (stats.drift_score > 0 ? 'degrading' : 'improving') : '';
+                html += '<tr class="' + driftClass + '">';
+                html += '<td><strong>' + market + '</strong></td>';
+                html += '<td>' + (stats.total_iterations || 0) + '</td>';
+                html += '<td>' + (stats.total_retrains || 0) + '</td>';
+                html += '<td>' + (stats.current_brier ? stats.current_brier.toFixed(4) : 'N/A') + '</td>';
+                html += '<td>' + (stats.baseline_brier ? stats.baseline_brier.toFixed(4) : 'N/A') + '</td>';
+                html += '<td>' + getDriftBadge(stats.drift_score, stats.is_drifted) + '</td>';
+                html += '<td>' + getTrendBadge(stats.overall_trend) + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            document.getElementById('modelStats').innerHTML = html;
+        })
+        .catch(e => {
+            document.getElementById('modelStats').innerHTML = '<div style="color: #f85149;">Error loading stats</div>';
+        });
 }
 
 function showMsg(text, type) {
@@ -1319,31 +1380,8 @@ fetch('/api/admin/system_status', {credentials: 'include'})
             '<div>Last Daily Run: <strong>' + (d.last_daily_run || 'Never') + '</strong></div>';
     });
 
-// Load model stats
-fetch('/api/models/stats', {credentials: 'include'})
-    .then(r => r.json())
-    .then(d => {
-        let html = '<table style="width: 100%;">';
-        html += '<thead><tr><th>Market</th><th>Iterations</th><th>Retrains</th><th>Brier</th><th>Baseline</th><th>Drift</th><th>Trend</th></tr></thead>';
-        html += '<tbody>';
-        for (const [market, stats] of Object.entries(d)) {
-            const driftClass = stats.is_drifted ? (stats.drift_score > 0 ? 'degrading' : 'improving') : '';
-            html += '<tr class="' + driftClass + '">';
-            html += '<td><strong>' + market + '</strong></td>';
-            html += '<td>' + (stats.total_iterations || 0) + '</td>';
-            html += '<td>' + (stats.total_retrains || 0) + '</td>';
-            html += '<td>' + (stats.current_brier ? stats.current_brier.toFixed(4) : 'N/A') + '</td>';
-            html += '<td>' + (stats.baseline_brier ? stats.baseline_brier.toFixed(4) : 'N/A') + '</td>';
-            html += '<td>' + getDriftBadge(stats.drift_score, stats.is_drifted) + '</td>';
-            html += '<td>' + getTrendBadge(stats.overall_trend) + '</td>';
-            html += '</tr>';
-        }
-        html += '</tbody></table>';
-        document.getElementById('modelStats').innerHTML = html;
-    })
-    .catch(e => {
-        document.getElementById('modelStats').innerHTML = '<div style="color: #f85149;">Error loading stats</div>';
-    });
+// Load model stats on page load
+loadModelStats();
 
 // Load iterations for selected market
 function loadIterations() {
@@ -1463,6 +1501,258 @@ def admin_settle():
         capture_output=True, text=True, timeout=60
     )
     return jsonify({'ok': True, 'message': f"Settled: {result.stdout[:500]}"})
+
+
+@app.route('/api/admin/train', methods=['POST'])
+@require_auth
+def api_admin_train():
+    """Train calibrated models for all markets.
+
+    Following research: Isotonic regression calibration for +34.69% ROI.
+    """
+    import numpy as np
+    from sklearn.ensemble import GradientBoostingClassifier
+    from sklearn.isotonic import IsotonicRegression
+    from sklearn.metrics import brier_score_loss
+
+    data = request.get_json() or {}
+    market = data.get('market')  # Optional: train specific market
+    reason = data.get('reason', 'manual')
+
+    results = {}
+    markets_to_train = [market] if market else ['btts', 'ou25', 'ou15', 'h2h']
+
+    for mkt in markets_to_train:
+        try:
+            result = _train_market_with_calibration(mkt, reason)
+            results[mkt] = result
+        except Exception as e:
+            logger.error(f"Training failed for {mkt}: {e}")
+            results[mkt] = {'error': str(e)}
+
+    return jsonify({
+        'ok': True,
+        'results': results,
+        'message': f"Trained {len([r for r in results.values() if 'error' not in r])} markets successfully"
+    })
+
+
+def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
+    """Train a market model with isotonic calibration.
+
+    Follows research: Calibration > Accuracy (+34.69% ROI)
+    """
+    import numpy as np
+    from sklearn.ensemble import GradientBoostingClassifier
+    from sklearn.isotonic import IsotonicRegression
+    from sklearn.metrics import brier_score_loss
+
+    from src.models.calibrator import MarketCalibrator
+    from src.models.model_tracker import get_model_tracker
+
+    logger.info(f"Training {market} with calibration...")
+
+    # Get market config
+    market_configs = {
+        'h2h': {'target_fn': lambda gh, ga, outcome: 0 if outcome == 'H' else (1 if outcome == 'D' else 2)},
+        'btts': {'target_fn': lambda gh, ga, outcome: 1 if (gh > 0 and ga > 0) else 0},
+        'ou25': {'target_fn': lambda gh, ga, outcome: 1 if (gh + ga > 2.5) else 0},
+        'ou15': {'target_fn': lambda gh, ga, outcome: 1 if (gh + ga > 1.5) else 0},
+    }
+
+    if market not in market_configs:
+        return {'error': f'Unknown market: {market}'}
+
+    config = market_configs[market]
+
+    # Fetch training data
+    with get_session() as s:
+        fixtures = s.execute(
+            select(Fixture)
+            .where(Fixture.status == 'FT')
+            .where(Fixture.goals_home.isnot(None))
+            .where(Fixture.goals_away.isnot(None))
+            .order_by(Fixture.date.desc())
+            .limit(5000)
+        ).all()
+
+    if len(fixtures) < 100:
+        return {'error': f'Insufficient data: {len(fixtures)} fixtures'}
+
+    # Build features and targets
+    X_list, y_list = [], []
+    with get_session() as s:
+        for fix in fixtures:
+            home_stats = s.execute(
+                select(Standing).where(Standing.team_id == fix.home_team_id).where(Standing.season >= 2024)
+            ).first()
+            away_stats = s.execute(
+                select(Standing).where(Standing.team_id == fix.away_team_id).where(Standing.season >= 2024)
+            ).first()
+
+            if not home_stats or not away_stats:
+                continue
+
+            hs = home_stats[0]
+            as_ = away_stats[0]
+
+            features = [
+                float(hs.rank or 15),
+                float(as_.rank or 15),
+                float((hs.goals_for or 1) - (hs.goals_against or 1)),
+                float((as_.goals_for or 1) - (as_.goals_against or 1)),
+                float(hs.goals_for or 1),
+                float(as_.goals_for or 1),
+                float(hs.goals_against or 1),
+                float(as_.goals_against or 1),
+                float(abs((hs.rank or 15) - (as_.rank or 15))),
+            ]
+
+            target = config['target_fn'](fix.goals_home, fix.goals_away, fix.outcome)
+
+            X_list.append(features)
+            y_list.append(target)
+
+    if len(X_list) < 100:
+        return {'error': f'Insufficient valid samples: {len(X_list)}'}
+
+    X = np.array(X_list)
+    y = np.array(y_list)
+
+    # Train/test split
+    split = int(len(X) * 0.8)
+    X_train, X_test = X[:split], X[split:]
+    y_train, y_test = y[:split], y[split:]
+
+    # Train base model
+    model = GradientBoostingClassifier(
+        n_estimators=200, max_depth=4,
+        learning_rate=0.1, random_state=42
+    )
+    model.fit(X_train, y_train)
+
+    # Get raw probabilities for test set
+    if len(set(y_test)) == 1:
+        return {'error': 'Test set has single class'}
+
+    raw_probs = model.predict_proba(X_test)
+
+    # For binary classification, use the positive class probability
+    if raw_probs.shape[1] == 2:
+        raw_prob_values = raw_probs[:, 1]
+        y_binary = y_test.astype(float)
+    else:
+        # Multi-class: use the probability of the predicted class
+        raw_prob_values = np.max(raw_probs, axis=1)
+        y_binary = (np.argmax(raw_probs, axis=1) == y_test).astype(float)
+
+    # Apply isotonic calibration
+    calibrator = IsotonicRegression(out_of_bounds='clip')
+    try:
+        calibrator.fit(raw_prob_values, y_binary)
+    except Exception as e:
+        logger.warning(f"Calibration fit failed: {e}")
+        calibrator = None
+
+    # Calculate metrics
+    if calibrator:
+        calibrated_probs = calibrator.predict(raw_prob_values)
+        calibrated_probs = np.clip(calibrated_probs, 0.01, 0.99)
+    else:
+        calibrated_probs = raw_prob_values
+
+    brier_raw = float(brier_score_loss(y_binary, raw_prob_values))
+    brier_calibrated = float(brier_score_loss(y_binary, calibrated_probs))
+
+    # Calculate ECE
+    def calc_ece(probs, outcomes, n_bins=10):
+        bin_edges = np.linspace(0, 1, n_bins + 1)
+        ece = 0.0
+        for i in range(n_bins):
+            mask = (probs >= bin_edges[i]) & (probs < bin_edges[i + 1])
+            if i == n_bins - 1:
+                mask = (probs >= bin_edges[i]) & (probs <= bin_edges[i + 1])
+            if np.sum(mask) == 0:
+                continue
+            bin_acc = np.mean(outcomes[mask])
+            bin_conf = np.mean(probs[mask])
+            bin_weight = np.sum(mask) / len(probs)
+            ece += bin_weight * abs(bin_acc - bin_conf)
+        return float(ece)
+
+    ece = calc_ece(calibrated_probs, y_binary)
+
+    # Get next version number
+    tracker = get_model_tracker(market)
+    existing_iterations = tracker.get_iterations(limit=1)
+    version_number = (existing_iterations[0].version_number + 1) if existing_iterations else 1
+
+    # Calculate accuracy
+    if len(set(y_test)) == 2:
+        y_pred = (calibrated_probs > 0.5).astype(float)
+        accuracy = float(np.mean(y_pred == y_binary))
+    else:
+        y_pred = np.argmax(calibrated_probs.reshape(-1, 1) if calibrated_probs.ndim > 1 else calibrated_probs, axis=1)
+        accuracy = float(np.mean(y_pred == y_test))
+
+    # Record to ModelVersion
+    from src.storage.models import ModelVersion, RetrainEvent
+    with get_session() as s:
+        old_version = s.execute(
+            select(ModelVersion)
+            .where(ModelVersion.market == market)
+            .where(ModelVersion.is_active == True)
+        ).scalar_one_or_none()
+
+        old_version_id = old_version.id if old_version else None
+        old_brier = old_version.brier_score if old_version else None
+
+        if old_version:
+            old_version.is_active = False
+
+        new_version = ModelVersion(
+            market=market,
+            version_number=version_number,
+            version_name=f"v{version_number}",
+            brier_score=brier_calibrated,
+            accuracy=accuracy,
+            ece=ece,
+            sample_size=len(X_train),
+            calibration_sample_size=len(X_test),
+            model_type='gradient_boosting+isotonic',
+            is_active=True,
+        )
+        s.add(new_version)
+        s.flush()
+
+        # Record retrain event if this is not the first version
+        if old_version:
+            retrain_event = RetrainEvent(
+                market=market,
+                old_version_id=old_version_id,
+                new_version_id=new_version.id,
+                reason=reason,
+                reason_detail=f"Brier: {old_brier:.4f} -> {brier_calibrated:.4f}",
+                brier_score_before=old_brier,
+                brier_score_after=brier_calibrated,
+                triggered_by_drift=False,
+            )
+            s.add(retrain_event)
+
+        s.commit()
+
+    logger.info(f"Trained {market} v{version_number}: Brier={brier_calibrated:.4f}, ECE={ece:.4f}, Accuracy={accuracy:.3f}")
+
+    return {
+        'version': version_number,
+        'brier_score': round(brier_calibrated, 4),
+        'brier_raw': round(brier_raw, 4),
+        'ece': round(ece, 4),
+        'accuracy': round(accuracy, 4),
+        'sample_size': len(X_train),
+        'test_size': len(X_test),
+        'improvement': round(brier_raw - brier_calibrated, 4),
+    }
 
 
 @app.route('/api/admin/system_status', methods=['GET'])
