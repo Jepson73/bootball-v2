@@ -1179,17 +1179,33 @@ def tracking_page():
             <option value="settled">Settled</option>
             <option value="pending">Pending</option>
         </select>
-        <select id="daysFilter">
-            <option value="1">1 Day</option>
-            <option value="3" selected>3 Days</option>
-            <option value="7">7 Days</option>
-            <option value="all">All</option>
-        </select>
+        <div style="margin-top: 8px;">
+            <label>From: <input type="date" id="fromDate"></label>
+            <label>To: <input type="date" id="toDate"></label>
+        </div>
+        <div style="margin-top: 8px;">
+            <label>Per page:
+                <select id="pageSize">
+                    <option value="20" selected>20</option>
+                    <option value="40">40</option>
+                    <option value="60">60</option>
+                    <option value="80">80</option>
+                    <option value="100">100</option>
+                </select>
+            </label>
+        </div>
     </div>
     <div class="col card">
         <div class="card-title">Stats</div>
         <div id="statsBox">Loading...</div>
     </div>
+</div>
+
+<div id="pageNavTop" style="display:none; margin: 12px 0;">
+    <button onclick="changePage(-1)" id="prevBtn">← Prev</button>
+    <span id="pageNumbers"></span>
+    <button onclick="changePage(1)" id="nextBtn">Next →</button>
+    <span id="pageInfo" style="margin-left: 12px;"></span>
 </div>
 
 <table>
@@ -1211,15 +1227,36 @@ def tracking_page():
     </tbody>
 </table>
 
+<div id="pageNavBottom" style="display:none; margin: 12px 0;">
+    <button onclick="changePage(-1)" id="prevBtn2">← Prev</button>
+    <span id="pageNumbers2"></span>
+    <button onclick="changePage(1)" id="nextBtn2">Next →</button>
+    <span id="pageInfo2" style="margin-left: 12px;"></span>
+</div>
+
 <script>
+let currentPage = 1;
+let pageSize = 20;
+let totalResults = 0;
+
 function loadTracking() {
+    const market = document.getElementById('marketFilter').value;
     const status = document.getElementById('statusFilter').value;
-    const days = document.getElementById('daysFilter').value;
-    const settledParam = status === 'settled' ? '&settled=true' : (status === 'pending' ? '&settled=false' : '');
-    const daysParam = days === 'all' ? '' : '&days=' + days;
-    fetch('/api/predictions/recent?limit=100' + settledParam + daysParam, {credentials: 'include'})
+    const fromDate = document.getElementById('fromDate').value;
+    const toDate = document.getElementById('toDate').value;
+    pageSize = parseInt(document.getElementById('pageSize').value);
+
+    let url = '/api/predictions/recent?page=' + currentPage + '&page_size=' + pageSize;
+    if (market) url += '&market=' + market;
+    if (status === 'settled') url += '&settled=true';
+    else if (status === 'pending') url += '&settled=false';
+    if (fromDate) url += '&from_date=' + fromDate;
+    if (toDate) url += '&to_date=' + toDate;
+
+    fetch(url, {credentials: 'include'})
         .then(r => r.json())
         .then(d => {
+            totalResults = d.total || 0;
             const tbody = document.getElementById('trackingBody');
             tbody.innerHTML = (d.results || []).map(r =>
                 '<tr>' +
@@ -1237,19 +1274,72 @@ function loadTracking() {
                 '<td>' + (r.pnl !== null ? (r.pnl >= 0 ? '+' : '') + r.pnl.toFixed(2) : '-') + '</td>' +
                 '</tr>'
             ).join('');
-            
+
             // Stats
             const settled = (d.results || []).filter(r => r.settled);
             const wins = settled.filter(r => r.won).length;
             const total = settled.length;
             document.getElementById('statsBox').innerHTML =
                 '<strong>' + wins + '/' + total + '</strong> wins (' +
-                (total > 0 ? (wins/total*100).toFixed(0) : 0) + '% win rate)';
+                (total > 0 ? (wins/total*100).toFixed(0) : 0) + '% win rate) | Total: ' + d.total;
+
+            updatePagination();
         });
 }
+
+function updatePagination() {
+    const totalPages = Math.ceil(totalResults / pageSize);
+    const showNav = totalPages > 1;
+
+    ['pageNavTop', 'pageNavBottom', 'prevBtn', 'nextBtn', 'prevBtn2', 'nextBtn2'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = showNav ? 'inline' : 'none';
+    });
+
+    if (!showNav) return;
+
+    // Page numbers
+    let pagesHtml = '';
+    for (let i = 1; i <= totalPages; i++) {
+        if (i === 1 || i === totalPages || (i >= currentPage - 1 && i <= currentPage + 1)) {
+            pagesHtml += '<button onclick="goToPage(' + i + ')" class="' + (i === currentPage ? 'btn btn-primary' : '') + '" style="margin:0 2px;">' + i + '</button>';
+        } else if (i === currentPage - 2 || i === currentPage + 2) {
+            pagesHtml += '<span style="margin:0 4px;">...</span>';
+        }
+    }
+    document.getElementById('pageNumbers').innerHTML = pagesHtml;
+    document.getElementById('pageNumbers2').innerHTML = pagesHtml;
+
+    // Info
+    const start = (currentPage - 1) * pageSize + 1;
+    const end = Math.min(currentPage * pageSize, totalResults);
+    document.getElementById('pageInfo').textContent = start + '-' + end + ' of ' + totalResults;
+    document.getElementById('pageInfo2').textContent = start + '-' + end + ' of ' + totalResults;
+
+    // Buttons
+    document.getElementById('prevBtn').disabled = currentPage === 1;
+    document.getElementById('nextBtn').disabled = currentPage === totalPages;
+    document.getElementById('prevBtn2').disabled = currentPage === 1;
+    document.getElementById('nextBtn2').disabled = currentPage === totalPages;
+}
+
+function changePage(delta) {
+    const totalPages = Math.ceil(totalResults / pageSize);
+    currentPage = Math.max(1, Math.min(totalPages, currentPage + delta));
+    loadTracking();
+}
+
+function goToPage(page) {
+    currentPage = page;
+    loadTracking();
+}
+
 loadTracking();
-document.getElementById('statusFilter').addEventListener('change', loadTracking);
-document.getElementById('daysFilter').addEventListener('change', loadTracking);
+document.getElementById('statusFilter').addEventListener('change', () => { currentPage = 1; loadTracking(); });
+document.getElementById('marketFilter').addEventListener('change', () => { currentPage = 1; loadTracking(); });
+document.getElementById('fromDate').addEventListener('change', () => { currentPage = 1; loadTracking(); });
+document.getElementById('toDate').addEventListener('change', () => { currentPage = 1; loadTracking(); });
+document.getElementById('pageSize').addEventListener('change', () => { currentPage = 1; loadTracking(); });
 </script>
 '''
     return page(content)
@@ -1258,10 +1348,13 @@ document.getElementById('daysFilter').addEventListener('change', loadTracking);
 @app.route('/api/predictions/recent')
 @require_auth
 def api_predictions_recent():
-    limit = int(request.args.get('limit', 100))
+    page = int(request.args.get('page', 1))
+    page_size = int(request.args.get('page_size', 20))
     settled_only = request.args.get('settled', 'false') == 'true'
     pending_only = request.args.get('settled', 'false') == 'false' and request.args.get('settled') is not None
-    days = request.args.get('days', 'all')
+    market = request.args.get('market', '')
+    from_date = request.args.get('from_date', '')
+    to_date = request.args.get('to_date', '')
 
     with get_session() as s:
         query = (
@@ -1273,17 +1366,34 @@ def api_predictions_recent():
             query = query.where(PredictionRecord.settled == True)
         elif pending_only:
             query = query.where(PredictionRecord.settled == False)
-        else:
-            query = query.where(PredictionRecord.settled == True)
+        # else: no filter - show all (settled and pending)
 
-        if days != 'all':
-            from datetime import datetime, timedelta
-            days_int = int(days)
-            now = datetime.utcnow()
-            start = now - timedelta(days=days_int)
-            query = query.where(Fixture.date >= start)
+        if market:
+            query = query.where(PredictionRecord.market == market)
 
-        query = query.order_by(Fixture.date.desc()).limit(limit)
+        if from_date:
+            from datetime import datetime
+            query = query.where(Fixture.date >= datetime.strptime(from_date, '%Y-%m-%d'))
+        if to_date:
+            from datetime import datetime
+            query = query.where(Fixture.date <= datetime.strptime(to_date + ' 23:59:59', '%Y-%m-%d %H:%M:%S'))
+
+        # Get total count before pagination
+        count_query = select(PredictionRecord.id).join(Fixture, PredictionRecord.fixture_id == Fixture.id)
+        if settled_only:
+            count_query = count_query.where(PredictionRecord.settled == True)
+        elif pending_only:
+            count_query = count_query.where(PredictionRecord.settled == False)
+        if market:
+            count_query = count_query.where(PredictionRecord.market == market)
+        if from_date:
+            count_query = count_query.where(Fixture.date >= datetime.strptime(from_date, '%Y-%m-%d'))
+        if to_date:
+            count_query = count_query.where(Fixture.date <= datetime.strptime(to_date + ' 23:59:59', '%Y-%m-%d %H:%M:%S'))
+
+        total = len(s.execute(count_query).scalars().all())
+
+        query = query.order_by(Fixture.date.desc()).offset((page - 1) * page_size).limit(page_size)
         rows = s.execute(query).all()
 
         results = []
@@ -1308,7 +1418,7 @@ def api_predictions_recent():
                 'pnl': None,
             })
 
-        return jsonify({'results': results})
+        return jsonify({'results': results, 'total': total})
 
 
 # =============================================================================
