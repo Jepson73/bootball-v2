@@ -260,7 +260,13 @@ Goalscorer    | Player goals, assists, injuries
 - [ ] Personal bet history
 - [ ] Tests: `tests/web/test_multiuser.py`
 
-### 6.3 Git Checkpoint
+### 6.3 Discord Alerts
+- [x] Create `src/alerts/discord.py` - Discord webhook alerts
+- [x] Create `scripts/send_alerts.py` - CLI for sending top bets
+- [x] Add settings for webhook URL and alert preferences
+- [x] Tag: `v0.6-alerts`
+
+### 6.4 Git Checkpoint
 - [ ] Commit real-time features
 - [ ] Tag: `v1.0-realtime`
 
