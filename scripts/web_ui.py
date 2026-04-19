@@ -982,6 +982,8 @@ def betting_page():
 
         pending_stake = sum((b.stake or 0) for b in pending)
         settled_pnl = sum((b.pnl or 0) for b in settled)
+        settled_wins = sum(1 for b in settled if b.won)
+        settled_count = len(settled)
         balance = initial + settled_pnl - pending_stake
         roi = (settled_pnl / initial * 100) if initial > 0 else 0
 
@@ -1007,7 +1009,7 @@ def betting_page():
     </div>
     <div class="metric-box">
         <div class="metric-label">Wins/Losses</div>
-        <div class="metric-value">''' + str(sum(1 for b in settled if b.won)) + '/' + str(len(settled)) + '''</div>
+        <div class="metric-value">''' + str(settled_wins) + '/' + str(settled_count) + '''</div>
     </div>
 </div>
 
