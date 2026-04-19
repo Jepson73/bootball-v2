@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     alerts_top_n: int = Field(default=5)
     alerts_min_ev: float = Field(default=0.05)
 
+    # Timezone for displaying times (IANA timezone database names)
+    # Examples: Europe/Stockholm, Europe/London, America/New_York
+    timezone: str = Field(default="Europe/Stockholm")
+
     @property
     def current_season(self) -> int:
         """

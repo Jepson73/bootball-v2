@@ -15,6 +15,7 @@ from typing import Any
 import requests
 
 from config.settings import settings
+from src.utils.timezone import format_local
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +35,7 @@ class BetAlert:
     ev: float
     confidence: int
     kickoff: str
+    kickoff_local: str  # Local time string
     ev_stars: str  # Unicode stars for visual EV rating
 
 
@@ -96,7 +98,7 @@ class DiscordAlerts:
         ev_stars_total = sum(b.ev_stars.count("⭐") for b in bets)
 
         header = (
-            f"⚽ **Top {n} Value Bets** | {datetime.now().strftime('%b %d, %H:%M')} UTC\n"
+            f"⚽ **Top {n} Value Bets** | {format_local(datetime.now(timezone.utc), '%b %d, %H:%M')} {tz_name()}\n"
             f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         )
 
@@ -104,7 +106,7 @@ class DiscordAlerts:
         for i, bet in enumerate(bets, 1):
             body_parts.append(
                 f"**{i}. {bet.home_team} vs {bet.away_team}**\n"
-                f"   🏆 {bet.league} | ⏰ {bet.kickoff}\n"
+                f"   🏆 {bet.league} | ⏰ {bet.kickoff_local}\n"
                 f"   📊 {bet.market_display}: **{bet.outcome}** @ {bet.odds:.2f}\n"
                 f"   🎯 Our Prob: {bet.our_prob:.1%} | EV: {bet.ev:.1%} {bet.ev_stars}\n"
                 f"   📈 Confidence: {bet.confidence}%"
@@ -125,7 +127,7 @@ class DiscordAlerts:
             "description": content,
             "color": 5815633,  # Green-ish
             "footer": {
-                "text": f"Bootball AI | {datetime.now().strftime('%Y-%m-%d %H:%M UTC')}"
+                "text": f"Bootball AI | {format_local(datetime.now(timezone.utc), '%Y-%m-%d %H:%M')} {tz_name()}"
             },
         }
 
@@ -187,6 +189,7 @@ def create_bet_alert(
         ev=ev,
         confidence=confidence,
         kickoff=kickoff.strftime("%H:%M %b %d") if kickoff else "TBD",
+        kickoff_local=format_local(kickoff, "%H:%M %b %d") if kickoff else "TBD",
         ev_stars=ev_stars,
     )
 
