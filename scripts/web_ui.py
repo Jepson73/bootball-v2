@@ -1410,6 +1410,7 @@ function setTrainingIndicator(active, text) {
 
 function trainSelectedMarket() {
     const market = document.getElementById('trainMarketSelect').value;
+    console.log('Training market:', market);
     setTrainingIndicator(true, 'Training ' + market + '...');
     showMsg('Training ' + market + ' with isotonic calibration...', 'info');
 
@@ -1419,6 +1420,10 @@ function trainSelectedMarket() {
         body: JSON.stringify({market: market}),
         credentials: 'include'
     })
+        .then(r => {
+            console.log('Response status:', r.status);
+            return r.json();
+        })
         .then(r => r.json())
         .then(d => {
             if (d.ok) {
@@ -1441,12 +1446,14 @@ function trainSelectedMarket() {
             loadModelStats();
         })
         .catch(e => {
+            console.error('Training error:', e);
             showMsg('Training error: ' + e, 'error');
             setTrainingIndicator(false);
         });
 }
 
 function trainAllMarkets() {
+    console.log('Training all markets');
     setTrainingIndicator(true, 'Training all markets...');
     showMsg('Training all markets with isotonic calibration...', 'info');
 
