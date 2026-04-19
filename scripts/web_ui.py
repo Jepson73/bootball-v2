@@ -655,6 +655,7 @@ def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, lea
     """Get prediction from trained LightGBM model.
 
     Returns probability or None if model not available.
+    Handles both old format (model only) and new format (dict with model+calibrator).
     """
     import pickle
     import os
@@ -665,10 +666,15 @@ def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, lea
 
     try:
         with open(model_path, 'rb') as f:
-            model_data = pickle.load(f)
+            obj = pickle.load(f)
 
-        model = model_data['model']
-        calibrator = model_data['calibrator']
+        # Handle both old format (model directly) and new format (dict)
+        if isinstance(obj, dict):
+            model = obj['model']
+            calibrator = obj.get('calibrator')
+        else:
+            model = obj
+            calibrator = None
 
         # Get team stats
         with get_session() as s:
@@ -706,11 +712,16 @@ def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, lea
         else:
             raw_prob = float(np.max(raw_probs))
 
-        # Apply isotonic calibration
+        # Apply isotonic calibration if available
         if calibrator:
-            calibrated = calibrator.predict([raw_prob])[0]
-            calibrated = max(0.01, min(0.99, calibrated))
-            return calibrated
+            try:
+                calibrated = calibrator.predict([raw_prob])[0]
+                calibrated = max(0.01, min(0.99, calibrated))
+                return calibrated
+            except Exception:
+                pass
+
+        return raw_prob
 
         return raw_prob
 
@@ -1701,7 +1712,7 @@ def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
 
     config = market_configs[market]
 
-    # Fetch training data
+    # Fetch training data and build features in one session
     with get_session() as s:
         fixtures = s.execute(
             select(Fixture)
@@ -1710,14 +1721,13 @@ def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
             .where(Fixture.goals_away.isnot(None))
             .order_by(Fixture.date.desc())
             .limit(5000)
-        ).all()
+        ).scalars().all()
 
-    if len(fixtures) < 100:
-        return {'error': f'Insufficient data: {len(fixtures)} fixtures'}
+        if len(fixtures) < 100:
+            return {'error': f'Insufficient data: {len(fixtures)} fixtures'}
 
-    # Build features and targets
-    X_list, y_list = [], []
-    with get_session() as s:
+        # Extract fixture data and build features while session is active
+        X_list, y_list = [], []
         for fix in fixtures:
             home_stats = s.execute(
                 select(Standing).where(Standing.team_id == fix.home_team_id).where(Standing.season >= 2024)
