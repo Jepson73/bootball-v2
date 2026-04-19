@@ -245,6 +245,7 @@ tr:hover { background: #21262d; }
 .badge-warning { background: #d29922; color: #000; }
 .badge-danger { background: #f85149; color: #fff; }
 .badge-info { background: #58a6ff; color: #fff; }
+.badge-sweet { background: linear-gradient(135deg, #f0b429 0%, #d17a07 100%); color: #000; text-shadow: 0 1px 0 rgba(255,255,255,0.3); }
 .btn {
     padding: 10px 20px;
     border: none;
@@ -439,6 +440,14 @@ def predictions_page():
         <option value="7">7 Days</option>
         <option value="all">All</option>
     </select>
+    <label style="display: flex; align-items: center; gap: 6px; color: #c9d1d9;">
+        <input type="checkbox" id="minOddsCheck" checked style="width: 16px; height: 16px; accent-color: #3fb950;">
+        Odds ≥ <span id="minOddsValue">1.6</span>
+    </label>
+    <label style="display: flex; align-items: center; gap: 6px; color: #c9d1d9;">
+        <input type="checkbox" id="sweetOnlyCheck" style="width: 16px; height: 16px; accent-color: #d29922;">
+        🌟 Sweet Spot
+    </label>
     <button class="btn btn-primary" onclick="loadPredictions()">Refresh</button>
     <button class="btn btn-sm" onclick="debugLoad()">Debug Load</button>
     <span id="debugStatus" style="margin-left: 10px; color: #8b949e;"></span>
@@ -548,8 +557,23 @@ function renderPredictions(data) {
         return;
     }
 
+    // Get filter settings
+    const minOddsChecked = document.getElementById('minOddsCheck').checked;
+    const minOdds = minOddsChecked ? 1.6 : 0;  // Default 1.6, or 0 if unchecked
+    const sweetOnly = document.getElementById('sweetOnlyCheck').checked;
+
+    let filtered = data.filter(p => {
+        const o = p.odds || 0;
+        if (o < minOdds) return false;
+        if (sweetOnly) {
+            // Sweet spot: odds 1.8-2.2 with positive EV
+            if (o < 1.8 || o > 2.2 || !p.ev_positive) return false;
+        }
+        return true;
+    });
+
     let html = '';
-    for (const p of data.slice(0, 50)) {
+    for (const p of filtered.slice(0, 50)) {
         const evClass = p.ev_positive ? 'ev-positive' : 'ev-negative';
         const cardClass = p.ev_positive ? 'ev-positive' : 'ev-negative';
         const confidence = Math.round((p.prob || 0.33) * 100);
@@ -558,11 +582,15 @@ function renderPredictions(data) {
         const odds = p.odds || '-';
         const ev = p.ev || 0;
 
+        // Sweet spot badge: odds 1.8-2.2 with positive EV
+        const isSweet = odds >= 1.8 && odds <= 2.2 && ev > 0;
+
         html += '<div class="prediction-card ' + cardClass + '">';
         html += '<div class="match-time">' + (p.date || '').slice(0, 16) + ' | <span class="league-badge">' + (p.league_name || 'Unknown') + '</span></div>';
         html += '<div class="team-name">' + (p.home_name || 'Home') + ' vs ' + (p.away_name || 'Away') + '</div>';
         html += '<div style="margin: 8px 0;">';
         html += '<span class="badge badge-info">' + market.toUpperCase() + '</span> ';
+        if (isSweet) html += '<span class="badge badge-sweet">🌟 SWEET</span> ';
         html += '<span>Pick: <strong>' + pick + '</strong></span> ';
         html += '<span>Odds: ' + odds + '</span> ';
         html += '<span>EV: <span class="' + evClass + '">' + (ev > 0 ? '+' : '') + ev.toFixed(1) + '%</span></span>';
@@ -570,6 +598,9 @@ function renderPredictions(data) {
         html += '<div class="confidence-bar"><div class="confidence-fill" style="width: ' + confidence + '%"></div></div>';
         html += '<div style="font-size: 12px; color: #8b949e;">Confidence: ' + confidence + '%</div>';
         html += '</div>';
+    }
+    if (filtered.length === 0) {
+        html = '<p style="color: #8b949e;">No predictions match your filters</p>';
     }
     container.innerHTML = html;
 }
@@ -585,6 +616,14 @@ document.querySelectorAll('.tab').forEach(tab => {
 
 document.getElementById('daysFilter').addEventListener('change', loadPredictions);
 document.getElementById('leagueFilter').addEventListener('change', loadPredictions);
+document.getElementById('minOddsCheck').addEventListener('change', function() {
+    // Re-render with current data
+    renderPredictions(predictionsData);
+});
+document.getElementById('sweetOnlyCheck').addEventListener('change', function() {
+    // Re-render with current data
+    renderPredictions(predictionsData);
+});
 
 // Load on page load
 loadLeagues();
@@ -677,25 +716,84 @@ def api_predictions():
 
                 if market == 'btts':
                     prob = pred_records.get('btts').our_prob if pred_records.get('btts') else None
-                    odds = btts_row.odd_btts_yes if btts_row else None
-                    pick = 'Yes' if prob and prob > 0.5 else 'No'
+                    yes_odds = btts_row.odd_btts_yes if btts_row else None
+                    no_odds = btts_row.odd_btts_no if btts_row else None
+                    # Calculate EV for both outcomes and pick the better one
+                    if prob is not None and yes_odds and no_odds and yes_odds > 0 and no_odds > 0:
+                        ev_yes = (prob * yes_odds) - 1
+                        ev_no = ((1 - prob) * no_odds) - 1
+                        if ev_yes >= ev_no and ev_yes > 0:
+                            odds, pick, ev = yes_odds, 'Yes', ev_yes
+                        elif ev_no > 0:
+                            odds, pick, ev = no_odds, 'No', ev_no
+                        else:
+                            continue
+                    elif prob is not None and yes_odds and yes_odds > 0:
+                        odds, pick, ev = yes_odds, 'Yes', (prob * yes_odds) - 1
+                    else:
+                        continue
                 elif market == 'ou25':
                     prob = pred_records.get('ou25').our_prob if pred_records.get('ou25') else None
-                    odds = ou_row.odd_over if ou_row else None
-                    pick = 'Over' if prob and prob > 0.5 else 'Under'
+                    over_odds = ou_row.odd_over if ou_row else None
+                    under_odds = ou_row.odd_under if ou_row else None
+                    if prob is not None and over_odds and under_odds and over_odds > 0 and under_odds > 0:
+                        ev_over = (prob * over_odds) - 1
+                        ev_under = ((1 - prob) * under_odds) - 1
+                        if ev_over >= ev_under and ev_over > 0:
+                            odds, pick, ev = over_odds, 'Over', ev_over
+                        elif ev_under > 0:
+                            odds, pick, ev = under_odds, 'Under', ev_under
+                        else:
+                            continue
+                    elif prob is not None and over_odds and over_odds > 0:
+                        odds, pick, ev = over_odds, 'Over', (prob * over_odds) - 1
+                    else:
+                        continue
                 elif market == 'ou15':
                     prob = pred_records.get('ou15').our_prob if pred_records.get('ou15') else None
-                    odds = ou_row.odd_over15 if ou_row else None
-                    pick = 'Over' if prob and prob > 0.5 else 'Under'
+                    over_odds = ou_row.odd_over15 if ou_row else None
+                    under_odds = ou_row.odd_under15 if ou_row else None
+                    if prob is not None and over_odds and under_odds and over_odds > 0 and under_odds > 0:
+                        ev_over = (prob * over_odds) - 1
+                        ev_under = ((1 - prob) * under_odds) - 1
+                        if ev_over >= ev_under and ev_over > 0:
+                            odds, pick, ev = over_odds, 'Over', ev_over
+                        elif ev_under > 0:
+                            odds, pick, ev = under_odds, 'Under', ev_under
+                        else:
+                            continue
+                    elif prob is not None and over_odds and over_odds > 0:
+                        odds, pick, ev = over_odds, 'Over', (prob * over_odds) - 1
+                    else:
+                        continue
                 elif market == 'h2h':
                     prob = pred_records.get('h2h').our_prob if pred_records.get('h2h') else None
-                    odds = h2h_row.odd_home if h2h_row else None
-                    pick = 'Home' if prob and prob > 0.5 else 'Away'
-
-                if prob is None or odds is None or odds <= 0:
+                    home_odds = h2h_row.odd_home if h2h_row else None
+                    draw_odds = h2h_row.odd_draw if h2h_row else None
+                    away_odds = h2h_row.odd_away if h2h_row else None
+                    # H2H is 3-way, pick highest EV
+                    if prob is not None and home_odds and draw_odds and away_odds:
+                        ev_home = (prob * home_odds) - 1
+                        ev_draw = (0.33 * draw_odds) - 1  # Simplified
+                        ev_away = ((1 - prob) * away_odds) - 1
+                        best_ev = max(ev_home, ev_draw, ev_away)
+                        if best_ev == ev_home and ev_home > 0:
+                            odds, pick, ev = home_odds, 'Home', ev_home
+                        elif best_ev == ev_draw and ev_draw > 0:
+                            odds, pick, ev = draw_odds, 'Draw', ev_draw
+                        elif ev_away > 0:
+                            odds, pick, ev = away_odds, 'Away', ev_away
+                        else:
+                            continue
+                    elif prob is not None and home_odds and home_odds > 0:
+                        odds, pick, ev = home_odds, 'Home', (prob * home_odds) - 1
+                    else:
+                        continue
+                else:
                     continue
 
-                ev = compute_ev(prob, odds)
+                if ev <= 0:
+                    continue
 
                 # Store UTC date in cache, format on retrieval
                 pred_result = {
