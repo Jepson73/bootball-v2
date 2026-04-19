@@ -222,28 +222,45 @@ Goalscorer    | Player goals, assists, injuries
 
 ## PHASE 5: Model Training Infrastructure (Week 9-10)
 
-### 5.1 Market-Specific Training
+### 5.1 Calibration Infrastructure (CRITICAL - Research Shows +34.69% ROI)
+- [ ] Create `src/models/calibrator.py`
+  - Isotonic regression calibrator per market
+  - Platt scaling fallback
+  - Temperature scaling for neural nets
+- [ ] Track calibration metrics in DB
+  - Brier score per market per week
+  - ECE (Expected Calibration Error)
+  - Reliability diagram data
+- [ ] Tests: `tests/models/test_calibration.py`
+
+### 5.2 Market-Specific Training
 - [ ] Create `src/models/trainer.py` improvements
   - Market-specific feature selection
   - Per-market calibration tracking
 - [ ] Add market parameter to training pipeline
+- [ ] Calibrate ALL predictions before serving
 
-### 5.2 Drift Detection
+### 5.3 Confidence Intervals
+- [ ] Calculate confidence per prediction
+  - Sample size (how much training data)
+  - Model agreement (ensemble variance)
+  - Data quality (missing fields %)
+- [ ] Display confidence in UI
+  - Low/Medium/High badge
+  - Confidence interval range
+- [ ] Tests: `tests/models/test_confidence.py`
+
+### 5.4 Drift Detection
 - [ ] Create `src/models/drift_detector.py`
   - Brier score per market over time
   - Alert threshold per market
+- [ ] Auto-retrain calibrator when drift detected
 - [ ] Tests: `tests/models/test_drift.py`
 - [ ] Manual test: Degrade model → verify detection
 
-### 5.3 Retraining Pipeline
-- [ ] Create `scripts/retrain_models.py`
-  - Per-market retraining trigger
-  - A/B testing new vs active model
-- [ ] Tests: `tests/models/test_retrain.py`
-
-### 5.4 Git Checkpoint
+### 5.5 Git Checkpoint
 - [ ] Commit training infrastructure
-- [ ] Tag: `v0.5-training`
+- [ ] Tag: `v0.5-calibration`
 
 ---
 

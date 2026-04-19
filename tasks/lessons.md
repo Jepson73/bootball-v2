@@ -74,11 +74,15 @@ Key insight: A confident prediction (e.g., 60%+) at fair odds is a valid bet - y
 
 ### Model Training Lessons
 1. **More data = better models** - 380 matches insufficient; need 50k+ for proper training
-2. **Calibration matters** - Brier Score 0.87 too high; target < 0.25
+2. **Calibration matters MORE than accuracy** - Research: +34.69% ROI for calibration vs -35.17% for accuracy
 3. **Value bets need confidence** - Model not confident enough; need better probability estimates
 4. **Isotonic calibration improves Brier** - 0.307 → 0.230 on test data
 5. **xi parameter tuning** - 0.01 is optimal for time decay
 6. **Train/test split critical** - Dixon-Coles fits on ALL data without explicit split
+7. **Probability ≠ Confidence** - Probability is point estimate; confidence is how much we trust it
+8. **Calibration hierarchy**: Raw Model → Isotonic Calibration → Confidence Interval → Kelly Sizing
+9. **Brier Score targets**: < 0.25 for 3-outcome, < 0.20 for 2-outcome markets
+10. **Current gap**: We show raw probability as "confidence" - need calibrated probability + confidence interval
 
 ---
 
@@ -128,5 +132,28 @@ Key insight: A confident prediction (e.g., 60%+) at fair odds is a valid bet - y
 - **League removal**: Third NL - Istok (213) removed - API shows fixtures:false for all data types
 
 ### Current Data Quality
-- 50 leagues, 76,170 finished fixtures, 1,120,645 events (14.7 avg per match)
+- 50 leagues, 76,170 finished fixtures, 1,120,645 events (14.7 avg per matches)
 - All remaining leagues have proper API coverage (verified via backfill results)
+
+### Sweet Spot Research (April 2026)
+1. **Optimal odds range**: 1.8-2.2 for BTTS (research from SmartBettingStats)
+2. **Why this range**: Bookmakers underprice at these odds; public bets more on extremes
+3. **Implementation**: Added "🌟 Sweet" badge for odds 1.8-2.2 with positive EV
+4. **Filter added**: "🌟 Sweet Spot" checkbox to show only sweet picks
+5. **Evidence**: Backtest showed +37.84 units profit at these odds with 10%+ edge requirement
+
+### Calibration Research Summary
+- **Key finding**: "A well-calibrated 55% prediction that wins 55% beats a confident 70% that wins 50%"
+- **Our current issue**: Displaying raw model probability as "confidence" (wrong)
+- **Correct display**: Calibrated probability + confidence interval + evidence strength
+- **Research file**: `docs/research/details/model_calibration.md`
+
+### Market Research Summary (All Markets)
+| Market | Difficulty | Best Odds | Research Finding |
+|--------|------------|-----------|-----------------|
+| BTTS | EASIER | 1.85-2.20 | +37.84 units backtest |
+| O/U 2.5 | MODERATE | 1.70-1.95 | Bundesliga 60-65% hit rate |
+| O/U 1.5 | EASY | 1.20-1.40 | Very high hit rate, low value |
+| H2H (1X2) | HARDEST | 2.00+ | Bookmakers expert at these |
+| Asian Handicap | HARD | 1.90-2.10 | Complex, sharp market |
+| Correct Score | HARDEST | 3.00+ | High variance |
