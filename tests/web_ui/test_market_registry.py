@@ -88,14 +88,11 @@ class TestMarketAgnosticPrediction:
     automatically cover it without modification.
     """
 
-    def test_all_markets_have_odds_in_database(self, db_session, upcoming_fixtures):
-        """Verify all registered markets have odds available for some fixtures."""
-        markets_by_bet_type = {}
-        for market_id, config in MARKET_REGISTRY.items():
-            if config.bet_type not in markets_by_bet_type:
-                markets_by_bet_type[config.bet_type] = []
-            markets_by_bet_type[config.bet_type].append(config)
+    def test_all_active_markets_have_odds_in_database(self, db_session, upcoming_fixtures):
+        """Verify all ACTIVE markets have odds available for some fixtures."""
+        from config.markets import get_active_markets
 
+        active_markets = get_active_markets()
         bet_types_found = set()
         for fix in upcoming_fixtures:
             all_odds = db_session.execute(
@@ -104,13 +101,15 @@ class TestMarketAgnosticPrediction:
             for row in all_odds:
                 bet_types_found.add(row.bet_type)
 
-        for bet_type in markets_by_bet_type:
-            assert bet_type in bet_types_found, \
-                f"Bet type '{bet_type}' from registry not found in database fixtures"
+        for config in active_markets:
+            assert config.bet_type in bet_types_found, \
+                f"Active market '{config.market_id}' needs bet_type '{config.bet_type}' in database"
 
-    def test_each_market_can_extract_odds(self, db_session, upcoming_fixtures):
-        """Verify each market can extract odds from its bet_type row."""
-        for market_id, config in MARKET_REGISTRY.items():
+    def test_each_active_market_can_extract_odds(self, db_session, upcoming_fixtures):
+        """Verify each ACTIVE market can extract odds from its bet_type row."""
+        from config.markets import get_active_markets
+
+        for config in get_active_markets():
             fixtures_with_market = 0
             for fix in upcoming_fixtures:
                 all_odds = db_session.execute(
@@ -128,11 +127,13 @@ class TestMarketAgnosticPrediction:
                     break
 
             assert fixtures_with_market > 0, \
-                f"Market '{market_id}' could not extract valid odds for any test fixture"
+                f"Active market '{config.market_id}' could not extract valid odds"
 
-    def test_each_market_has_predictions(self, db_session, upcoming_fixtures):
-        """Verify each market has predictions available."""
-        for market_id in MARKET_REGISTRY:
+    def test_each_active_market_has_predictions(self, db_session, upcoming_fixtures):
+        """Verify each ACTIVE market has predictions available."""
+        from config.markets import get_active_markets
+
+        for config in get_active_markets():
             fixtures_with_pred = 0
             for fix in upcoming_fixtures:
                 preds = db_session.execute(
@@ -140,16 +141,18 @@ class TestMarketAgnosticPrediction:
                 ).scalars().all()
                 pred_dict = {p.market: p for p in preds}
 
-                if market_id in pred_dict and pred_dict[market_id].our_prob is not None:
+                if config.market_id in pred_dict and pred_dict[config.market_id].our_prob is not None:
                     fixtures_with_pred += 1
                     break
 
             assert fixtures_with_pred > 0, \
-                f"Market '{market_id}' has no predictions in any test fixture"
+                f"Active market '{config.market_id}' has no predictions"
 
-    def test_pick_selection_for_all_markets(self, db_session, upcoming_fixtures):
-        """Verify pick selection logic works for all markets."""
-        for market_id, config in MARKET_REGISTRY.items():
+    def test_pick_selection_for_all_active_markets(self, db_session, upcoming_fixtures):
+        """Verify pick selection logic works for all ACTIVE markets."""
+        from config.markets import get_active_markets
+
+        for config in get_active_markets():
             fixtures_tested = 0
             for fix in upcoming_fixtures:
                 preds = db_session.execute(
@@ -157,10 +160,10 @@ class TestMarketAgnosticPrediction:
                 ).scalars().all()
                 pred_dict = {p.market: p for p in preds}
 
-                if market_id not in pred_dict:
+                if config.market_id not in pred_dict:
                     continue
 
-                prob = pred_dict[market_id].our_prob
+                prob = pred_dict[config.market_id].our_prob
                 if prob is None:
                     continue
 
@@ -173,11 +176,13 @@ class TestMarketAgnosticPrediction:
                 fixtures_tested += 1
 
             assert fixtures_tested > 0, \
-                f"Market '{market_id}' could not test pick selection"
+                f"Active market '{config.market_id}' could not test pick selection"
 
-    def test_ev_calculation_for_all_markets(self, db_session, upcoming_fixtures):
-        """Verify EV calculation works for all markets."""
-        for market_id, config in MARKET_REGISTRY.items():
+    def test_ev_calculation_for_all_active_markets(self, db_session, upcoming_fixtures):
+        """Verify EV calculation works for all ACTIVE markets."""
+        from config.markets import get_active_markets
+
+        for config in get_active_markets():
             fixtures_tested = 0
             for fix in upcoming_fixtures:
                 preds = db_session.execute(
@@ -185,7 +190,7 @@ class TestMarketAgnosticPrediction:
                 ).scalars().all()
                 pred_dict = {p.market: p for p in preds}
 
-                if market_id not in pred_dict:
+                if config.market_id not in pred_dict:
                     continue
 
                 all_odds = db_session.execute(
@@ -198,38 +203,56 @@ class TestMarketAgnosticPrediction:
                     continue
 
                 odds = getattr(bet_type_row, config.odds_column, None)
-                prob = pred_dict[market_id].our_prob
+                prob = pred_dict[config.market_id].our_prob
 
                 if prob and odds and odds > 0:
                     ev = (prob * odds) - 1
-                    assert -1 <= ev <= 10, f"{fix.id}/{market_id} EV {ev} out of range"
+                    assert -1 <= ev <= 10, f"{fix.id}/{config.market_id} EV {ev} out of range"
                     fixtures_tested += 1
 
             assert fixtures_tested > 0, \
-                f"Market '{market_id}' could not test EV calculation"
+                f"Active market '{config.market_id}' could not test EV calculation"
 
 
 class TestNewMarketAddition:
     """Tests to verify the process of adding new markets works correctly.
 
     To add a new market:
-    1. Add MarketConfig to config/markets.py
-    2. Add bet_type handling in web_ui.py api_predictions
-    3. New markets automatically tested here
+    1. Add MarketConfig to config/markets.py with status='planned'
+    2. Change status to 'active' when odds/predictions are available
+    3. Add bet_type handling in web_ui.py api_predictions
+    4. Active markets automatically tested above
     """
 
-    def test_new_market_requires_bet_type_handling(self):
-        """Document that new markets need explicit handling in api_predictions."""
-        markets_in_registry = set(MARKET_REGISTRY.keys())
-        expected_markets = {'btts', 'ou25', 'ou15', 'h2h'}
+    def test_all_markets_have_valid_config(self):
+        """Verify every market has a valid configuration."""
+        from config.markets import get_all_markets
 
-        assert markets_in_registry == expected_markets, \
-            f"Market list changed. Update web_ui.py api_predictions to handle: {markets_in_registry - expected_markets}"
+        for config in get_all_markets():
+            assert config.market_id
+            assert config.bet_type
+            assert config.display_name
+            assert config.odds_column
+            assert len(config.pick_options) >= 2
+            assert config.prob_direction in ('above_50', 'below_50')
+            assert config.status in ('active', 'planned', 'researching')
 
-    def test_market_needs_prediction_record(self):
-        """Document that new markets need prediction records in database."""
-        markets_in_registry = set(MARKET_REGISTRY.keys())
-        expected_markets = {'btts', 'ou25', 'ou15', 'h2h'}
+    def test_market_count_matches_roadmap(self):
+        """Document current market count for roadmap tracking."""
+        from config.markets import get_active_markets, get_planned_markets, get_all_markets
 
-        assert markets_in_registry == expected_markets, \
-            f"Market list changed. Ensure prediction pipeline generates records for: {markets_in_registry - expected_markets}"
+        active = len(get_active_markets())
+        planned = len(get_planned_markets())
+        total = len(get_all_markets())
+
+        assert active >= 4, f"Should have at least 4 active markets, got {active}"
+        assert total >= active + planned
+
+    def test_market_registry_is_documented(self):
+        """Verify market registry documents API-Football IDs where available."""
+        from config.markets import get_all_markets
+
+        for config in get_all_markets():
+            if config.status == 'active' and config.bet_type != 'over_under':
+                assert config.api_football_id is not None, \
+                    f"Active market '{config.market_id}' should have API-Football ID"
