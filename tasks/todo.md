@@ -325,41 +325,33 @@ Track model performance through iterations with visualization.
 4. **Betting bot control**: Manual override of automated selection
 
 ### 7.1 User Selection Model
-- [ ] Create `WatchedFixture` model
+- [x] Create `WatchedFixture` model in `src/storage/models.py`
   - user_id: Optional (for multi-user future)
   - fixture_id: Foreign key
   - market: Which market to watch
   - selection_type: 'manual' | 'auto' | 'watch'
   - status: 'pending' | 'live' | 'settled'
   - created_at, updated_at
-- [ ] Create `UserPreference` model
-  - user_id (future)
-  - markets: List of preferred markets
-  - leagues: List of preferred leagues
-  - ev_threshold: Personal EV threshold
 
 ### 7.2 Selection API
-- [ ] `POST /api/select` - Select fixture+market to follow
-- [ ] `DELETE /api/select/{id}` - Stop following
-- [ ] `GET /api/following` - List all followed fixtures
-- [ ] `PATCH /api/following/{id}` - Update status/notes
+- [x] `POST /api/watch` - Add fixture+market to watch list
+- [x] `DELETE /api/watch/{id}` - Stop following
+- [x] `GET /api/watching` - List all watched fixtures
+- [ ] `PATCH /api/watch/{id}` - Update status/notes
 
 ### 7.3 Selection UI
-- [ ] Add "Follow" button on prediction cards
+- [ ] Add "Watch" button on prediction cards
 - [ ] Add "Select for Betting" button on prediction cards
-- [ ] Create "My Following" page showing selected fixtures
+- [ ] Create "My Following" filter for predictions page
 - [ ] Filter: All Predictions vs My Following
 
 ### 7.4 Event Integration
-- [ ] `FixtureUpdated` → Update followed fixtures in real-time
-- [ ] `OddsUpdated` → Recalculate EV for followed fixtures
-- [ ] `FixtureCompleted` → Mark as settled, show result
-- [ ] WebSocket push to connected clients
+- [ ] `FixtureCompleted` → Mark watched fixtures as settled
+- [ ] WebSocket push for live updates (Phase 6)
 
 ### 7.5 Multi-User Preparation
-- [ ] Add user_id to all selection models (nullable for now)
+- [x] user_id nullable in WatchedFixture (works in single-user mode)
 - [ ] API accepts optional user_id (from session)
-- [ ] Queries filter by user_id when present
 - [ ] Tests: `tests/web/test_following.py`
 
 ### 7.6 Git Checkpoint
