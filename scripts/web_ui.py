@@ -1340,7 +1340,25 @@ def admin_page():
         <button class="btn btn-primary" onclick="trainSelectedMarket()">Train Selected Market</button>
         <button class="btn btn-secondary" onclick="trainAllMarkets()">Train All Markets</button>
     </div>
+    <div style="margin-top: 12px;">
+        <span id="trainingIndicator" style="display: none; color: #58a6ff; font-weight: bold;"></span>
+    </div>
 </div>
+
+<style>
+.spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid rgba(88, 166, 255, 0.3);
+    border-top-color: #58a6ff;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+</style>
 
 <h3>Model Iterations</h3>
 <select id="marketSelect" onchange="loadIterations()">
@@ -1376,11 +1394,23 @@ function settleBets() {
         .then(d => showMsg(d.message || 'Done', 'success'));
 }
 
+function setTrainingIndicator(active, text) {
+    const indicator = document.getElementById('trainingIndicator');
+    if (indicator) {
+        indicator.innerHTML = active
+            ? '<span class="spinner"></span> ' + text
+            : '';
+        indicator.style.display = active ? 'inline-flex' : 'none';
+    }
+    // Also disable/enable all train buttons
+    document.querySelectorAll('button[onclick^="train"]').forEach(btn => {
+        btn.disabled = active;
+    });
+}
+
 function trainSelectedMarket() {
     const market = document.getElementById('trainMarketSelect').value;
-    const btn = document.querySelector('button[onclick="trainSelectedMarket()"]');
-    btn.disabled = true;
-    btn.textContent = 'Training ' + market + '...';
+    setTrainingIndicator(true, 'Training ' + market + '...');
     showMsg('Training ' + market + ' with isotonic calibration...', 'info');
 
     fetch('/api/admin/train', {
@@ -1407,21 +1437,17 @@ function trainSelectedMarket() {
             } else {
                 showMsg('Training failed: ' + (d.error || 'Unknown error'), 'error');
             }
-            btn.disabled = false;
-            btn.textContent = 'Train Selected Market';
+            setTrainingIndicator(false);
             loadModelStats();
         })
         .catch(e => {
             showMsg('Training error: ' + e, 'error');
-            btn.disabled = false;
-            btn.textContent = 'Train Selected Market';
+            setTrainingIndicator(false);
         });
 }
 
 function trainAllMarkets() {
-    const btn = document.querySelector('button[onclick="trainAllMarkets()"]');
-    btn.disabled = true;
-    btn.textContent = 'Training All...';
+    setTrainingIndicator(true, 'Training all markets...');
     showMsg('Training all markets with isotonic calibration...', 'info');
 
     fetch('/api/admin/train', {
@@ -1448,14 +1474,12 @@ function trainAllMarkets() {
             } else {
                 showMsg('Training failed: ' + (d.error || 'Unknown error'), 'error');
             }
-            btn.disabled = false;
-            btn.textContent = 'Train All Markets';
+            setTrainingIndicator(false);
             loadModelStats();
         })
         .catch(e => {
             showMsg('Training error: ' + e, 'error');
-            btn.disabled = false;
-            btn.textContent = 'Train All Markets';
+            setTrainingIndicator(false);
         });
 }
 
