@@ -2419,15 +2419,12 @@ def betting_action():
                 return jsonify({'ok': True, 'placed': placed})
 
             elif action == 'settle':
-                import subprocess
-                result = subprocess.run(
-                    [sys.executable, 'scripts/settle_fixtures.py'],
-                    capture_output=True, text=True, timeout=120
-                )
-                logger.info(f"Settle output: {result.stdout[:500]}")
-                if result.stderr:
-                    logger.warning(f"Settle errors: {result.stderr[:500]}")
-                return jsonify({'ok': True, 'message': result.stdout[:500]})
+                from src.settlement import settle_all
+                result = settle_all(days=7)
+                return jsonify({
+                    'ok': True,
+                    'message': f"Updated: {result['fixtures_updated']}, Settled: {result['bets_settled']}, P/L: {result['total_pnl']:+.2f}"
+                })
 
             elif action == 'new-round':
                 r.is_active = False
