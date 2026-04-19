@@ -1,0 +1,1 @@
+# src/ingestion/scheduler.py - Daily operational pipeline

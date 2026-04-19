@@ -1,0 +1,543 @@
+#!/usr/bin/env python3
+"""
+scripts/auto_bet.py
+
+Automatic betting bot that places fictional bets based on value detection.
+
+Features:
+- Manages bankroll rounds (resets on loss or model retrain)
+- Places bets automatically when value detected (EV > threshold)
+- Settles bets automatically when matches complete
+- Tracks historical rounds for comparison
+- Health monitoring of all subsystems
+
+Usage:
+    python scripts/auto_bet.py              # Full run: bet + settle
+    python scripts/auto_bet.py --bet-only   # Only place bets, don't settle
+    python scripts/auto_bet.py --settle-only # Only settle pending bets
+    python scripts/auto_bet.py --status     # Show current bankroll status
+    python scripts/auto_bet.py --new-round  # Force start new round
+    python scripts/auto_bet.py --reset BANKROLL  # Reset bankroll to starting amount
+    python scripts/auto_bet.py --history   # Show historical rounds
+"""
+from __future__ import annotations
+
+import argparse
+import logging
+import sys
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+sys.path.insert(0, '/opt/projects/bootball')
+
+from sqlalchemy import select, func
+
+from config.leagues import TIER1_LEAGUE_IDS, LEAGUES
+from src.ingestion.client import APIFootballClient, calls_remaining_today
+from src.storage.db import get_session, init_db
+from src.storage.models import (
+    Fixture, FixtureOdds, Standing, ValueBet, Team, League,
+    Bankroll, SettledBet, BankrollRound, PlacedBet,
+)
+from src.betting.predict import predict_proba
+from src.betting.value_bets import find_all_market_value_bets, EV_THRESHOLD
+from src.betting.kelly import fractional_kelly, stake as kelly_stake
+from src.betting.alerts import BettingAlerts, BetAlert
+from src.betting.ev import expected_value
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s: %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+INITIAL_BANKROLL = 1000.0
+EV_THRESHOLD_BET = 0.05
+KELLY_FRACTION = 0.25
+MAX_STAKE_PCT = 0.05
+MIN_STAKE = 1.0
+MAX_STAKE = 50.0
+AUTO_RESET_THRESHOLD = 0.0
+BET_MARKETS = ["btts", "ou25", "ou15"]
+MAX_BETS_PER_DAY = 20
+MIN_ODDS = 1.5
+MAX_ODDS = 10.0
+
+
+def get_current_round(session) -> BankrollRound | None:
+    return session.execute(
+        select(BankrollRound)
+        .where(BankrollRound.is_active == True)
+        .order_by(BankrollRound.round_number.desc())
+        .limit(1)
+    ).scalars().first()
+
+
+def get_or_create_round(session) -> BankrollRound:
+    active = get_current_round(session)
+    if active:
+        return active
+
+    last_round = session.execute(
+        select(BankrollRound)
+        .order_by(BankrollRound.round_number.desc())
+        .limit(1)
+    ).scalars().first()
+
+    next_num = (last_round.round_number + 1) if last_round else 1
+
+    new_round = BankrollRound(
+        round_number=next_num,
+        initial_bankroll=INITIAL_BANKROLL,
+        reason="new_start",
+    )
+    session.add(new_round)
+    session.commit()
+    session.refresh(new_round)
+    logger.info(f"Started new bankroll round #{next_num}")
+    return new_round
+
+
+def get_current_balance(the_round: BankrollRound, session) -> float:
+    if the_round.ending_balance is not None:
+        return the_round.ending_balance
+
+    settled_pnl = session.execute(
+        select(func.coalesce(func.sum(PlacedBet.pnl), 0))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == True)
+    ).scalar() or 0.0
+
+    pending_stake = session.execute(
+        select(func.coalesce(func.sum(PlacedBet.stake), 0))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == False)
+    ).scalar() or 0.0
+
+    return the_round.initial_bankroll + settled_pnl - pending_stake
+
+
+def archive_round(round: BankrollRound, session, reason: str):
+    round.is_active = False
+    round.ended_at = datetime.utcnow()
+    round.ending_balance = get_current_balance(round, session)
+
+    settled = session.execute(
+        select(PlacedBet)
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == True)
+    ).scalars().all()
+
+    round.total_bets = len(settled)
+    round.total_wins = sum(1 for b in settled if b.won)
+    round.total_staked = sum(b.stake for b in settled)
+    round.total_pnl = sum(b.pnl or 0 for b in settled)
+    round.roi_pct = (round.total_pnl / round.total_staked * 100) if round.total_staked > 0 else 0
+    round.reason = reason
+
+    logger.info(f"Archived round #{round.round_number}: {reason}, "
+                 f"ROI={round.roi_pct:.1f}%, {round.total_bets} bets")
+
+
+def check_reset_condition(round: BankrollRound, session) -> str | None:
+    balance = get_current_balance(round, session)
+    
+    # Check for pending bets
+    pending = session.execute(
+        select(func.count(PlacedBet.id))
+        .where(PlacedBet.round_id == round.id)
+        .where(PlacedBet.settled == False)
+    ).scalar() or 0
+    
+    # Don't auto-reset if there are pending bets
+    if balance <= 0 and pending == 0:
+        return "balance_zero"
+    if balance <= 0 and pending > 0:
+        return None  # Wait for pending bets to settle
+    if balance < round.initial_bankroll * 0.1:
+        return "balance_critical"
+    return None
+
+
+def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None = None) -> int:
+    leagues = league_ids or TIER1_LEAGUE_IDS
+
+    today = datetime.now(ZoneInfo("UTC")).date()
+    tomorrow = today + timedelta(days=1)
+
+    today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=ZoneInfo("UTC"))
+    today_end = datetime.combine(tomorrow, datetime.min.time()).replace(tzinfo=ZoneInfo("UTC"))
+
+    existing_today = session.execute(
+        select(func.count(PlacedBet.id))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.placed_at >= today_start)
+    ).scalar() or 0
+
+    if existing_today >= MAX_BETS_PER_DAY:
+        logger.info(f"Max bets for today ({MAX_BETS_PER_DAY}) reached")
+        return 0
+
+    slots_remaining = MAX_BETS_PER_DAY - existing_today
+
+    fixtures = session.execute(
+        select(Fixture)
+        .join(FixtureOdds, FixtureOdds.fixture_id == Fixture.id)
+        .where(Fixture.status == "NS")
+        .where(Fixture.date >= today_start)
+        .where(Fixture.date < today_end)
+        .where(Fixture.league_id.in_(leagues))
+    ).scalars().all()
+
+    placed = 0
+    balance = get_current_balance(the_round, session)
+    client = APIFootballClient()
+
+    for fixture in fixtures:
+        if placed >= slots_remaining:
+            break
+
+        odds_row = session.execute(
+            select(FixtureOdds)
+            .where(FixtureOdds.fixture_id == fixture.id)
+        ).scalars().first()
+
+        if not odds_row:
+            continue
+
+        candidates = find_all_market_value_bets(
+            fixture.id, fixture.home_team_id, fixture.away_team_id,
+            odds_row, markets=BET_MARKETS, ev_threshold=EV_THRESHOLD_BET
+        )
+
+        if not candidates:
+            continue
+
+        candidate = candidates[0]
+
+        if candidate.decimal_odd < MIN_ODDS or candidate.decimal_odd > MAX_ODDS:
+            continue
+
+        ev = expected_value(candidate.our_prob, candidate.decimal_odd)
+        if ev < EV_THRESHOLD_BET:
+            continue
+
+        kf = fractional_kelly(candidate.our_prob, candidate.decimal_odd, KELLY_FRACTION)
+        if kf < 0.01:
+            continue
+
+        stake_amount = kelly_stake(
+            balance, candidate.our_prob, candidate.decimal_odd,
+            KELLY_FRACTION, MAX_STAKE_PCT
+        )
+        stake_amount = round(max(MIN_STAKE, min(stake_amount, MAX_STAKE)), 2)
+
+        if stake_amount > balance:
+            stake_amount = balance
+        if stake_amount < MIN_STAKE:
+            continue
+
+        existing = session.execute(
+            select(PlacedBet)
+            .where(PlacedBet.fixture_id == fixture.id)
+            .where(PlacedBet.round_id == the_round.id)
+            .where(PlacedBet.settled == False)
+        ).scalars().first()
+
+        if existing:
+            continue
+
+        bet = PlacedBet(
+            round_id=the_round.id,
+            fixture_id=fixture.id,
+            market=candidate.market,
+            outcome=candidate.outcome,
+            stake=stake_amount,
+            odds=candidate.decimal_odd,
+            our_prob=candidate.our_prob,
+            ev=ev,
+            kelly_fraction=kf,
+        )
+        session.add(bet)
+        placed += 1
+
+        logger.info(f"BET #{the_round.round_number} | {fixture.home_team_id} vs {fixture.away_team_id} | "
+                    f"{candidate.market}:{candidate.outcome} @ {candidate.decimal_odd:.2f} "
+                    f"(P={candidate.our_prob:.0%}, EV={ev:.1%}) | Stake: {stake_amount:.2f}")
+
+    session.commit()
+    logger.info(f"Placed {placed} bets this run")
+    return placed
+
+
+def settle_bets(the_round: BankrollRound, session) -> int:
+    pending = session.execute(
+        select(PlacedBet)
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == False)
+    ).scalars().all()
+
+    settled = 0
+    for bet in pending:
+        fixture = session.execute(
+            select(Fixture).where(Fixture.id == bet.fixture_id)
+        ).scalars().first()
+
+        if not fixture or fixture.status not in ("FT", "AET", "PEN"):
+            continue
+
+        if fixture.goals_home is None or fixture.goals_away is None:
+            continue
+
+        actual = _get_market_result(fixture, bet.market)
+
+        bet.actual_result = actual
+        bet.won = (actual == bet.outcome)
+        bet.pnl = (bet.odds - 1) * bet.stake if bet.won else -bet.stake
+        bet.settled = True
+        bet.settled_at = datetime.utcnow()
+        settled += 1
+
+        logger.info(f"SETTLED #{round.round_number} | {fixture.home_team_id} vs {fixture.away_team_id} | "
+                    f"{bet.market}:{bet.outcome} | {'WIN' if bet.won else 'LOSS'} "
+                    f"{bet.pnl:+.2f}")
+
+    session.commit()
+    logger.info(f"Settled {settled} bets")
+    return settled
+
+
+def _get_market_result(fixture: Fixture, market: str) -> str | None:
+    gh = fixture.goals_home
+    ga = fixture.goals_away
+    total = gh + ga
+
+    if market == "h2h":
+        if gh > ga:
+            return "1"
+        elif gh == ga:
+            return "X"
+        else:
+            return "2"
+    elif market == "btts":
+        return "Yes" if gh > 0 and ga > 0 else "No"
+    elif market in ("ou25", "ou15"):
+        threshold = 2.5 if market == "ou25" else 1.5
+        return "Over" if total > threshold else "Under"
+    return None
+
+
+def check_and_reset(session) -> BankrollRound:
+    round = get_or_create_round(session)
+    reason = check_reset_condition(round, session)
+
+    if reason:
+        archive_round(round, session, reason=reason)
+        round = get_or_create_round(session)
+        logger.warning(f"Bankroll reset triggered: {reason}. New round #{round.round_number}")
+
+    return round
+
+
+def show_status(round: BankrollRound | None, session):
+    if not round:
+        print("No active round")
+        return
+
+    balance = get_current_balance(round, session)
+    pending = session.execute(
+        select(func.count(PlacedBet.id))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == False)
+    ).scalar() or 0
+
+    settled = session.execute(
+        select(func.count(PlacedBet.id))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == True)
+    ).scalars().first() or 0
+
+    wins = session.execute(
+        select(func.count(PlacedBet.id))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == True)
+        .where(PlacedBet.won == True)
+    ).scalars().first() or 0
+
+    total_staked = session.execute(
+        select(func.sum(PlacedBet.stake))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == True)
+    ).scalar() or 0.0
+
+    total_pnl = session.execute(
+        select(func.sum(PlacedBet.pnl))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == True)
+    ).scalar() or 0.0
+
+    roi = (total_pnl / total_staked * 100) if total_staked > 0 else 0
+
+    print(f"\n=== Bankroll Round #{round.round_number} ===")
+    print(f"  Balance:     {balance:.2f} / {round.initial_bankroll:.2f}")
+    print(f"  ROI:         {roi:.1f}%")
+    print(f"  Bets:        {settled} settled, {pending} pending ({wins} wins)")
+    print(f"  Staked:      {total_staked:.2f} | P&L: {total_pnl:+.2f}")
+    print(f"  Started:     {round.started_at}")
+    print(f"  Active:      {'Yes' if round.is_active else 'No'}")
+
+
+def show_history(session, limit: int = 10):
+    rounds = session.execute(
+        select(BankrollRound)
+        .order_by(BankrollRound.round_number.desc())
+        .limit(limit)
+    ).scalars().all()
+
+    print(f"\n=== Bankroll History (last {len(rounds)} rounds) ===")
+    print(f"{'#':>3} | {'Start':>8} | {'End':>8} | {'Staked':>7} | {'P&L':>7} | {'ROI':>6} | {'Bets':>4} | {'Wins':>4} | Reason")
+    print("-" * 90)
+    for r in reversed(rounds):
+        status = "ACTIVE" if r.is_active else "done"
+        print(f"#{r.round_number:>3} | {r.initial_bankroll:>8.2f} | "
+              f"{r.ending_balance if r.ending_balance else get_current_balance(r, session):>8.2f} | "
+              f"{r.total_staked:>7.2f} | {r.total_pnl:>7.2f} | "
+              f"{r.roi_pct:>5.1f}% | {r.total_bets:>4} | {r.total_wins:>4} | "
+              f"{r.reason or ''} [{status}]")
+
+
+def get_round_stats(round: BankrollRound, session) -> dict:
+    balance = get_current_balance(round, session)
+    pending = session.execute(
+        select(func.count(PlacedBet.id))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == False)
+    ).scalar() or 0
+    settled = session.execute(
+        select(func.count(PlacedBet.id))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == True)
+    ).scalars().first() or 0
+    wins = session.execute(
+        select(func.count(PlacedBet.id))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == True)
+        .where(PlacedBet.won == True)
+    ).scalars().first() or 0
+    total_staked = session.execute(
+        select(func.sum(PlacedBet.stake))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == True)
+    ).scalar() or 0.0
+    total_pnl = session.execute(
+        select(func.sum(PlacedBet.pnl))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == True)
+    ).scalar() or 0.0
+
+    return {
+        "round_number": round.round_number,
+        "balance": balance,
+        "initial": round.initial_bankroll,
+        "roi_pct": (total_pnl / total_staked * 100) if total_staked > 0 else 0,
+        "settled": settled,
+        "pending": pending,
+        "wins": wins,
+        "total_staked": total_staked,
+        "total_pnl": total_pnl,
+        "started_at": round.started_at.isoformat() if round.started_at else None,
+        "is_active": round.is_active,
+    }
+
+
+def run_pipeline(league_ids: list[int] | None = None, bet_only: bool = False, settle_only: bool = False):
+    init_db()
+    client = APIFootballClient()
+
+    with get_session() as session:
+        round = get_or_create_round(session)
+
+        logger.info(f"Auto-bet pipeline | Round #{round.round_number} | "
+                     f"Balance: {get_current_balance(round, session):.2f}")
+
+        if not settle_only:
+            placed = place_bets(round, session, league_ids)
+
+            alerts = BettingAlerts(channels=["discord"], min_ev=5.0, min_odds=1.5, min_kelly=0.03)
+            pending = session.execute(
+                select(PlacedBet)
+                .where(PlacedBet.round_id == the_round.id)
+                .where(PlacedBet.settled == False)
+                .order_by(PlacedBet.ev.desc())
+                .limit(2)
+            ).scalars().all()
+
+            for bet in pending:
+                fixture = session.execute(
+                    select(Fixture).where(Fixture.id == bet.fixture_id)
+                ).scalars().first()
+                if fixture:
+                    home_team = session.execute(
+                        select(Team).where(Team.id == fixture.home_team_id)
+                    ).scalar_one_or_none()
+                    away_team = session.execute(
+                        select(Team).where(Team.id == fixture.away_team_id)
+                    ).scalar_one_or_none()
+                    league = session.execute(
+                        select(League).where(League.id == fixture.league_id)
+                    ).scalar_one_or_none()
+                    alerts.send_bet_alert(BetAlert(
+                        home_team=home_team.name if home_team else str(fixture.home_team_id),
+                        away_team=away_team.name if away_team else str(fixture.away_team_id),
+                        home_team_id=fixture.home_team_id,
+                        away_team_id=fixture.away_team_id,
+                        league=league.name if league else None,
+                        market=bet.market,
+                        outcome=bet.outcome,
+                        odds=bet.odds,
+                        our_prob=bet.our_prob,
+                        ev=bet.ev,
+                        kelly_fraction=bet.kelly_fraction,
+                        stake=bet.stake,
+                    ))
+
+        if not bet_only:
+            settle_bets(round, session)
+            check_and_reset(session)
+
+        balance = get_current_balance(round, session)
+        logger.info(f"Pipeline complete | Round #{round.round_number} | Balance: {balance:.2f}")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Automatic betting bot")
+    parser.add_argument("--bet-only", action="store_true", help="Only place bets, don't settle")
+    parser.add_argument("--settle-only", action="store_true", help="Only settle pending bets")
+    parser.add_argument("--status", action="store_true", help="Show current bankroll status")
+    parser.add_argument("--history", action="store_true", help="Show historical rounds")
+    parser.add_argument("--new-round", action="store_true", help="Force start new round")
+    parser.add_argument("--reset", type=str, help="Reset bankroll to starting amount")
+    parser.add_argument("--leagues", type=str, help="Comma-separated league IDs")
+    args = parser.parse_args()
+
+    init_db()
+    league_ids = [int(x) for x in args.leagues.split(",")] if args.leagues else None
+
+    with get_session() as session:
+        if args.status:
+            round = get_or_create_round(session)
+            show_status(round, session)
+        elif args.history:
+            show_history(session)
+        elif args.new_round:
+            round = get_or_create_round(session)
+            archive_round(round, session, reason="manual_reset")
+            new_round = get_or_create_round(session)
+            print(f"New round #{new_round.round_number} started")
+        elif args.reset:
+            round = get_or_create_round(session)
+            archive_round(round, session, reason=f"reset_{args.reset}")
+            new_round = get_or_create_round(session)
+            print(f"Reset. New round #{new_round.round_number} with balance {INITIAL_BANKROLL}")
+        else:
+            run_pipeline(league_ids=league_ids, bet_only=args.bet_only, settle_only=args.settle_only)

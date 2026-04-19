@@ -1,0 +1,16 @@
+# Bootball cron jobs
+# Installed: /etc/cron.d/bootball
+# Schedule: Sweden is UTC+2, so 6 AM Sweden = 4 AM UTC
+
+SHELL=/bin/bash
+PATH=/usr/local/bin:/usr/bin:/bin
+PY=/opt/projects/bootball/.venv/bin/python
+
+# Daily run: fetch odds + generate predictions (4 AM UTC = 6 AM Sweden)
+0 4 * * * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/daily_run.py >> /var/log/bootball/daily_run.log 2>&1
+
+# Auto-bet: place bets AFTER daily run (4:15 AM UTC)
+15 4 * * * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/auto_bet.py --bet-only >> /var/log/bootball/auto_bet.log 2>&1
+
+# Settle: settle completed bets every 2 hours (5 AM - 11 PM UTC)
+0 */2 5-23 * * * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/auto_bet.py --settle-only >> /var/log/bootball/settle.log 2>&1
