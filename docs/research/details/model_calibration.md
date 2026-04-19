@@ -238,3 +238,80 @@ Evidence Strength: STRONG    ← Sample size + data quality
 5. **ROI** → Final result of calibrated betting
 
 **Key insight**: Without calibration, your EV calculations are wrong, and Kelly sizing fails.
+
+---
+
+## Algorithm Comparison for Sports Prediction
+
+### Available Algorithms
+
+| Algorithm | Pros | Cons | Calibration Behavior |
+|-----------|------|------|---------------------|
+| **sklearn GradientBoosting** | Simple, no extra deps | Slow, less tuning options | Tends to push probabilities toward extremes |
+| **XGBoost** | Fast, regularization, tree pruning | Needs installation | Similar to GBM but more controlled |
+| **LightGBM** | Fastest on large data, histogram-based | Can overfit on small data | Good probability estimates |
+| **CatBoost** | Handles categoricals well, robust | Slower than LightGBM | Well-calibrated out of box |
+| **RandomForest** | Robust, parallel | Sigmoid-shaped miscalibration | Poor near 0/1 |
+| **LogisticRegression** | Naturally calibrated | Linear only | Perfectly calibrated (balance property) |
+
+### Research Findings
+
+1. **Gradient Boosting Methods (GBM, XGBoost, LightGBM)**
+   - Generally best for structured/tabular sports data
+   - sklearn's GBM tends to push probabilities to extremes
+   - XGBoost/LightGBM offer better regularization and control
+
+2. **Random Forest**
+   - Tends to make predictions near 0.2 and 0.9, rarely 0 or 1
+   - Results in characteristic sigmoid calibration curve
+   - Variance in base trees causes bias away from extremes
+
+3. **Calibration is Algorithm-Agnostic**
+   - The key finding: **calibrated model > most accurate model**
+   - +34.69% ROI with calibration vs -35.17% with accuracy-only optimization
+   - Source: Walsh & Joshi (2023) on NBA betting
+
+### Recommendation for Bootball
+
+1. **Primary**: Use LightGBM (fastest, often best) with isotonic calibration
+2. **Alternative**: Try XGBoost for comparison
+3. **Fallback**: sklearn GradientBoosting (always available)
+
+**Important**: If models show no edge, it's likely:
+- Feature quality/data issues (not model choice)
+- Market efficiency (Odds don't offer value)
+- Calibration needed before betting decisions
+
+### Installation
+
+```bash
+# LightGBM (recommended)
+pip install lightgbm
+
+# XGBoost (alternative)
+pip install xgboost
+
+# Both available
+pip install lightgbm xgboost
+```
+
+### Quick Comparison Test
+
+```python
+from sklearn.ensemble import GradientBoostingClassifier
+import lightgbm as lgb
+import xgboost as xgb
+
+# All three can be compared with same calibration approach
+models = {
+    'GBM': GradientBoostingClassifier(n_estimators=200, max_depth=4),
+    'LightGBM': lgb.LGBMClassifier(n_estimators=200, max_depth=4, verbose=-1),
+    'XGBoost': xgb.XGBClassifier(n_estimators=200, max_depth=4, use_label_encoder=False)
+}
+
+for name, model in models.items():
+    model.fit(X_train, y_train)
+    probs = model.predict_proba(X_test)[:, 1]
+    calibrated = isotonic_calibrator.fit_transform(probs, y_test)
+    print(f"{name}: Brier={brier_score(y_test, calibrated):.4f}")
+```
