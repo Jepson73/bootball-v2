@@ -32,6 +32,7 @@ from sqlalchemy import select, func
 
 from config.settings import settings
 from config.leagues import LEAGUES, TIER1_LEAGUE_IDS
+from src.cache.prediction_cache import get_prediction_cache, cache_prediction, get_cached_prediction
 from src.storage.db import get_session, init_db
 from src.storage.models import (
     Fixture, FixtureOdds, Standing, PredictionRecord, PlacedBet,
@@ -666,6 +667,7 @@ def api_predictions():
         end = now + timedelta(days=days)
 
     markets = ['btts', 'ou25', 'ou15', 'h2h'] if market_filter == 'all' else [market_filter]
+    cache = get_prediction_cache()
 
     with get_session() as s:
         query = select(Fixture).where(Fixture.date >= now).where(Fixture.date <= end).where(Fixture.status == 'NS')
@@ -674,6 +676,9 @@ def api_predictions():
         fixtures = s.execute(query.order_by(Fixture.date)).scalars().all()
 
         results = []
+        cache_hits = 0
+        cache_misses = 0
+
         for fix in fixtures[:100]:
             league_name = LEAGUE_NAMES.get(fix.league_id, '')
             home = TEAM_NAMES.get(fix.home_team_id, str(fix.home_team_id))
@@ -682,7 +687,7 @@ def api_predictions():
             preds = s.execute(
                 select(PredictionRecord).where(PredictionRecord.fixture_id == fix.id)
             ).scalars().all()
-            cached = {p.market: p for p in preds}
+            pred_records = {p.market: p for p in preds}
 
             all_odds = s.execute(select(FixtureOdds).where(FixtureOdds.fixture_id == fix.id)).scalars().all()
             odds_by_type = {row.bet_type: row for row in all_odds}
@@ -691,20 +696,31 @@ def api_predictions():
             h2h_row = odds_by_type.get('h2h')
 
             for market in markets:
+                cached_pred = cache.get(fix.id, market)
+                if cached_pred is not None:
+                    cached_pred['home_name'] = home
+                    cached_pred['away_name'] = away
+                    cached_pred['league_name'] = league_name
+                    results.append(cached_pred)
+                    cache_hits += 1
+                    continue
+
+                cache_misses += 1
+
                 if market == 'btts':
-                    prob = cached.get('btts').our_prob if cached.get('btts') else None
+                    prob = pred_records.get('btts').our_prob if pred_records.get('btts') else None
                     odds = btts_row.odd_btts_yes if btts_row else None
                     pick = 'Yes' if prob and prob > 0.5 else 'No'
                 elif market == 'ou25':
-                    prob = cached.get('ou25').our_prob if cached.get('ou25') else None
+                    prob = pred_records.get('ou25').our_prob if pred_records.get('ou25') else None
                     odds = ou_row.odd_over if ou_row else None
                     pick = 'Over' if prob and prob > 0.5 else 'Under'
                 elif market == 'ou15':
-                    prob = cached.get('ou15').our_prob if cached.get('ou15') else None
+                    prob = pred_records.get('ou15').our_prob if pred_records.get('ou15') else None
                     odds = ou_row.odd_over15 if ou_row else None
                     pick = 'Over' if prob and prob > 0.5 else 'Under'
                 elif market == 'h2h':
-                    prob = cached.get('h2h').our_prob if cached.get('h2h') else None
+                    prob = pred_records.get('h2h').our_prob if pred_records.get('h2h') else None
                     odds = h2h_row.odd_home if h2h_row else None
                     pick = 'Home' if prob and prob > 0.5 else 'Away'
 
@@ -713,11 +729,8 @@ def api_predictions():
 
                 ev = compute_ev(prob, odds)
 
-                results.append({
+                pred_result = {
                     'fixture_id': fix.id,
-                    'home_name': home,
-                    'away_name': away,
-                    'league_name': league_name,
                     'date': fix.date.isoformat() if fix.date else None,
                     'market': market,
                     'pick': pick,
@@ -725,7 +738,14 @@ def api_predictions():
                     'odds': odds,
                     'ev': ev,
                     'ev_positive': ev > 0,
-                })
+                }
+
+                cache_prediction(fix.id, market, pred_result)
+
+                pred_result['home_name'] = home
+                pred_result['away_name'] = away
+                pred_result['league_name'] = league_name
+                results.append(pred_result)
 
         return jsonify(results)
 
