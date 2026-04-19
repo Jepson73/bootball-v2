@@ -657,6 +657,7 @@ def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, lea
     """
     import pickle
     import os
+    import numpy as np
 
     model_path = f'/opt/projects/bootball/data/model_{market}.pkl'
     if not os.path.exists(model_path):
