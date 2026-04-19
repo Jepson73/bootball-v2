@@ -266,6 +266,58 @@ Goalscorer    | Player goals, assists, injuries
 
 ---
 
+## PHASE 7: User Following & Manual Selection (Week 12+)
+
+### Why This Phase?
+1. **Real-time tracking**: Users select specific fixtures to follow, not all
+2. **Multi-user isolation**: Each user sees only their selected fixtures
+3. **Personalization**: Users can create watchlists, tag fixtures
+4. **Betting bot control**: Manual override of automated selection
+
+### 7.1 User Selection Model
+- [ ] Create `WatchedFixture` model
+  - user_id: Optional (for multi-user future)
+  - fixture_id: Foreign key
+  - market: Which market to watch
+  - selection_type: 'manual' | 'auto' | 'watch'
+  - status: 'pending' | 'live' | 'settled'
+  - created_at, updated_at
+- [ ] Create `UserPreference` model
+  - user_id (future)
+  - markets: List of preferred markets
+  - leagues: List of preferred leagues
+  - ev_threshold: Personal EV threshold
+
+### 7.2 Selection API
+- [ ] `POST /api/select` - Select fixture+market to follow
+- [ ] `DELETE /api/select/{id}` - Stop following
+- [ ] `GET /api/following` - List all followed fixtures
+- [ ] `PATCH /api/following/{id}` - Update status/notes
+
+### 7.3 Selection UI
+- [ ] Add "Follow" button on prediction cards
+- [ ] Add "Select for Betting" button on prediction cards
+- [ ] Create "My Following" page showing selected fixtures
+- [ ] Filter: All Predictions vs My Following
+
+### 7.4 Event Integration
+- [ ] `FixtureUpdated` → Update followed fixtures in real-time
+- [ ] `OddsUpdated` → Recalculate EV for followed fixtures
+- [ ] `FixtureCompleted` → Mark as settled, show result
+- [ ] WebSocket push to connected clients
+
+### 7.5 Multi-User Preparation
+- [ ] Add user_id to all selection models (nullable for now)
+- [ ] API accepts optional user_id (from session)
+- [ ] Queries filter by user_id when present
+- [ ] Tests: `tests/web/test_following.py`
+
+### 7.6 Git Checkpoint
+- [ ] Commit user following features
+- [ ] Tag: `v1.1-following`
+
+---
+
 ## TESTING STRATEGY
 
 ### Unit Tests (Run on every change)
@@ -308,6 +360,7 @@ pytest tests/ -v --integration
 - `v0.4-markets` - Phase 4 complete
 - `v0.5-training` - Phase 5 complete
 - `v1.0-realtime` - Phase 6 complete
+- `v1.1-following` - Phase 7 complete
 
 ### Rollback Plan
 - Each tag is a deployable state
@@ -317,14 +370,21 @@ pytest tests/ -v --integration
 
 ## CURRENT PRIORITY
 
-**NEXT**: Phase 1.1 - Event Base System
+**NEXT**: Phase 7 - User Following & Manual Selection
+
+**RATIONALE**:
+- Real-time tracking requires knowing WHICH fixtures to follow
+- Multi-user requires per-user fixture selection
+- Manual betting override requires selection model
+- Betting bot needs "select for betting" vs "just watch"
 
 **IMMEDIATE TASKS**:
-1. Create `src/events/base.py`
-2. Create `src/events/registry.py`
-3. Write basic tests
-4. Manual verification
-5. Git commit with tag
+1. Create `WatchedFixture` model in `src/storage/models.py`
+2. Create selection API endpoints
+3. Add Follow button to prediction cards
+4. Create "My Following" filter
+5. Tests: `tests/web/test_following.py`
+6. Commit with tag `v1.1-following`
 
 ---
 
