@@ -34,6 +34,8 @@ from config.settings import settings
 from config.leagues import LEAGUES, TIER1_LEAGUE_IDS
 from src.cache.prediction_cache import get_prediction_cache, cache_prediction, get_cached_prediction
 from src.models.calibrator import get_calibration_cache, calibrate_prediction
+from src.models.model_tracker import get_model_tracker, ModelTracker
+from src.models.iteration_graph import generate_all_graphs
 from src.storage.db import get_session, init_db
 from src.storage.models import (
     Fixture, FixtureOdds, Standing, PredictionRecord, PlacedBet,
@@ -1556,6 +1558,86 @@ def api_get_watched():
             watched_list.append(item)
 
         return jsonify(watched_list)
+
+
+# =============================================================================
+# ROUTES: Model Stats & Graphs
+# =============================================================================
+
+@app.route('/api/models/stats', methods=['GET'])
+@require_auth
+def api_model_stats():
+    """Get model performance stats for all markets.
+
+    Returns summary stats for each market.
+    """
+    from config.markets import get_all_markets, get_active_markets
+
+    stats = {}
+    for market_id in get_active_markets():
+        tracker = get_model_tracker(market_id)
+        lifecycle = tracker.get_lifecycle_graph()
+        stats[market_id] = {
+            "market": market_id,
+            "total_iterations": len(lifecycle.iterations),
+            "total_retrains": len(lifecycle.retrain_events),
+            "current_brier": round(lifecycle.current_brier, 4) if lifecycle.current_brier else None,
+            "baseline_brier": round(lifecycle.baseline_brier, 4) if lifecycle.baseline_brier else None,
+            "drift_score": round(lifecycle.drift_score, 4) if lifecycle.drift_score else 0,
+            "overall_trend": lifecycle.overall_trend,
+            "is_drifted": abs(lifecycle.drift_score) > 0.05 if lifecycle.drift_score else False,
+        }
+
+    return jsonify(stats)
+
+
+@app.route('/api/models/iterations/<market>', methods=['GET'])
+@require_auth
+def api_model_iterations(market):
+    """Get iteration history for a specific market.
+
+    Returns list of model versions with metrics.
+    """
+    tracker = get_model_tracker(market)
+    iterations = tracker.get_iterations(limit=50)
+
+    return jsonify([
+        {
+            "version_number": i.version_number,
+            "version_name": i.version_name,
+            "brier_score": round(i.brier_score, 4),
+            "accuracy": round(i.accuracy, 4) if i.accuracy else None,
+            "ece": round(i.ece, 4) if i.ece else None,
+            "sample_size": i.sample_size,
+            "is_active": i.is_active,
+            "trained_at": i.trained_at.isoformat() if i.trained_at else None,
+        }
+        for i in iterations
+    ])
+
+
+@app.route('/api/models/graphs/<market>', methods=['GET'])
+@require_auth
+def api_model_graphs(market):
+    """Get graph data for model lifecycle visualization.
+
+    Returns chart-ready data for: brier_score, accuracy, calibration,
+    drift, retrain_impact, sample_size.
+    """
+    tracker = get_model_tracker(market)
+    graphs = generate_all_graphs(tracker, market)
+
+    return jsonify(graphs)
+
+
+@app.route('/api/models/retrain-events/<market>', methods=['GET'])
+@require_auth
+def api_retrain_events(market):
+    """Get retrain events for a market."""
+    tracker = get_model_tracker(market)
+    lifecycle = tracker.get_lifecycle_graph()
+
+    return jsonify(lifecycle.retrain_events)
 
 
 # =============================================================================

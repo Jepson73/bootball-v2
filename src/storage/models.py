@@ -351,6 +351,75 @@ class ModelCalibration(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+# ── Model versioning & iteration tracking ─────────────────────────────────────
+
+class ModelVersion(Base):
+    """Tracks each model version/iteration per market.
+
+    Every retrain creates a new version with its metrics.
+    Used for graphs showing model lifecycle.
+    """
+    __tablename__ = "model_versions"
+    __table_args__ = (
+        UniqueConstraint("market", "version_number", name="uq_model_version"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    market: Mapped[str] = mapped_column(String(20))
+
+    version_number: Mapped[int] = mapped_column(Integer)
+    version_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # Metrics at time of training
+    brier_score: Mapped[float] = mapped_column(Float, default=0)
+    accuracy: Mapped[float] = mapped_column(Float, default=0)
+    sample_size: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Calibration metrics
+    ece: Mapped[float] = mapped_column(Float, default=0)
+    calibration_sample_size: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Model metadata
+    model_type: Mapped[str] = mapped_column(String(50), default="ensemble")
+    features_used: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Status
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    replaced_by_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    trained_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class RetrainEvent(Base):
+    """Records when models were retrained and why.
+
+    Links old version to new version, tracks reason for retraining.
+    """
+    __tablename__ = "retrain_events"
+    __table_args__ = (
+        UniqueConstraint("market", "old_version_id", name="uq_retrain_event"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    market: Mapped[str] = mapped_column(String(20))
+
+    old_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    new_version_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    reason: Mapped[str] = mapped_column(String(200))
+    reason_detail: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+    # Metrics delta
+    brier_score_before: Mapped[float | None] = mapped_column(Float, nullable=True)
+    brier_score_after: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    triggered_by_drift: Mapped[bool] = mapped_column(Boolean, default=False)
+    drift_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
 # ── Betting ledger: value bets found + outcomes ───────────────────────────────
 
 class ValueBet(Base):
