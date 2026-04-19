@@ -1236,18 +1236,30 @@ def admin_page():
 
 <div id="adminMsg" class="msg" style="display:none;"></div>
 
-<h2 style="margin-top: 24px;">Configuration</h2>
-<table>
-    <thead>
-        <tr>
-            <th>Setting</th>
-            <th>Value</th>
-            <th>Actions</th>
-        </tr>
-    </thead>
-    <tbody id="configBody">
-    </tbody>
-</table>
+<h2 style="margin-top: 24px;">Model Training & Stats</h2>
+<div class="row">
+    <div class="col">
+        <div class="card">
+            <div class="card-title">Model Status</div>
+            <div id="modelStats">Loading...</div>
+        </div>
+    </div>
+</div>
+
+<h3>Model Iterations</h3>
+<select id="marketSelect" onchange="loadIterations()">
+    <option value="btts">BTTS</option>
+    <option value="ou25">Over/Under 2.5</option>
+    <option value="ou15">Over/Under 1.5</option>
+    <option value="h2h">Head to Head</option>
+</select>
+
+<div id="iterationsContainer" style="margin-top: 16px;">
+    <div id="iterationsList">Select a market to view iterations</div>
+</div>
+
+<h3 style="margin-top: 24px;">Retrain Events</h3>
+<div id="retrainEvents">Loading...</div>
 
 <script>
 function runDailyRun() {
@@ -1282,6 +1294,22 @@ function showMsg(text, type) {
     el.style.display = 'block';
 }
 
+function getDriftBadge(driftScore, isDrifted) {
+    if (!isDrifted) return '<span style="color: #3fb950;">Stable</span>';
+    if (driftScore > 0) return '<span style="color: #f85149;">Worse ▲</span>';
+    return '<span style="color: #58a6ff;">Better ▼</span>';
+}
+
+function getTrendBadge(trend) {
+    const colors = {
+        'stable': '#d29922',
+        'improving': '#3fb950',
+        'degrading': '#f85149',
+        'insufficient_data': '#8b949e'
+    };
+    return '<span style="color: ' + (colors[trend] || '#8b949e') + ';">' + trend + '</span>';
+}
+
 fetch('/api/admin/system_status', {credentials: 'include'})
     .then(r => r.json())
     .then(d => {
@@ -1290,7 +1318,116 @@ fetch('/api/admin/system_status', {credentials: 'include'})
             '<div>DB Fixtures: <strong>' + (d.fixture_count || 0) + '</strong></div>' +
             '<div>Last Daily Run: <strong>' + (d.last_daily_run || 'Never') + '</strong></div>';
     });
+
+// Load model stats
+fetch('/api/models/stats', {credentials: 'include'})
+    .then(r => r.json())
+    .then(d => {
+        let html = '<table style="width: 100%;">';
+        html += '<thead><tr><th>Market</th><th>Iterations</th><th>Retrains</th><th>Brier</th><th>Baseline</th><th>Drift</th><th>Trend</th></tr></thead>';
+        html += '<tbody>';
+        for (const [market, stats] of Object.entries(d)) {
+            const driftClass = stats.is_drifted ? (stats.drift_score > 0 ? 'degrading' : 'improving') : '';
+            html += '<tr class="' + driftClass + '">';
+            html += '<td><strong>' + market + '</strong></td>';
+            html += '<td>' + (stats.total_iterations || 0) + '</td>';
+            html += '<td>' + (stats.total_retrains || 0) + '</td>';
+            html += '<td>' + (stats.current_brier ? stats.current_brier.toFixed(4) : 'N/A') + '</td>';
+            html += '<td>' + (stats.baseline_brier ? stats.baseline_brier.toFixed(4) : 'N/A') + '</td>';
+            html += '<td>' + getDriftBadge(stats.drift_score, stats.is_drifted) + '</td>';
+            html += '<td>' + getTrendBadge(stats.overall_trend) + '</td>';
+            html += '</tr>';
+        }
+        html += '</tbody></table>';
+        document.getElementById('modelStats').innerHTML = html;
+    })
+    .catch(e => {
+        document.getElementById('modelStats').innerHTML = '<div style="color: #f85149;">Error loading stats</div>';
+    });
+
+// Load iterations for selected market
+function loadIterations() {
+    const market = document.getElementById('marketSelect').value;
+    fetch('/api/models/iterations/' + market, {credentials: 'include'})
+        .then(r => r.json())
+        .then(d => {
+            if (d.length === 0) {
+                document.getElementById('iterationsList').innerHTML = 'No iterations yet';
+                return;
+            }
+            let html = '<table style="width: 100%;">';
+            html += '<thead><tr><th>Version</th><th>Name</th><th>Brier</th><th>Accuracy</th><th>ECE</th><th>Samples</th><th>Active</th><th>Trained</th></tr></thead>';
+            html += '<tbody>';
+            for (const iter of d) {
+                const activeBadge = iter.is_active ? '<span style="background: #3fb950; color: #000; padding: 2px 6px; border-radius: 3px;">Active</span>' : '';
+                html += '<tr>';
+                html += '<td>v' + iter.version_number + '</td>';
+                html += '<td>' + (iter.version_name || '-') + '</td>';
+                html += '<td>' + (iter.brier_score ? iter.brier_score.toFixed(4) : 'N/A') + '</td>';
+                html += '<td>' + (iter.accuracy ? (iter.accuracy * 100).toFixed(1) + '%' : 'N/A') + '</td>';
+                html += '<td>' + (iter.ece ? (iter.ece * 100).toFixed(2) + '%' : 'N/A') + '</td>';
+                html += '<td>' + iter.sample_size.toLocaleString() + '</td>';
+                html += '<td>' + activeBadge + '</td>';
+                html += '<td>' + (iter.trained_at ? new Date(iter.trained_at).toLocaleDateString() : 'N/A') + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            document.getElementById('iterationsList').innerHTML = html;
+        })
+        .catch(e => {
+            document.getElementById('iterationsList').innerHTML = '<div style="color: #f85149;">Error loading iterations</div>';
+        });
+
+    // Load retrain events
+    fetch('/api/models/retrain-events/' + market, {credentials: 'include'})
+        .then(r => r.json())
+        .then(d => {
+            if (d.length === 0) {
+                document.getElementById('retrainEvents').innerHTML = 'No retrain events';
+                return;
+            }
+            let html = '<table style="width: 100%;">';
+            html += '<thead><tr><th>Date</th><th>Reason</th><th>Before</th><th>After</th><th>Drift Trigger</th></tr></thead>';
+            html += '<tbody>';
+            for (const event of d) {
+                const driftBadge = event.triggered_by_drift ? '<span style="color: #f85149;">Yes</span>' : '<span style="color: #8b949e;">No</span>';
+                html += '<tr>';
+                html += '<td>' + (event.created_at ? new Date(event.created_at).toLocaleDateString() : 'N/A') + '</td>';
+                html += '<td>' + event.reason + '</td>';
+                html += '<td>' + (event.brier_score_before ? event.brier_score_before.toFixed(4) : 'N/A') + '</td>';
+                html += '<td>' + (event.brier_score_after ? event.brier_score_after.toFixed(4) : 'N/A') + '</td>';
+                html += '<td>' + driftBadge + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            document.getElementById('retrainEvents').innerHTML = html;
+        })
+        .catch(e => {
+            document.getElementById('retrainEvents').innerHTML = '<div style="color: #f85149;">Error loading retrain events</div>';
+        });
+}
+
+// Initial load
+loadIterations();
 </script>
+
+<style>
+.degrading { background: rgba(248, 81, 73, 0.1); }
+.improving { background: rgba(63, 185, 80, 0.1); }
+</style>
+
+<h2 style="margin-top: 24px;">Configuration</h2>
+<table>
+    <thead>
+        <tr>
+            <th>Setting</th>
+            <th>Value</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody id="configBody">
+    </tbody>
+</table>
 '''
     return page(content)
 
