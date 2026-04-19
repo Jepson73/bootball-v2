@@ -77,8 +77,13 @@ class DriftDetector:
         """
         self._baseline = list(brier_scores)
 
+    POSITIVE_DRIFT_THRESHOLD = 0.08
+
     def detect_drift(self) -> DriftResult:
         """Analyze recent performance vs baseline for drift.
+
+        Always alerts on negative (worse) drift.
+        Only alerts on positive (better) drift if large movement.
 
         Returns:
             DriftResult with drift analysis
@@ -114,12 +119,15 @@ class DriftDetector:
         baseline_std = self._compute_std(self._baseline)
 
         drift_score = current_brier - baseline_brier
-
-        drift_detected = abs(drift_score) > self.alert_threshold
         drift_direction = "worse" if drift_score > 0 else "better"
 
         severity = self._compute_severity(abs(drift_score))
         confidence = self._compute_confidence()
+
+        if drift_direction == "worse":
+            drift_detected = drift_score > self.alert_threshold
+        else:
+            drift_detected = abs(drift_score) > self.POSITIVE_DRIFT_THRESHOLD
 
         recommendation = self._get_recommendation(
             drift_detected, drift_direction, severity, confidence
