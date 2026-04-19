@@ -655,6 +655,17 @@ def api_predictions():
             for market in markets:
                 cached_pred = cache.get(fix.id, market)
                 if cached_pred is not None:
+                    # Format date in user's timezone
+                    if cached_pred.get('date_utc'):
+                        try:
+                            from zoneinfo import ZoneInfo
+                            dt_utc = datetime.fromisoformat(cached_pred['date_utc'])
+                            if dt_utc.tzinfo is None:
+                                dt_utc = dt_utc.replace(tzinfo=timezone.utc)
+                            local_dt = dt_utc.astimezone(ZoneInfo(tz_name))
+                            cached_pred['date'] = local_dt.strftime('%Y-%m-%d %H:%M')
+                        except Exception:
+                            pass
                     cached_pred['home_name'] = home
                     cached_pred['away_name'] = away
                     cached_pred['league_name'] = league_name
@@ -686,21 +697,9 @@ def api_predictions():
 
                 ev = compute_ev(prob, odds)
 
-                local_date = None
-                if fix.date:
-                    try:
-                        from zoneinfo import ZoneInfo
-                        if fix.date.tzinfo is None:
-                            fix_dt = fix.date.replace(tzinfo=timezone.utc)
-                        else:
-                            fix_dt = fix.date
-                        local_date = fix_dt.astimezone(ZoneInfo(tz_name)).strftime('%Y-%m-%d %H:%M')
-                    except Exception:
-                        local_date = fix.date.strftime('%Y-%m-%d %H:%M')
-
+                # Store UTC date in cache, format on retrieval
                 pred_result = {
                     'fixture_id': fix.id,
-                    'date': local_date,
                     'date_utc': fix.date.isoformat() if fix.date else None,
                     'market': market,
                     'pick': pick,
@@ -711,6 +710,20 @@ def api_predictions():
                 }
 
                 cache_prediction(fix.id, market, pred_result)
+
+                # Format date for response
+                if fix.date:
+                    try:
+                        from zoneinfo import ZoneInfo
+                        if fix.date.tzinfo is None:
+                            fix_dt = fix.date.replace(tzinfo=timezone.utc)
+                        else:
+                            fix_dt = fix.date
+                        pred_result['date'] = fix_dt.astimezone(ZoneInfo(tz_name)).strftime('%Y-%m-%d %H:%M')
+                    except Exception:
+                        pred_result['date'] = fix.date.strftime('%Y-%m-%d %H:%M')
+                else:
+                    pred_result['date'] = None
 
                 pred_result['home_name'] = home
                 pred_result['away_name'] = away
