@@ -1116,7 +1116,7 @@ function settleBets() {
     })
     .then(r => r.json())
     .then(d => {
-        showMsg(d.settled + ' bets settled', d.ok ? 'success' : 'error');
+        showMsg(d.message || (d.ok ? 'Done' : 'Error'), d.ok ? 'success' : 'error');
         loadBets();
     });
 }
