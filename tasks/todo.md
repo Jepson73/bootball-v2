@@ -18,6 +18,66 @@
 
 ---
 
+## PHASE 0.5: Security Foundation (Week 0.5)
+
+### 0.5.1 Security Research
+- [ ] Create `docs/research/security/threat_model.md` - document attack surfaces
+- [ ] Create `docs/research/security/mitigations.md` - threat vs mitigation matrix
+- [ ] Review OWASP Top 10 for web apps
+- [ ] Review API-Football security requirements
+
+### 0.5.2 Input Validation Layer
+- [ ] Create `src/security/validation.py` - schema validation for all inputs
+- [ ] Create `src/security/sanitization.py` - XSS prevention, SQL injection helpers
+- [ ] Tests: `tests/security/test_validation.py`
+- [ ] Apply validation to web_ui.py endpoints
+
+### 0.5.3 Event Security
+- [ ] Create `src/security/event_signing.py` - HMAC event signatures
+- [ ] Verify event signatures in handlers before processing
+- [ ] Add replay protection (sequence numbers or timestamps)
+- [ ] Tests: `tests/security/test_event_signing.py`
+
+### 0.5.4 Web Layer Security
+- [ ] Add rate limiting to all endpoints (per IP, per user)
+- [ ] Create `src/security/rate_limit.py` - sliding window limiter
+- [ ] Add security headers to web_ui.py:
+  - Content-Security-Policy
+  - X-Frame-Options: DENY
+  - X-Content-Type-Options: nosniff
+  - Strict-Transport-Security
+- [ ] Tests: `tests/security/test_rate_limit.py`
+
+### 0.5.5 Authentication
+- [ ] Document current auth weaknesses
+- [ ] Plan JWT vs session-based auth for multi-user
+- [ ] Create `docs/research/security/auth_strategy.md`
+
+### 0.5.6 API Key Management
+- [ ] Document API key storage现状
+- [ ] Plan secret rotation procedure
+- [ ] Create `scripts/rotate_api_key.py` - secure key rotation
+
+### 0.5.7 Security Testing
+- [ ] Run `pytest tests/security/` - all security tests pass
+- [ ] Manual pen-test checklist completion
+- [ ] Git tag: `v0.0-security`
+
+### Security Checklist
+```
+[ ] XSS prevention in all user inputs
+[ ] SQL injection prevention (use parameterized queries)
+[ ] Rate limiting on all endpoints
+[ ] Security headers in responses
+[ ] Event payload validation before processing
+[ ] Event signature verification before handling
+[ ] No secrets in git history
+[ ] API keys in secure env only
+[ ] Input validation on all external data
+```
+
+---
+
 ## PHASE 1: Event Foundation (Week 1-2)
 
 ### 1.1 Event Base System
