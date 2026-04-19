@@ -1422,18 +1422,16 @@ function trainSelectedMarket() {
         .then(r => r.json())
         .then(d => {
             if (d.ok) {
-                let msg = 'Trained ' + market + '\n\n';
-                for (const [mkt, result] of Object.entries(d.results)) {
+                var lines = ['Trained ' + market];
+                for (var mkt in d.results) {
+                    var result = d.results[mkt];
                     if (result.error) {
-                        msg += mkt + ': ERROR - ' + result.error + '\n';
+                        lines.push(mkt + ': ERROR - ' + result.error);
                     } else {
-                        msg += mkt + ' v' + result.version + ': ';
-                        msg += 'Brier=' + result.brier_score + ' (raw=' + result.brier_raw + ') ';
-                        msg += ' ECE=' + result.ece + ' Acc=' + (result.accuracy * 100).toFixed(1) + '%';
-                        msg += ' [' + result.sample_size + ' samples]\n';
+                        lines.push(mkt + ' v' + result.version + ': Brier=' + result.brier_score + ' (raw=' + result.brier_raw + ') ECE=' + result.ece + ' Acc=' + (result.accuracy * 100).toFixed(1) + '% [' + result.sample_size + ' samples]');
                     }
                 }
-                showMsg(msg, 'success');
+                showMsg(lines.join('\n'), 'success');
             } else {
                 showMsg('Training failed: ' + (d.error || 'Unknown error'), 'error');
             }
@@ -1459,18 +1457,16 @@ function trainAllMarkets() {
         .then(r => r.json())
         .then(d => {
             if (d.ok) {
-                let msg = d.message + '\n\n';
-                for (const [market, result] of Object.entries(d.results)) {
+                var lines = [d.message];
+                for (var market in d.results) {
+                    var result = d.results[market];
                     if (result.error) {
-                        msg += market + ': ERROR - ' + result.error + '\n';
+                        lines.push(market + ': ERROR - ' + result.error);
                     } else {
-                        msg += market + ' v' + result.version + ': ';
-                        msg += 'Brier=' + result.brier_score + ' (raw=' + result.brier_raw + ') ';
-                        msg += ' ECE=' + result.ece + ' Acc=' + (result.accuracy * 100).toFixed(1) + '%';
-                        msg += ' [' + result.sample_size + ' samples]\n';
+                        lines.push(market + ' v' + result.version + ': Brier=' + result.brier_score + ' (raw=' + result.brier_raw + ') ECE=' + result.ece + ' Acc=' + (result.accuracy * 100).toFixed(1) + '% [' + result.sample_size + ' samples]');
                     }
                 }
-                showMsg(msg, 'success');
+                showMsg(lines.join('\n'), 'success');
             } else {
                 showMsg('Training failed: ' + (d.error || 'Unknown error'), 'error');
             }
