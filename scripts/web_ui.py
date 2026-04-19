@@ -36,7 +36,7 @@ from src.cache.prediction_cache import get_prediction_cache, cache_prediction, g
 from src.storage.db import get_session, init_db
 from src.storage.models import (
     Fixture, FixtureOdds, Standing, PredictionRecord, PlacedBet,
-    BankrollRound, Team, League, SettledBet
+    BankrollRound, Team, League, SettledBet, UserPreference
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')
@@ -521,7 +521,8 @@ function loadPredictions() {
     const container = document.getElementById('predictionsList');
     container.innerHTML = '<p style="color: #8b949e;">Loading predictions...</p>';
     const marketParam = currentMarket !== 'all' ? '&market=' + currentMarket : '';
-    const url = '/api/predictions?days=' + days + (league ? '&league=' + league : '') + marketParam;
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const url = '/api/predictions?days=' + days + (league ? '&league=' + league : '') + marketParam + '&tz=' + encodeURIComponent(tz);
     console.log('Fetching:', url);
     return fetch(url, {credentials: 'include'})
         .then(r => {
@@ -542,56 +543,11 @@ function loadPredictions() {
 
 function renderPredictions(data) {
     const container = document.getElementById('predictionsList');
-    console.log('renderPredictions called with', data ? data.length : 0, 'items');
     if (!data || data.length === 0) {
         container.innerHTML = '<p style="color: #8b949e;">No predictions available</p>';
         return;
     }
 
-    let html = '';
-    for (const p of data.slice(0, 50)) {
-        console.log('Processing prediction:', p.home_name, 'vs', p.away_name, 'market:', p.market);
-        const evClass = p.ev_positive ? 'ev-positive' : 'ev-negative';
-        const cardClass = p.ev_positive ? 'ev-positive' : 'ev-negative';
-        const confidence = Math.round((p.prob || 0.33) * 100);
-        const market = p.market || 'h2h';
-        const pick = p.pick || '?';
-        const odds = p.odds || '-';
-        const ev = p.ev || 0;
-
-        html += '<div class="prediction-card ' + cardClass + '">';
-        html += '<div class="match-time">' + (p.date || '').slice(0, 16) + ' | <span class="league-badge">' + (p.league_name || 'Unknown') + '</span></div>';
-        html += '<div class="team-name">' + (p.home_name || 'Home') + ' vs ' + (p.away_name || 'Away') + '</div>';
-        html += '<div style="margin: 8px 0;">';
-        html += '<span class="badge badge-info">' + market.toUpperCase() + '</span> ';
-        html += '<span>Pick: <strong>' + pick + '</strong></span> ';
-        html += '<span>Odds: ' + odds + '</span> ';
-        html += '<span>EV: <span class="' + evClass + '">' + (ev > 0 ? '+' : '') + ev.toFixed(1) + '%</span></span>';
-        html += '</div>';
-        html += '<div class="confidence-bar"><div class="confidence-fill" style="width: ' + confidence + '%"></div></div>';
-        html += '<div style="font-size: 12px; color: #8b949e;">Confidence: ' + confidence + '%</div>';
-        html += '</div>';
-    }
-    console.log('Generated HTML length:', html.length);
-    container.innerHTML = html;
-}
-
-document.querySelectorAll('.tab').forEach(tab => {
-    tab.addEventListener('click', function() {
-        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-        this.classList.add('active');
-        currentMarket = this.dataset.market;
-        loadPredictions();
-    });
-});
-
-function renderPredictions(data) {
-    const container = document.getElementById('predictionsList');
-    if (!data || data.length === 0) {
-        container.innerHTML = '<p style="color: #8b949e;">No predictions available</p>';
-        return;
-    }
-    
     let html = '';
     for (const p of data.slice(0, 50)) {
         const evClass = p.ev_positive ? 'ev-positive' : 'ev-negative';
@@ -601,7 +557,7 @@ function renderPredictions(data) {
         const pick = p.pick || '?';
         const odds = p.odds || '-';
         const ev = p.ev || 0;
-        
+
         html += '<div class="prediction-card ' + cardClass + '">';
         html += '<div class="match-time">' + (p.date || '').slice(0, 16) + ' | <span class="league-badge">' + (p.league_name || 'Unknown') + '</span></div>';
         html += '<div class="team-name">' + (p.home_name || 'Home') + ' vs ' + (p.away_name || 'Away') + '</div>';
@@ -657,6 +613,7 @@ def api_predictions():
     days_str = request.args.get('days', '7')
     league_filter = request.args.get('league', '')
     market_filter = request.args.get('market', 'all')
+    tz_name = request.args.get('tz', 'Europe/Stockholm')
 
     if days_str == 'all':
         now = datetime.utcnow()
@@ -729,9 +686,22 @@ def api_predictions():
 
                 ev = compute_ev(prob, odds)
 
+                local_date = None
+                if fix.date:
+                    try:
+                        from zoneinfo import ZoneInfo
+                        if fix.date.tzinfo is None:
+                            fix_dt = fix.date.replace(tzinfo=timezone.utc)
+                        else:
+                            fix_dt = fix.date
+                        local_date = fix_dt.astimezone(ZoneInfo(tz_name)).strftime('%Y-%m-%d %H:%M')
+                    except Exception:
+                        local_date = fix.date.strftime('%Y-%m-%d %H:%M')
+
                 pred_result = {
                     'fixture_id': fix.id,
-                    'date': fix.date.isoformat() if fix.date else None,
+                    'date': local_date,
+                    'date_utc': fix.date.isoformat() if fix.date else None,
                     'market': market,
                     'pick': pick,
                     'prob': prob,
@@ -1234,6 +1204,80 @@ def api_admin_system_status():
         'fixture_count': fixture_count,
         'last_daily_run': 'Check logs',
     })
+
+
+# =============================================================================
+# ROUTES: User Preferences
+# =============================================================================
+
+@app.route('/api/preferences', methods=['GET'])
+@require_auth
+def api_get_preferences():
+    """Get user preferences. Uses default (NULL user_id) if no specific user."""
+    user_id = request.args.get('user_id')  # Future: from session
+
+    with get_session() as s:
+        pref = s.execute(
+            select(UserPreference).where(UserPreference.user_id == user_id)
+        ).scalar_one_or_none()
+
+        if not pref:
+            # Return defaults
+            return jsonify({
+                'timezone': 'Europe/Stockholm',
+                'preferred_markets': 'btts,ou25,ou15,h2h',
+                'preferred_leagues': None,
+                'alerts_enabled': True,
+                'alerts_min_ev': 0.05,
+                'alerts_top_n': 5,
+                'default_days': 7,
+            })
+
+        return jsonify({
+            'timezone': pref.timezone,
+            'preferred_markets': pref.preferred_markets,
+            'preferred_leagues': pref.preferred_leagues,
+            'alerts_enabled': pref.alerts_enabled,
+            'alerts_min_ev': pref.alerts_min_ev,
+            'alerts_top_n': pref.alerts_top_n,
+            'default_days': pref.default_days,
+        })
+
+
+@app.route('/api/preferences', methods=['PUT', 'POST'])
+@require_auth
+def api_update_preferences():
+    """Update user preferences."""
+    user_id = request.args.get('user_id')  # Future: from session
+    data = request.get_json()
+
+    with get_session() as s:
+        pref = s.execute(
+            select(UserPreference).where(UserPreference.user_id == user_id)
+        ).scalar_one_or_none()
+
+        if not pref:
+            pref = UserPreference(user_id=user_id)
+            s.add(pref)
+
+        if 'timezone' in data:
+            pref.timezone = data['timezone']
+        if 'preferred_markets' in data:
+            pref.preferred_markets = data['preferred_markets']
+        if 'preferred_leagues' in data:
+            pref.preferred_leagues = data['preferred_leagues']
+        if 'alerts_enabled' in data:
+            pref.alerts_enabled = data['alerts_enabled']
+        if 'alerts_min_ev' in data:
+            pref.alerts_min_ev = float(data['alerts_min_ev'])
+        if 'alerts_top_n' in data:
+            pref.alerts_top_n = int(data['alerts_top_n'])
+        if 'default_days' in data:
+            pref.default_days = int(data['default_days'])
+
+        s.commit()
+
+        return jsonify({'ok': True, 'message': 'Preferences updated'})
 
 
 # =============================================================================

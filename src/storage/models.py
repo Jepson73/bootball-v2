@@ -439,3 +439,40 @@ class PlacedBet(Base):
 
 
 BankrollRound.bets: Mapped[list["PlacedBet"]] = relationship("PlacedBet", foreign_keys=[PlacedBet.round_id], viewonly=True)
+
+
+# ── User preferences (future multi-user ready) ─────────────────────────────────
+
+class UserPreference(Base):
+    """User preferences for personalization.
+
+    Currently user_id is nullable - works in single-user mode.
+    When multi-user is implemented, each user gets their own preferences.
+    """
+    __tablename__ = "user_preferences"
+    __table_args__ = (
+        UniqueConstraint("user_id", name="uq_user_preferences"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str | None] = mapped_column(String(100), nullable=True)  # NULL = default/preferences
+
+    # Timezone (IANA timezone database name)
+    timezone: Mapped[str] = mapped_column(String(100), default="Europe/Stockholm")
+
+    # Preferred markets (comma-separated: "btts,ou25,ou15,h2h")
+    preferred_markets: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # Preferred leagues (comma-separated league IDs)
+    preferred_leagues: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    # Alert settings
+    alerts_enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    alerts_min_ev: Mapped[float] = mapped_column(Float, default=0.05)
+    alerts_top_n: Mapped[int] = mapped_column(Integer, default=5)
+
+    # Display preferences
+    default_days: Mapped[int] = mapped_column(Integer, default=7)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
