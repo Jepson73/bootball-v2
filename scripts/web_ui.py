@@ -1540,17 +1540,26 @@ def api_admin_train():
 def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
     """Train a market model with isotonic calibration.
 
+    Uses LightGBM (primary) with sklearn GradientBoosting as fallback.
     Follows research: Calibration > Accuracy (+34.69% ROI)
     """
     import numpy as np
-    from sklearn.ensemble import GradientBoostingClassifier
     from sklearn.isotonic import IsotonicRegression
     from sklearn.metrics import brier_score_loss
 
     from src.models.calibrator import MarketCalibrator
     from src.models.model_tracker import get_model_tracker
 
-    logger.info(f"Training {market} with calibration...")
+    logger.info(f"Training {market} with LightGBM calibration...")
+
+    try:
+        import lightgbm as lgb
+        use_lightgbm = True
+        model_name = 'LightGBM'
+    except ImportError:
+        from sklearn.ensemble import GradientBoostingClassifier
+        use_lightgbm = False
+        model_name = 'GradientBoosting'
 
     # Get market config
     market_configs = {
@@ -1625,10 +1634,20 @@ def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
     y_train, y_test = y[:split], y[split:]
 
     # Train base model
-    model = GradientBoostingClassifier(
-        n_estimators=200, max_depth=4,
-        learning_rate=0.1, random_state=42
-    )
+    if use_lightgbm:
+        model = lgb.LGBMClassifier(
+            n_estimators=200,
+            max_depth=4,
+            learning_rate=0.1,
+            random_state=42,
+            verbose=-1,
+            force_col_wise=True
+        )
+    else:
+        model = GradientBoostingClassifier(
+            n_estimators=200, max_depth=4,
+            learning_rate=0.1, random_state=42
+        )
     model.fit(X_train, y_train)
 
     # Get raw probabilities for test set
@@ -1719,7 +1738,7 @@ def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
             ece=ece,
             sample_size=len(X_train),
             calibration_sample_size=len(X_test),
-            model_type='gradient_boosting+isotonic',
+            model_type=f'{model_name.lower()}+isotonic',
             is_active=True,
         )
         s.add(new_version)
