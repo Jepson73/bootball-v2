@@ -91,7 +91,7 @@ def settle_fixtures(dry_run: bool = False, days: int = 7):
     
     # Fetch per league
     completed = []
-    for lid in ALL_LEAGUE_IDS[:8]:  # Limit API calls
+    for lid in ALL_LEAGUE_IDS[:20]:  # Limit API calls
         season = current_year if lid in [1602, 253, 98, 176, 113, 1191] else current_year - 1
         try:
             results = client.get_fixtures(
