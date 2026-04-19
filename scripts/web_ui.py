@@ -1242,7 +1242,15 @@ function formatLocalDateTime(isoString) {
     if (!isoString) return '-';
     try {
         const date = new Date(isoString);
-        return date.toLocaleString(undefined, {timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone});
+        return date.toLocaleString(undefined, {
+            timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false
+        });
     } catch {
         return isoString.slice(0, 16);
     }
