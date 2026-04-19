@@ -1237,6 +1237,16 @@ def tracking_page():
 <script>
 let currentPage = 1;
 let pageSize = 20;
+
+function formatLocalDateTime(isoString) {
+    if (!isoString) return '-';
+    try {
+        const date = new Date(isoString);
+        return date.toLocaleString(undefined, {timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone});
+    } catch {
+        return isoString.slice(0, 16);
+    }
+}
 let totalResults = 0;
 
 function loadTracking() {
@@ -1260,7 +1270,7 @@ function loadTracking() {
             const tbody = document.getElementById('trackingBody');
             tbody.innerHTML = (d.results || []).map(r =>
                 '<tr>' +
-                '<td>' + ((r.date || '').slice(0, 10)) + '</td>' +
+                '<td>' + formatLocalDateTime(r.date) + '</td>' +
                 '<td>' + r.home + ' vs ' + r.away + '</td>' +
                 '<td>' + (r.market || '') + '</td>' +
                 '<td>' + (r.predicted || '-') + '</td>' +
