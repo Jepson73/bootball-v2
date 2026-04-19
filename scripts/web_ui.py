@@ -1035,6 +1035,7 @@ def betting_page():
 <table>
     <thead>
         <tr>
+            <th>Date</th>
             <th>Match</th>
             <th>Market</th>
             <th>Pick</th>
@@ -1077,6 +1078,7 @@ function loadBets() {
         if (d.ok) {
             document.getElementById('betsBody').innerHTML = (d.bets || []).map(b => 
                 '<tr>' +
+                '<td>' + b.date + '</td>' +
                 '<td>' + b.home + ' vs ' + b.away + '</td>' +
                 '<td>' + b.market + '</td>' +
                 '<td>' + b.outcome + '</td>' +
@@ -2337,8 +2339,9 @@ def betting_action():
                     fix = s.execute(select(Fixture).where(Fixture.id == b.fixture_id)).scalar_one_or_none()
                     home = TEAM_NAMES.get(fix.home_team_id, str(fix.home_team_id)) if fix else '?'
                     away = TEAM_NAMES.get(fix.away_team_id, str(fix.away_team_id)) if fix else '?'
+                    fix_date = fix.date.strftime('%Y-%m-%d %H:%M') if fix and fix.date else '-'
                     bets_list.append({
-                        'home': home, 'away': away, 'market': b.market,
+                        'home': home, 'away': away, 'date': fix_date, 'market': b.market,
                         'outcome': b.outcome, 'stake': b.stake, 'odds': b.odds,
                         'ev': b.ev, 'settled': b.settled, 'won': b.won
                     })
