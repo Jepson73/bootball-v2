@@ -706,8 +706,11 @@ def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, lea
 
         features = np.array([features])
 
-        # Get raw probability
-        raw_probs = model.predict_proba(features)[0]
+        # Get raw probability (suppress sklearn feature name warning)
+        import warnings
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', message='X does not have valid feature names')
+            raw_probs = model.predict_proba(features)[0]
 
         # For binary, use positive class
         if len(raw_probs) == 2:
