@@ -263,27 +263,27 @@ Goalscorer    | Player goals, assists, injuries
 ### 5.5 Model Stats & Graphs (NEW)
 Track model performance through iterations with visualization.
 
-- [ ] Create `src/models/model_tracker.py`
+- [x] Create `src/models/model_tracker.py`
   - Store each model version with metrics
   - Track Brier score over time per market
   - Record retraining events
   - Store baseline vs current comparison
-- [ ] Create `src/models/iteration_graph.py`
+- [x] Create `src/models/iteration_graph.py`
   - Generate graph data for model lifecycle
   - Mark retraining events on timeline
   - Show drift severity over time
-- [ ] Store model history in DB
+- [x] Store model history in DB
   - ModelVersion table (market, version, metrics, trained_at)
   - RetrainEvent table (market, reason, old_version, new_version)
-- [ ] Dashboard API endpoint
+- [x] Dashboard API endpoint
   - GET /api/models/stats - model performance metrics
   - GET /api/models/iterations/{market} - iteration history
   - GET /api/models/graphs/{market} - graph data
-- [ ] Alerting rules
+- [x] Alerting rules
   - Always alert for negative drift
   - Only alert for positive drift if large movement (>0.08)
-- [ ] Tests: `tests/models/test_model_tracker.py`
-- [ ] Commit with tag `v0.5.5-model-stats`
+- [x] Tests: `tests/models/test_model_tracker.py`
+- [x] Commit with tag `v0.5.5-model-stats`
 
 ### 5.6 Git Checkpoint
 - [ ] Commit training infrastructure
