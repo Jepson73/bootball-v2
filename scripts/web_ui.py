@@ -1453,6 +1453,7 @@ def admin_page():
     <div class="col">
         <div class="card">
             <div class="card-title">System Actions</div>
+            <button class="btn btn-primary" onclick="runMaintenance()">Run Maintenance</button>
             <button class="btn btn-primary" onclick="runDailyRun()">Run Daily Run</button>
             <button class="btn btn-primary" onclick="placeBets()">Place Bets</button>
             <button class="btn btn-danger" onclick="settleBets()">Settle Bets</button>
@@ -1526,10 +1527,32 @@ def admin_page():
 <div id="retrainEvents">Loading...</div>
 
 <script>
+function runMaintenance() {
+    showMsg('Running maintenance checks...', 'info');
+    fetch('/api/admin/maintenance', {credentials: 'include'})
+        .then(r => r.json())
+        .then(d => {
+            let html = '<div style="margin-bottom: 12px;"><strong>System Health</strong></div>';
+            html += '<div>API Calls Remaining: <strong>' + d.api_calls + '</strong></div>';
+            html += '<div>DB Fixtures: <strong>' + d.fixture_count + '</strong></div>';
+            html += '<div>DB Teams: <strong>' + d.team_count + '</strong></div>';
+            html += '<div>Standings: <strong>' + d.standing_count + '</strong></div>';
+            html += '<hr style="margin: 8px 0;">';
+            html += '<div>Predictions: <strong>' + d.predictions.settled + '</strong> settled, <strong>' + d.predictions.unsettled + '</strong> unsettled</div>';
+            html += '<div>Pending Bets: <strong>' + d.pending_bets + '</strong></div>';
+            html += '<hr style="margin: 8px 0;">';
+            html += '<div>Orphaned Fixtures: <strong style="color:' + (d.orphaned_fixtures > 0 ? '#f85149' : '#3fb950') + '">' + d.orphaned_fixtures + '</strong></div>';
+            html += '<div>FT Null Goals: <strong style="color:' + (d.ft_null_goals > 0 ? '#f85149' : '#3fb950') + '">' + d.ft_null_goals + '</strong></div>';
+            document.getElementById('systemStatus').innerHTML = html;
+            showMsg('Maintenance check complete', 'success');
+        })
+        .catch(e => showMsg('Error: ' + e, 'error'));
+}
+
 function runDailyRun() {
     fetch('/api/admin/daily_run', {method: 'POST', credentials: 'include'})
         .then(r => r.json())
-        .then(d => showMsg(d.output || 'Done', 'success'));
+        .then(d => showMsg(d.output || d.error || 'Done', d.error ? 'error' : 'success'));
 }
 
 function placeBets() {
@@ -1748,11 +1771,24 @@ loadIterations();
 @require_auth
 def admin_daily_run():
     import subprocess
-    result = subprocess.run(
-        [sys.executable, 'scripts/daily_run.py'],
-        capture_output=True, text=True, timeout=300
-    )
-    return jsonify({'ok': True, 'output': result.stdout[:2000]})
+    import os
+    lock_file = '/tmp/bootball_daily_run.lock'
+
+    if os.path.exists(lock_file):
+        return jsonify({'ok': False, 'error': 'Daily run is already in progress'}), 409
+
+    try:
+        with open(lock_file, 'w') as f:
+            f.write(str(datetime.utcnow()))
+
+        result = subprocess.run(
+            [sys.executable, 'scripts/daily_run.py'],
+            capture_output=True, text=True, timeout=300
+        )
+        return jsonify({'ok': True, 'output': result.stdout[:2000]})
+    finally:
+        if os.path.exists(lock_file):
+            os.remove(lock_file)
 
 
 @app.route('/api/admin/place_bets', methods=['POST'])
@@ -1775,6 +1811,54 @@ def admin_settle():
         capture_output=True, text=True, timeout=60
     )
     return jsonify({'ok': True, 'message': f"Settled: {result.stdout[:500]}"})
+
+
+@app.route('/api/admin/maintenance', methods=['GET', 'POST'])
+@require_auth
+def api_admin_maintenance():
+    """Run maintenance checks and return status."""
+    from src.ingestion.client import calls_remaining_today
+    from src.storage.models import Fixture, Team, Standing, PredictionRecord, PlacedBet
+    from sqlalchemy import select, func
+
+    results = {}
+
+    with get_session() as s:
+        results['api_calls'] = calls_remaining_today()
+
+        results['fixture_count'] = s.execute(select(func.count()).select_from(Fixture)).scalar() or 0
+        results['team_count'] = s.execute(select(func.count()).select_from(Team)).scalar() or 0
+        results['standing_count'] = s.execute(select(func.count()).select_from(Standing)).scalar() or 0
+        results['pred_count'] = s.execute(select(func.count()).select_from(PredictionRecord)).scalar() or 0
+
+        settled_preds = s.execute(
+            select(func.count()).select_from(PredictionRecord).where(PredictionRecord.settled == True)
+        ).scalar() or 0
+        unsettled_preds = s.execute(
+            select(func.count()).select_from(PredictionRecord).where(PredictionRecord.settled == False)
+        ).scalar() or 0
+        results['predictions'] = {'settled': settled_preds, 'unsettled': unsettled_preds}
+
+        pending_bets = s.execute(
+            select(func.count()).select_from(PlacedBet).where(PlacedBet.settled == False)
+        ).scalar() or 0
+        results['pending_bets'] = pending_bets
+
+        orphaned = s.execute(
+            select(Fixture)
+            .where(Fixture.league_id.notin_(select(Standing.league_id).distinct()))
+            .limit(5)
+        ).scalars().all()
+        results['orphaned_fixtures'] = len(orphaned)
+
+        ft_null_goals = s.execute(
+            select(func.count()).select_from(Fixture)
+            .where(Fixture.status == 'FT')
+            .where(Fixture.goals_home == None)
+        ).scalar() or 0
+        results['ft_null_goals'] = ft_null_goals
+
+    return jsonify(results)
 
 
 @app.route('/api/admin/train', methods=['POST'])

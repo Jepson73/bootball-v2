@@ -106,8 +106,14 @@ def fetch_and_update_fixtures(days: int = 7) -> int:
     return updated
 
 
-def settle_placed_bets() -> tuple[int, float]:
-    """Settle pending PlacedBets based on completed fixtures. Returns (count, total_pnl)."""
+def settle_placed_bets() -> tuple[int, float, list[dict]]:
+    """Settle pending PlacedBets based on completed fixtures.
+
+    Returns (count, total_pnl, bet_details).
+    bet_details is a list of dicts with: home, away, league, market, outcome, odds, result, won, pnl, stake
+    """
+    from src.storage.models import Team, League
+
     with get_session() as s:
         pending_bets = s.execute(
             select(PlacedBet).where(PlacedBet.settled == False)
@@ -115,6 +121,7 @@ def settle_placed_bets() -> tuple[int, float]:
 
         total_pnl = 0.0
         settled = 0
+        bet_details = []
 
         for bet in pending_bets:
             fixture = s.execute(select(Fixture).where(Fixture.id == bet.fixture_id)).scalar_one_or_none()
@@ -136,6 +143,23 @@ def settle_placed_bets() -> tuple[int, float]:
             total_pnl += bet.pnl
             settled += 1
 
+            home_team = s.execute(select(Team).where(Team.id == fixture.home_team_id)).scalar_one_or_none()
+            away_team = s.execute(select(Team).where(Team.id == fixture.away_team_id)).scalar_one_or_none()
+            league = s.execute(select(League).where(League.id == fixture.league_id)).scalar_one_or_none()
+
+            bet_details.append({
+                'home': home_team.name if home_team else str(fixture.home_team_id),
+                'away': away_team.name if away_team else str(fixture.away_team_id),
+                'league': league.name if league else '',
+                'market': bet.market,
+                'outcome': bet.outcome,
+                'odds': bet.odds,
+                'result': result,
+                'won': bet.won,
+                'pnl': bet.pnl,
+                'stake': bet.stake,
+            })
+
             logger.info(f"Bet {bet.id}: {bet.market} {bet.outcome} @ {bet.odds} → {result} | P/L: {bet.pnl:+.2f}")
 
         if settled > 0:
@@ -153,22 +177,65 @@ def settle_placed_bets() -> tuple[int, float]:
 
             logger.info(f"Settled {settled} bets, P/L: {total_pnl:+.2f}")
 
+            if bet_details:
+                send_settlement_alert(bet_details, total_pnl)
+
         logger.info(f"Done. Settled: {settled}, P/L: {total_pnl:+.2f}")
 
-        return settled, total_pnl
+        return settled, total_pnl, bet_details
 
 
-def settle_all(days: int = 7) -> dict:
-    """Main settlement function: fetch fixtures, settle bets. Returns summary dict."""
+def send_settlement_alert(bet_details: list[dict], total_pnl: float):
+    """Send Discord alert with nicely formatted settled bet results."""
+    if not bet_details:
+        return
+
+    try:
+        from src.betting.alerts import BettingAlerts
+
+        wins = sum(1 for b in bet_details if b['won'])
+        losses = len(bet_details) - wins
+        total_stake = sum(b['stake'] for b in bet_details)
+
+        msg = f"**SETTLED {len(bet_details)} BET(S)**\n"
+        msg += f"{wins}W / {losses}L | P/L: {total_pnl:+.2f} | Stake: £{total_stake:.2f}\n"
+        msg += "─────────────────────\n\n"
+
+        for bet in bet_details:
+            market_emoji = {
+                'btts': '⚽',
+                'ou25': '🥅',
+                'ou15': '🥅',
+                'h2h': '🏆',
+            }.get(bet['market'], '📊')
+
+            result_emoji = '💰' if bet['won'] else '💩'
+
+            msg += f"{market_emoji} **{bet['home']}** vs **{bet['away']}**\n"
+            msg += f"   └ {bet['market'].upper()} **{bet['outcome']}** @ {bet['odds']:.2f}\n"
+            msg += f"   └ Result: **{bet['result']}** {result_emoji} | P/L: {bet['pnl']:+.2f}\n"
+            msg += f"   └ {bet['league']}\n\n"
+
+        msg += "─────────────────────\n"
+        msg += f"Net P/L: {total_pnl:+.2f}"
+
+        alerts = BettingAlerts(channels=["discord"], min_ev=5.0, min_odds=1.5, min_kelly=0.03)
+        alerts.send_message(msg)
+        logger.info(f"Sent settlement alert")
+    except Exception as e:
+        logger.warning(f"Failed to send settlement alert: {e}")
+
+
+def settle_all() -> dict:
+    """Settle pending bets. Does NOT fetch fixtures - caller should fetch first."""
     init_db()
 
-    updated = fetch_and_update_fixtures(days)
-    settled, total_pnl = settle_placed_bets()
+    settled, total_pnl, bet_details = settle_placed_bets()
 
     return {
-        'fixtures_updated': updated,
         'bets_settled': settled,
         'total_pnl': total_pnl,
+        'bet_details': bet_details,
     }
 
 

@@ -392,7 +392,7 @@ def send_daily_run_alert(
     error: str | None = None,
 ) -> None:
     """Send alert when daily run completes.
-    
+
     Args:
         matches_analyzed: Number of matches analyzed
         bets_placed: Number of bets placed
@@ -400,10 +400,10 @@ def send_daily_run_alert(
         status: "success" or "error"
         error: Optional error message
     """
-    emoji = "✅" if status == "success" else "❌"
-    
+    emoji = "💻" if status == "success" else "❌"
+
     alerts = BettingAlerts(channels=["discord", "console"])
-    
+
     if status == "success":
         alerts.send_message(
             f"{emoji} <b>DAILY RUN COMPLETE</b>\n\n"

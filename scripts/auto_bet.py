@@ -5,11 +5,11 @@ scripts/auto_bet.py
 Automatic betting bot that places fictional bets based on value detection.
 
 Features:
-- Manages bankroll rounds (resets on loss or model retrain)
+- Uses same pickle models as daily_run and web_ui
 - Places bets automatically when value detected (EV > threshold)
 - Settles bets automatically when matches complete
 - Tracks historical rounds for comparison
-- Health monitoring of all subsystems
+- Sends Discord alerts for placed bets
 
 Usage:
     python scripts/auto_bet.py              # Full run: bet + settle
@@ -24,26 +24,29 @@ from __future__ import annotations
 
 import argparse
 import logging
+import pickle
+import os
 import sys
+import warnings
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 sys.path.insert(0, '/opt/projects/bootball')
 
+import numpy as np
 from sqlalchemy import select, func
 
 from config.leagues import TIER1_LEAGUE_IDS, LEAGUES
 from src.ingestion.client import APIFootballClient, calls_remaining_today
 from src.storage.db import get_session, init_db
 from src.storage.models import (
-    Fixture, FixtureOdds, Standing, ValueBet, Team, League,
+    Fixture, FixtureOdds, Standing, Team, League,
     Bankroll, SettledBet, BankrollRound, PlacedBet,
 )
-from src.betting.predict import predict_proba
-from src.betting.value_bets import find_all_market_value_bets, EV_THRESHOLD
 from src.betting.kelly import fractional_kelly, stake as kelly_stake
 from src.betting.alerts import BettingAlerts, BetAlert
 from src.betting.ev import expected_value
+from src.betting.shin import shin_probabilities
 
 logging.basicConfig(
     level=logging.INFO,
@@ -57,11 +60,166 @@ KELLY_FRACTION = 0.25
 MAX_STAKE_PCT = 0.05
 MIN_STAKE = 1.0
 MAX_STAKE = 50.0
-AUTO_RESET_THRESHOLD = 0.0
-BET_MARKETS = ["btts", "ou25", "ou15"]
-MAX_BETS_PER_DAY = 20
+MAX_TOTAL_STAKE_PER_DAY = 100.0
 MIN_ODDS = 1.5
 MAX_ODDS = 10.0
+BET_MARKETS = ["btts", "ou25", "ou15"]
+MAX_BETS_PER_DAY = 5
+
+MODEL_PATH = '/opt/projects/bootball/data/model_{market}.pkl'
+
+MARKET_OUTCOMES = {
+    "h2h": ["1", "X", "2"],
+    "btts": ["Yes", "No"],
+    "ou25": ["Over", "Under"],
+    "ou15": ["Over", "Under"],
+}
+
+
+def get_model_prediction(market: str, home_team_id: int, away_team_id: int) -> dict[str, float] | None:
+    """Get prediction from trained LightGBM model.
+
+    Returns dict of outcome -> probability, or None if model unavailable.
+    """
+    model_path = MODEL_PATH.format(market=market)
+    if not os.path.exists(model_path):
+        logger.warning(f"Model not found: {model_path}")
+        return None
+
+    try:
+        with open(model_path, 'rb') as f:
+            obj = pickle.load(f)
+
+        if isinstance(obj, dict):
+            model = obj['model']
+            calibrator = obj.get('calibrator')
+        else:
+            model = obj
+            calibrator = None
+
+        with get_session() as s:
+            home_standing = s.execute(
+                select(Standing).where(Standing.team_id == home_team_id).where(Standing.season >= 2024)
+            ).first()
+            away_standing = s.execute(
+                select(Standing).where(Standing.team_id == away_team_id).where(Standing.season >= 2024)
+            ).first()
+
+            if not home_standing or not away_standing:
+                return None
+
+            hs = home_standing[0]
+            as_ = away_standing[0]
+
+            features = np.array([[
+                float(hs.rank or 15),
+                float(as_.rank or 15),
+                float((hs.goals_for or 1) - (hs.goals_against or 1)),
+                float((as_.goals_for or 1) - (as_.goals_against or 1)),
+                float(hs.goals_for or 1),
+                float(as_.goals_for or 1),
+                float(hs.goals_against or 1),
+                float(as_.goals_against or 1),
+                float(abs((hs.rank or 15) - (as_.rank or 15))),
+            ]])
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings('ignore', message='X does not have valid feature names')
+            raw_probs = model.predict_proba(features)[0]
+
+        outcomes = MARKET_OUTCOMES.get(market, [])
+        if len(outcomes) == 2:
+            probs = {outcomes[0]: float(raw_probs[1]), outcomes[1]: float(1 - raw_probs[1])}
+        elif len(raw_probs) == 3:
+            probs = {outcomes[i]: float(raw_probs[i]) for i in range(3)}
+        else:
+            return None
+
+        if calibrator:
+            try:
+                for k in probs:
+                    probs[k] = max(0.01, min(0.99, calibrator.predict([probs[k]])[0]))
+            except Exception:
+                pass
+
+        return probs
+
+    except Exception as e:
+        logger.warning(f"Model prediction error for {market}: {e}")
+        return None
+
+
+ODDS_FIELD_MAP = {
+    "h2h": {"1": "odd_home", "X": "odd_draw", "2": "odd_away"},
+    "btts": {"Yes": "odd_btts_yes", "No": "odd_btts_no"},
+    "ou25": {"Over": "odd_over", "Under": "odd_under"},
+    "ou15": {"Over": "odd_over15", "Under": "odd_under15"},
+}
+
+
+def get_odds_for_market(odds_row, market: str) -> dict[str, float]:
+    """Extract odds for a specific market from a FixtureOdds row."""
+    field_map = ODDS_FIELD_MAP.get(market, {})
+    odds = {}
+    for outcome, field in field_map.items():
+        value = getattr(odds_row, field, None)
+        if value:
+            odds[outcome] = value
+    return odds
+
+
+def find_value_bets(
+    model_probs: dict[str, float],
+    odds_row,
+    market: str,
+    fixture_id: int,
+    ev_threshold: float = EV_THRESHOLD_BET,
+) -> list[dict]:
+    """Find value bets for a fixture and market."""
+    candidates = []
+
+    market_odds = get_odds_for_market(odds_row, market)
+    if len(market_odds) < 2:
+        return candidates
+
+    outcomes = list(market_odds.keys())
+    odds_values = [market_odds[o] for o in outcomes]
+
+    try:
+        shin_probs = shin_probabilities(odds_values)
+    except Exception:
+        shin_probs = [1 / o for o in odds_values]
+
+    for i, outcome in enumerate(outcomes):
+        model_prob = model_probs.get(outcome, 0.0)
+        decimal_odd = market_odds[outcome]
+
+        if decimal_odd <= 0:
+            continue
+
+        ev = expected_value(model_prob, decimal_odd)
+        if ev < ev_threshold:
+            continue
+
+        kf = fractional_kelly(model_prob, decimal_odd, KELLY_FRACTION)
+        implied_raw = 1.0 / decimal_odd
+        shin_implied = shin_probs[i] if i < len(shin_probs) else implied_raw
+
+        candidates.append({
+            'fixture_id': fixture_id,
+            'market': market,
+            'outcome': outcome,
+            'our_prob': model_prob,
+            'bookmaker': odds_row.bookmaker,
+            'decimal_odd': decimal_odd,
+            'implied_prob_raw': implied_raw,
+            'implied_prob_shin': shin_implied,
+            'ev': ev,
+            'kelly_fraction': kf,
+        })
+
+    candidates.sort(key=lambda x: x['ev'], reverse=True)
+    return candidates
 
 
 def get_current_round(session) -> BankrollRound | None:
@@ -124,7 +282,7 @@ def archive_round(round: BankrollRound, session, reason: str):
 
     settled = session.execute(
         select(PlacedBet)
-        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.round_id == round.id)
         .where(PlacedBet.settled == True)
     ).scalars().all()
 
@@ -141,170 +299,20 @@ def archive_round(round: BankrollRound, session, reason: str):
 
 def check_reset_condition(round: BankrollRound, session) -> str | None:
     balance = get_current_balance(round, session)
-    
-    # Check for pending bets
+
     pending = session.execute(
         select(func.count(PlacedBet.id))
         .where(PlacedBet.round_id == round.id)
         .where(PlacedBet.settled == False)
     ).scalar() or 0
-    
-    # Don't auto-reset if there are pending bets
+
     if balance <= 0 and pending == 0:
         return "balance_zero"
     if balance <= 0 and pending > 0:
-        return None  # Wait for pending bets to settle
+        return None
     if balance < round.initial_bankroll * 0.1:
         return "balance_critical"
     return None
-
-
-def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None = None) -> int:
-    leagues = league_ids or TIER1_LEAGUE_IDS
-
-    today = datetime.now(ZoneInfo("UTC")).date()
-    tomorrow = today + timedelta(days=1)
-
-    today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=ZoneInfo("UTC"))
-    today_end = datetime.combine(tomorrow, datetime.min.time()).replace(tzinfo=ZoneInfo("UTC"))
-
-    existing_today = session.execute(
-        select(func.count(PlacedBet.id))
-        .where(PlacedBet.round_id == the_round.id)
-        .where(PlacedBet.placed_at >= today_start)
-    ).scalar() or 0
-
-    if existing_today >= MAX_BETS_PER_DAY:
-        logger.info(f"Max bets for today ({MAX_BETS_PER_DAY}) reached")
-        return 0
-
-    slots_remaining = MAX_BETS_PER_DAY - existing_today
-
-    fixtures = session.execute(
-        select(Fixture)
-        .join(FixtureOdds, FixtureOdds.fixture_id == Fixture.id)
-        .where(Fixture.status == "NS")
-        .where(Fixture.date >= today_start)
-        .where(Fixture.date < today_end)
-        .where(Fixture.league_id.in_(leagues))
-    ).scalars().all()
-
-    placed = 0
-    balance = get_current_balance(the_round, session)
-    client = APIFootballClient()
-
-    for fixture in fixtures:
-        if placed >= slots_remaining:
-            break
-
-        odds_row = session.execute(
-            select(FixtureOdds)
-            .where(FixtureOdds.fixture_id == fixture.id)
-        ).scalars().first()
-
-        if not odds_row:
-            continue
-
-        candidates = find_all_market_value_bets(
-            fixture.id, fixture.home_team_id, fixture.away_team_id,
-            odds_row, markets=BET_MARKETS, ev_threshold=EV_THRESHOLD_BET
-        )
-
-        if not candidates:
-            continue
-
-        candidate = candidates[0]
-
-        if candidate.decimal_odd < MIN_ODDS or candidate.decimal_odd > MAX_ODDS:
-            continue
-
-        ev = expected_value(candidate.our_prob, candidate.decimal_odd)
-        if ev < EV_THRESHOLD_BET:
-            continue
-
-        kf = fractional_kelly(candidate.our_prob, candidate.decimal_odd, KELLY_FRACTION)
-        if kf < 0.01:
-            continue
-
-        stake_amount = kelly_stake(
-            balance, candidate.our_prob, candidate.decimal_odd,
-            KELLY_FRACTION, MAX_STAKE_PCT
-        )
-        stake_amount = round(max(MIN_STAKE, min(stake_amount, MAX_STAKE)), 2)
-
-        if stake_amount > balance:
-            stake_amount = balance
-        if stake_amount < MIN_STAKE:
-            continue
-
-        existing = session.execute(
-            select(PlacedBet)
-            .where(PlacedBet.fixture_id == fixture.id)
-            .where(PlacedBet.round_id == the_round.id)
-            .where(PlacedBet.settled == False)
-        ).scalars().first()
-
-        if existing:
-            continue
-
-        bet = PlacedBet(
-            round_id=the_round.id,
-            fixture_id=fixture.id,
-            market=candidate.market,
-            outcome=candidate.outcome,
-            stake=stake_amount,
-            odds=candidate.decimal_odd,
-            our_prob=candidate.our_prob,
-            ev=ev,
-            kelly_fraction=kf,
-        )
-        session.add(bet)
-        placed += 1
-
-        logger.info(f"BET #{the_round.round_number} | {fixture.home_team_id} vs {fixture.away_team_id} | "
-                    f"{candidate.market}:{candidate.outcome} @ {candidate.decimal_odd:.2f} "
-                    f"(P={candidate.our_prob:.0%}, EV={ev:.1%}) | Stake: {stake_amount:.2f}")
-
-    session.commit()
-    logger.info(f"Placed {placed} bets this run")
-    return placed
-
-
-def settle_bets(the_round: BankrollRound, session) -> int:
-    pending = session.execute(
-        select(PlacedBet)
-        .where(PlacedBet.round_id == the_round.id)
-        .where(PlacedBet.settled == False)
-    ).scalars().all()
-
-    settled = 0
-    for bet in pending:
-        fixture = session.execute(
-            select(Fixture).where(Fixture.id == bet.fixture_id)
-        ).scalars().first()
-
-        if not fixture or fixture.status not in ("FT", "AET", "PEN"):
-            continue
-
-        if fixture.goals_home is None or fixture.goals_away is None:
-            continue
-
-        actual = _get_market_result(fixture, bet.market)
-
-        bet.actual_result = actual
-        bet.won = (actual == bet.outcome)
-        bet.pnl = (bet.odds - 1) * bet.stake if bet.won else -bet.stake
-        bet.settled = True
-        bet.settled_at = datetime.utcnow()
-        settled += 1
-
-        logger.info(f"SETTLED #{round.round_number} | {fixture.home_team_id} vs {fixture.away_team_id} | "
-                    f"{bet.market}:{bet.outcome} | {'WIN' if bet.won else 'LOSS'} "
-                    f"{bet.pnl:+.2f}")
-
-    session.commit()
-    logger.info(f"Settled {settled} bets")
-    return settled
 
 
 def _get_market_result(fixture: Fixture, market: str) -> str | None:
@@ -327,6 +335,198 @@ def _get_market_result(fixture: Fixture, market: str) -> str | None:
     return None
 
 
+def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None = None) -> tuple[int, list[dict]]:
+    leagues = league_ids or TIER1_LEAGUE_IDS
+
+    today = datetime.now(ZoneInfo("UTC")).date()
+    tomorrow = today + timedelta(days=1)
+
+    today_start = datetime.combine(today, datetime.min.time()).replace(tzinfo=ZoneInfo("UTC"))
+    today_end = datetime.combine(tomorrow, datetime.min.time()).replace(tzinfo=ZoneInfo("UTC"))
+
+    existing_today = session.execute(
+        select(func.count(PlacedBet.id))
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.placed_at >= today_start)
+    ).scalar() or 0
+
+    if existing_today >= MAX_BETS_PER_DAY:
+        logger.info(f"Max bets for today ({MAX_BETS_PER_DAY}) reached")
+        return 0, []
+
+    slots_remaining = MAX_BETS_PER_DAY - existing_today
+
+    fixtures = session.execute(
+        select(Fixture)
+        .join(FixtureOdds, FixtureOdds.fixture_id == Fixture.id)
+        .where(Fixture.status == "NS")
+        .where(Fixture.date >= today_start)
+        .where(Fixture.date < today_end)
+        .where(Fixture.league_id.in_(leagues))
+    ).scalars().all()
+
+    placed_bets = []
+    placed = 0
+    balance = get_current_balance(the_round, session)
+    total_staked_today = 0.0
+    client = APIFootballClient()
+
+    for fixture in fixtures:
+        if placed >= slots_remaining:
+            break
+        if total_staked_today >= MAX_TOTAL_STAKE_PER_DAY:
+            logger.info(f"Max total stake per day ({MAX_TOTAL_STAKE_PER_DAY}) reached")
+            break
+
+        remaining_balance = balance - total_staked_today
+        if remaining_balance < MIN_STAKE:
+            break
+
+        odds_row = session.execute(
+            select(FixtureOdds)
+            .where(FixtureOdds.fixture_id == fixture.id)
+        ).scalars().first()
+
+        if not odds_row:
+            continue
+
+        all_candidates = []
+        for market in BET_MARKETS:
+            model_probs = get_model_prediction(market, fixture.home_team_id, fixture.away_team_id)
+            if not model_probs:
+                continue
+
+            candidates = find_value_bets(
+                model_probs=model_probs,
+                odds_row=odds_row,
+                market=market,
+                fixture_id=fixture.id,
+                ev_threshold=EV_THRESHOLD_BET,
+            )
+            all_candidates.extend(candidates)
+
+        if not all_candidates:
+            continue
+
+        all_candidates.sort(key=lambda x: x['ev'], reverse=True)
+        candidate = all_candidates[0]
+
+        if candidate['decimal_odd'] < MIN_ODDS or candidate['decimal_odd'] > MAX_ODDS:
+            continue
+
+        ev = candidate['ev']
+        if ev < EV_THRESHOLD_BET:
+            continue
+
+        kf = candidate['kelly_fraction']
+        if kf < 0.01:
+            continue
+
+        stake_amount = kelly_stake(
+            remaining_balance, candidate['our_prob'], candidate['decimal_odd'],
+            KELLY_FRACTION, MAX_STAKE_PCT
+        )
+        stake_amount = round(max(MIN_STAKE, min(stake_amount, MAX_STAKE, remaining_balance)), 2)
+
+        if stake_amount < MIN_STAKE:
+            continue
+
+        existing = session.execute(
+            select(PlacedBet)
+            .where(PlacedBet.fixture_id == fixture.id)
+            .where(PlacedBet.round_id == the_round.id)
+            .where(PlacedBet.settled == False)
+        ).scalars().first()
+
+        if existing:
+            continue
+
+        home_team = session.execute(select(Team).where(Team.id == fixture.home_team_id)).scalar_one_or_none()
+        away_team = session.execute(select(Team).where(Team.id == fixture.away_team_id)).scalar_one_or_none()
+        league = session.execute(select(League).where(League.id == fixture.league_id)).scalar_one_or_none()
+
+        bet = PlacedBet(
+            round_id=the_round.id,
+            fixture_id=fixture.id,
+            market=candidate['market'],
+            outcome=candidate['outcome'],
+            stake=stake_amount,
+            odds=candidate['decimal_odd'],
+            our_prob=candidate['our_prob'],
+            ev=ev,
+            kelly_fraction=kf,
+        )
+        session.add(bet)
+        total_staked_today += stake_amount
+        placed += 1
+
+        home_name = home_team.name if home_team else str(fixture.home_team_id)
+        away_name = away_team.name if away_team else str(fixture.away_team_id)
+        league_name = league.name if league else ""
+
+        placed_bets.append({
+            'home': home_name,
+            'away': away_name,
+            'league': league_name,
+            'market': candidate['market'],
+            'outcome': candidate['outcome'],
+            'odds': candidate['decimal_odd'],
+            'prob': candidate['our_prob'],
+            'ev': ev,
+            'kelly': kf,
+            'stake': stake_amount,
+            'fixture_date': fixture.date.strftime('%Y-%m-%d %H:%M') if fixture.date else '',
+        })
+
+        logger.info(f"BET #{the_round.round_number} | {home_name} vs {away_name} | "
+                    f"{candidate['market']}:{candidate['outcome']} @ {candidate['decimal_odd']:.2f} "
+                    f"(P={candidate['our_prob']:.0%}, EV={ev:.1%}) | Stake: {stake_amount:.2f}")
+
+    session.commit()
+    logger.info(f"Placed {placed} bets, staked £{total_staked_today:.2f}")
+    return placed, placed_bets
+
+
+def settle_bets(the_round: BankrollRound, session) -> tuple[int, float]:
+    pending = session.execute(
+        select(PlacedBet)
+        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.settled == False)
+    ).scalars().all()
+
+    settled = 0
+    total_pnl = 0.0
+
+    for bet in pending:
+        fixture = session.execute(
+            select(Fixture).where(Fixture.id == bet.fixture_id)
+        ).scalars().first()
+
+        if not fixture or fixture.status not in ("FT", "AET", "PEN"):
+            continue
+
+        if fixture.goals_home is None or fixture.goals_away is None:
+            continue
+
+        actual = _get_market_result(fixture, bet.market)
+
+        bet.actual_result = actual
+        bet.won = (actual == bet.outcome)
+        bet.pnl = (bet.odds - 1) * bet.stake if bet.won else -bet.stake
+        bet.settled = True
+        bet.settled_at = datetime.utcnow()
+        settled += 1
+        total_pnl += bet.pnl
+
+        logger.info(f"SETTLED #{the_round.round_number} | {fixture.home_team_id} vs {fixture.away_team_id} | "
+                    f"{bet.market}:{bet.outcome} | {'WIN' if bet.won else 'LOSS'} "
+                    f"{bet.pnl:+.2f}")
+
+    session.commit()
+    logger.info(f"Settled {settled} bets, P/L: {total_pnl:+.2f}")
+    return settled, total_pnl
+
+
 def check_and_reset(session) -> BankrollRound:
     round = get_or_create_round(session)
     reason = check_reset_condition(round, session)
@@ -347,32 +547,32 @@ def show_status(round: BankrollRound | None, session):
     balance = get_current_balance(round, session)
     pending = session.execute(
         select(func.count(PlacedBet.id))
-        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.round_id == round.id)
         .where(PlacedBet.settled == False)
     ).scalar() or 0
 
     settled = session.execute(
         select(func.count(PlacedBet.id))
-        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.round_id == round.id)
         .where(PlacedBet.settled == True)
     ).scalars().first() or 0
 
     wins = session.execute(
         select(func.count(PlacedBet.id))
-        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.round_id == round.id)
         .where(PlacedBet.settled == True)
         .where(PlacedBet.won == True)
     ).scalars().first() or 0
 
     total_staked = session.execute(
         select(func.sum(PlacedBet.stake))
-        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.round_id == round.id)
         .where(PlacedBet.settled == True)
     ).scalar() or 0.0
 
     total_pnl = session.execute(
         select(func.sum(PlacedBet.pnl))
-        .where(PlacedBet.round_id == the_round.id)
+        .where(PlacedBet.round_id == round.id)
         .where(PlacedBet.settled == True)
     ).scalar() or 0.0
 
@@ -406,48 +606,46 @@ def show_history(session, limit: int = 10):
               f"{r.reason or ''} [{status}]")
 
 
-def get_round_stats(round: BankrollRound, session) -> dict:
-    balance = get_current_balance(round, session)
-    pending = session.execute(
-        select(func.count(PlacedBet.id))
-        .where(PlacedBet.round_id == the_round.id)
-        .where(PlacedBet.settled == False)
-    ).scalar() or 0
-    settled = session.execute(
-        select(func.count(PlacedBet.id))
-        .where(PlacedBet.round_id == the_round.id)
-        .where(PlacedBet.settled == True)
-    ).scalars().first() or 0
-    wins = session.execute(
-        select(func.count(PlacedBet.id))
-        .where(PlacedBet.round_id == the_round.id)
-        .where(PlacedBet.settled == True)
-        .where(PlacedBet.won == True)
-    ).scalars().first() or 0
-    total_staked = session.execute(
-        select(func.sum(PlacedBet.stake))
-        .where(PlacedBet.round_id == the_round.id)
-        .where(PlacedBet.settled == True)
-    ).scalar() or 0.0
-    total_pnl = session.execute(
-        select(func.sum(PlacedBet.pnl))
-        .where(PlacedBet.round_id == the_round.id)
-        .where(PlacedBet.settled == True)
-    ).scalar() or 0.0
+def send_bets_alert(bets: list[dict], round_num: int):
+    """Send Discord alert with nicely formatted placed bets."""
+    if not bets:
+        return
 
-    return {
-        "round_number": round.round_number,
-        "balance": balance,
-        "initial": round.initial_bankroll,
-        "roi_pct": (total_pnl / total_staked * 100) if total_staked > 0 else 0,
-        "settled": settled,
-        "pending": pending,
-        "wins": wins,
-        "total_staked": total_staked,
-        "total_pnl": total_pnl,
-        "started_at": round.started_at.isoformat() if round.started_at else None,
-        "is_active": round.is_active,
-    }
+    from src.betting.alerts import BettingAlerts
+    alerts = BettingAlerts(channels=["discord"], min_ev=5.0, min_odds=1.5, min_kelly=0.03)
+
+    total_stake = sum(b['stake'] for b in bets)
+
+    msg = f"🤖 **#{round_num} PLACED {len(bets)} BET(S)**\n\n"
+
+    for i, bet in enumerate(bets, 1):
+        market_emoji = {
+            'btts': '⚽',
+            'ou25': '🥅',
+            'ou15': '🥅',
+            'h2h': '🏆',
+        }.get(bet['market'], '📊')
+
+        outcome_emoji = {
+            'Yes': '✅', 'No': '❌',
+            'Over': '⬆️', 'Under': '⬇️',
+            '1': '🏠', 'X': '⬜', '2': '✈️',
+        }.get(bet['outcome'], bet['outcome'])
+
+        msg += f"{market_emoji} **{bet['home']}** vs **{bet['away']}**\n"
+        msg += f"   └ {bet['market'].upper()} **{bet['outcome']}** {outcome_emoji} @ {bet['odds']:.2f}\n"
+        msg += f"   └ P={bet['prob']:.0%} | EV={bet['ev']:.1%} | Kelly={bet['kelly']:.0%}\n"
+        msg += f"   └ Stake: £{bet['stake']:.2f} | {bet['league']} | {bet['fixture_date']}\n"
+        msg += "\n"
+
+    msg += f"─────────────────────\n"
+    msg += f"Total stake: £{total_stake:.2f}\n"
+
+    try:
+        alerts.send_message(msg)
+        logger.info(f"Sent Discord alert for {len(bets)} bets")
+    except Exception as e:
+        logger.warning(f"Failed to send bets alert: {e}")
 
 
 def run_pipeline(league_ids: list[int] | None = None, bet_only: bool = False, settle_only: bool = False):
@@ -460,50 +658,25 @@ def run_pipeline(league_ids: list[int] | None = None, bet_only: bool = False, se
         logger.info(f"Auto-bet pipeline | Round #{round.round_number} | "
                      f"Balance: {get_current_balance(round, session):.2f}")
 
+        placed_bets = []
+
         if not settle_only:
-            placed = place_bets(round, session, league_ids)
+            placed, placed_bets = place_bets(round, session, league_ids)
 
-            alerts = BettingAlerts(channels=["discord"], min_ev=5.0, min_odds=1.5, min_kelly=0.03)
-            pending = session.execute(
-                select(PlacedBet)
-                .where(PlacedBet.round_id == the_round.id)
-                .where(PlacedBet.settled == False)
-                .order_by(PlacedBet.ev.desc())
-                .limit(2)
-            ).scalars().all()
-
-            for bet in pending:
-                fixture = session.execute(
-                    select(Fixture).where(Fixture.id == bet.fixture_id)
-                ).scalars().first()
-                if fixture:
-                    home_team = session.execute(
-                        select(Team).where(Team.id == fixture.home_team_id)
-                    ).scalar_one_or_none()
-                    away_team = session.execute(
-                        select(Team).where(Team.id == fixture.away_team_id)
-                    ).scalar_one_or_none()
-                    league = session.execute(
-                        select(League).where(League.id == fixture.league_id)
-                    ).scalar_one_or_none()
-                    alerts.send_bet_alert(BetAlert(
-                        home_team=home_team.name if home_team else str(fixture.home_team_id),
-                        away_team=away_team.name if away_team else str(fixture.away_team_id),
-                        home_team_id=fixture.home_team_id,
-                        away_team_id=fixture.away_team_id,
-                        league=league.name if league else None,
-                        market=bet.market,
-                        outcome=bet.outcome,
-                        odds=bet.odds,
-                        our_prob=bet.our_prob,
-                        ev=bet.ev,
-                        kelly_fraction=bet.kelly_fraction,
-                        stake=bet.stake,
-                    ))
+            if placed_bets:
+                send_bets_alert(placed_bets, round.round_number)
 
         if not bet_only:
-            settle_bets(round, session)
-            check_and_reset(session)
+            settled, total_pnl = settle_bets(round, session)
+            if settled > 0:
+                alerts = BettingAlerts(channels=["discord"], min_ev=5.0, min_odds=1.5, min_kelly=0.03)
+                alerts.send_message(
+                    f"🔔 **SETTLED {settled} BET(S)**\n"
+                    f"P/L: {total_pnl:+.2f}\n"
+                    f"Round #{round.round_number} Balance: {get_current_balance(round, session):.2f}"
+                )
+
+            round = check_and_reset(session)
 
         balance = get_current_balance(round, session)
         logger.info(f"Pipeline complete | Round #{round.round_number} | Balance: {balance:.2f}")
