@@ -11,6 +11,30 @@
 6. **Fix bugs incrementally** - Don't build everything before testing; fix errors as they appear
 7. **session.merge() uses PK not unique constraints** - merge() checks primary key; for unique constraints (league_id, season, team_id), must query first
 8. **Standings upsert pattern** - Query by unique columns first, update existing or insert new
+9. **Test file organization** - Each module has tests in `tests/` directory alongside source
+10. **Verify imports work first** - Always run `python -c "from module import something"` before assuming code loads
+
+### Event-Driven Architecture Lessons
+1. **Events are immutable** - Once created, event payload should not be modified
+2. **Handler errors shouldn't block emission** - Wrap handler calls in try/except
+3. **Event types as enum** - Use EventType enum for type safety and discoverability
+4. **Global emitter pattern** - Singleton emitter for simple in-process events
+5. **Convenience emit functions** - Helper functions make events easier to emit correctly
+6. **Subscription cleanup** - Call unsubscribe when handler is no longer needed
+
+### Security Lessons
+1. **XSS prevention** - Sanitize ALL user-rendered content before display
+2. **Validate before sanitizing** - Check for suspicious patterns BEFORE HTML encoding
+3. **Log injection** - Remove newlines/carriage returns from log inputs
+4. **Rate limiting** - Sliding window better than fixed window for smooth limiting
+5. **Event signatures** - HMAC-SHA256 + timestamp + sequence for replay protection
+6. **Security headers** - CSP, X-Frame-Options, etc. protect against common attacks
+
+### Testing Lessons
+1. **Run tests after implementation** - Don't wait until end to test
+2. **Test both success and failure paths** - Check invalid inputs are rejected
+3. **pytest available** - Use `/opt/projects/bootball/.venv/bin/python -m pytest`
+4. **Import test ordering** - Tests should be order-independent
 
 ### API-Football Lessons
 1. **Rate limiting** - API has daily limits (100k calls/day); cache responses to save calls

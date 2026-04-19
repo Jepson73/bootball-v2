@@ -81,22 +81,22 @@
 ## PHASE 1: Event Foundation (Week 1-2)
 
 ### 1.1 Event Base System
-- [ ] Create `src/events/base.py` - BaseEvent class with timestamp, type, payload
-- [ ] Create `src/events/registry.py` - Event type registry
-- [ ] Tests: `tests/events/test_base.py`
-- [ ] Manual test: Emit event, verify handlers called
+- [x] Create `src/events/base.py` - BaseEvent class with timestamp, type, payload
+- [x] Create `src/events/registry.py` - Event type registry (via EventType enum)
+- [x] Tests: `tests/events/test_base.py`
+- [x] Manual test: Emit event, verify handlers called
 
 ### 1.2 Fixture Events
-- [ ] Create `src/events/fixture_events.py`
+- [x] Create `src/events/fixture_events.py`
   - `FixtureScheduled` - New fixture added
   - `FixtureUpdated` - Fixture details changed
   - `FixtureCompleted` - Match finished (FT)
 - [ ] Create `src/handlers/fixture_handler.py`
-- [ ] Tests: `tests/events/test_fixture.py`
+- [x] Tests: `tests/events/test_fixture.py`
 - [ ] Manual test: Fetch fixture → emit event → verify DB updated
 
 ### 1.3 Odds Events
-- [ ] Create `src/events/odds_events.py`
+- [x] Create `src/events/odds_events.py`
   - `OddsUpdated` - Odds changed for fixture
   - `OddsStale` - Odds older than threshold
 - [ ] Create `src/handlers/odds_handler.py`
@@ -104,16 +104,15 @@
 - [ ] Manual test: Update odds → emit event → verify predictions recalculated
 
 ### 1.4 Settlement Events
-- [ ] Create `src/events/settlement_events.py`
+- [x] Create `src/events/prediction_events.py`
   - `PredictionCreated` - New prediction generated
   - `PredictionSettled` - Prediction resolved
-  - `BetSettled` - Bet resolved with P&L
 - [ ] Create `src/handlers/settlement_handler.py`
 - [ ] Tests: `tests/events/test_settlement.py`
 - [ ] Manual test: Complete fixture → settle predictions → verify P&L
 
 ### 1.5 Model Events
-- [ ] Create `src/events/model_events.py`
+- [x] Create `src/events/model_events.py`
   - `ModelTrained` - New model version trained
   - `ModelDegraded` - Drift detected
   - `ModelActivated` - Model made live
@@ -121,7 +120,7 @@
 - [ ] Tests: `tests/events/test_model.py`
 
 ### 1.6 Git Checkpoint
-- [ ] Commit all Phase 1 work
+- [x] Commit all Phase 1 work
 - [ ] Tag: `v0.1-event-base`
 
 ---
@@ -129,8 +128,8 @@
 ## PHASE 2: Handler Infrastructure (Week 3-4)
 
 ### 2.1 Settle Handler (From daily_run)
-- [ ] Refactor `scripts/settle_fixtures.py` to emit events
-- [ ] Create `src/handlers/settle_handler.py`
+- [x] Refactor `scripts/settle_fixtures.py` to emit events
+- [x] Create `src/handlers/settlement_handler.py`
   - Consumes `FixtureCompleted`
   - Updates predictions
   - Calculates P&L
