@@ -676,7 +676,7 @@ def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, lea
             model = obj
             calibrator = None
 
-        # Get team stats
+        # Get team stats - extract values before session closes
         with get_session() as s:
             home_standing = s.execute(
                 select(Standing).where(Standing.team_id == home_team_id).where(Standing.season >= 2024)
@@ -685,23 +685,26 @@ def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, lea
                 select(Standing).where(Standing.team_id == away_team_id).where(Standing.season >= 2024)
             ).first()
 
-        if not home_standing or not away_standing:
-            return None
+            if not home_standing or not away_standing:
+                return None
 
-        hs = home_standing[0]
-        as_ = away_standing[0]
+            hs = home_standing[0]
+            as_ = away_standing[0]
 
-        features = np.array([[
-            float(hs.rank or 15),
-            float(as_.rank or 15),
-            float((hs.goals_for or 1) - (hs.goals_against or 1)),
-            float((as_.goals_for or 1) - (as_.goals_against or 1)),
-            float(hs.goals_for or 1),
-            float(as_.goals_for or 1),
-            float(hs.goals_against or 1),
-            float(as_.goals_against or 1),
-            float(abs((hs.rank or 15) - (as_.rank or 15))),
-        ]])
+            # Extract all needed values while session is open
+            features = [
+                float(hs.rank or 15),
+                float(as_.rank or 15),
+                float((hs.goals_for or 1) - (hs.goals_against or 1)),
+                float((as_.goals_for or 1) - (as_.goals_against or 1)),
+                float(hs.goals_for or 1),
+                float(as_.goals_for or 1),
+                float(hs.goals_against or 1),
+                float(as_.goals_against or 1),
+                float(abs((hs.rank or 15) - (as_.rank or 15))),
+            ]
+
+        features = np.array([features])
 
         # Get raw probability
         raw_probs = model.predict_proba(features)[0]
@@ -800,13 +803,13 @@ def api_predictions():
 
                 cache_misses += 1
 
-                # Try trained model first, fall back to PredictionRecord
+                # Try trained model first
                 model_prob = _get_model_prediction(market, fix.home_team_id, fix.away_team_id, fix.league_id, model_errors)
-                record_prob = pred_records.get(market).our_prob if pred_records.get(market) else None
-                prob = model_prob if model_prob is not None else record_prob
 
-                if prob is None:
-                    continue
+                if model_prob is None:
+                    continue  # No fallback to stale PredictionRecord
+
+                prob = model_prob
 
                 if market == 'btts':
                     yes_odds = btts_row.odd_btts_yes if btts_row else None
@@ -910,7 +913,7 @@ def api_predictions():
                     'calibrated_prob': round(calibrated_prob, 3),
                     'odds': odds,
                     'ev': ev,
-                    'ev_positive': ev > 0,
+                    'ev_positive': bool(ev > 0),
                     'confidence': {
                         'low': round(confidence_low, 3),
                         'high': round(confidence_high, 3),
