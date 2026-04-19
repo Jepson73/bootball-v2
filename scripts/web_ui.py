@@ -946,7 +946,7 @@ def api_predictions():
         if model_errors:
             total_errors = sum(model_errors.values())
             error_summary = ', '.join(f"{m}: {c}" for m, c in sorted(model_errors.items()))
-            logger.warning(f"Model prediction errors ({total_errors}): {error_summary}")
+            logger.warning(f"Model prediction errors ({total_errors}/{len(fixtures[:100]) * len(markets)}): {error_summary}")
 
         return jsonify(results)
 
