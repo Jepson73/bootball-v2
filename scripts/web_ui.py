@@ -651,6 +651,74 @@ def api_leagues():
 
 @app.route('/api/predictions')
 @require_auth
+def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, league_id: int) -> float | None:
+    """Get prediction from trained LightGBM model.
+
+    Returns probability or None if model not available.
+    """
+    import pickle
+    import os
+
+    model_path = f'/opt/projects/bootball/data/model_{market}.pkl'
+    if not os.path.exists(model_path):
+        return None
+
+    try:
+        with open(model_path, 'rb') as f:
+            model_data = pickle.load(f)
+
+        model = model_data['model']
+        calibrator = model_data['calibrator']
+
+        # Get team stats
+        with get_session() as s:
+            home_standing = s.execute(
+                select(Standing).where(Standing.team_id == home_team_id).where(Standing.season >= 2024)
+            ).first()
+            away_standing = s.execute(
+                select(Standing).where(Standing.team_id == away_team_id).where(Standing.season >= 2024)
+            ).first()
+
+        if not home_standing or not away_standing:
+            return None
+
+        hs = home_standing[0]
+        as_ = away_standing[0]
+
+        features = np.array([[
+            float(hs.rank or 15),
+            float(as_.rank or 15),
+            float((hs.goals_for or 1) - (hs.goals_against or 1)),
+            float((as_.goals_for or 1) - (as_.goals_against or 1)),
+            float(hs.goals_for or 1),
+            float(as_.goals_for or 1),
+            float(hs.goals_against or 1),
+            float(as_.goals_against or 1),
+            float(abs((hs.rank or 15) - (as_.rank or 15))),
+        ]])
+
+        # Get raw probability
+        raw_probs = model.predict_proba(features)[0]
+
+        # For binary, use positive class
+        if len(raw_probs) == 2:
+            raw_prob = float(raw_probs[1])
+        else:
+            raw_prob = float(np.max(raw_probs))
+
+        # Apply isotonic calibration
+        if calibrator:
+            calibrated = calibrator.predict([raw_prob])[0]
+            calibrated = max(0.01, min(0.99, calibrated))
+            return calibrated
+
+        return raw_prob
+
+    except Exception as e:
+        logger.warning(f"Model prediction error for {market}: {e}")
+        return None
+
+
 def api_predictions():
     days_str = request.args.get('days', '7')
     league_filter = request.args.get('league', '')
@@ -717,12 +785,19 @@ def api_predictions():
 
                 cache_misses += 1
 
+                # Try trained model first, fall back to PredictionRecord
+                model_prob = _get_model_prediction(market, fix.home_team_id, fix.away_team_id, fix.league_id)
+                record_prob = pred_records.get(market).our_prob if pred_records.get(market) else None
+                prob = model_prob if model_prob is not None else record_prob
+
+                if prob is None:
+                    continue
+
                 if market == 'btts':
-                    prob = pred_records.get('btts').our_prob if pred_records.get('btts') else None
                     yes_odds = btts_row.odd_btts_yes if btts_row else None
                     no_odds = btts_row.odd_btts_no if btts_row else None
                     # Calculate EV for both outcomes and pick the better one
-                    if prob is not None and yes_odds and no_odds and yes_odds > 0 and no_odds > 0:
+                    if yes_odds and no_odds and yes_odds > 0 and no_odds > 0:
                         ev_yes = (prob * yes_odds) - 1
                         ev_no = ((1 - prob) * no_odds) - 1
                         if ev_yes >= ev_no and ev_yes > 0:
@@ -731,15 +806,14 @@ def api_predictions():
                             odds, pick, ev = no_odds, 'No', ev_no
                         else:
                             continue
-                    elif prob is not None and yes_odds and yes_odds > 0:
+                    elif yes_odds and yes_odds > 0:
                         odds, pick, ev = yes_odds, 'Yes', (prob * yes_odds) - 1
                     else:
                         continue
                 elif market == 'ou25':
-                    prob = pred_records.get('ou25').our_prob if pred_records.get('ou25') else None
                     over_odds = ou_row.odd_over if ou_row else None
                     under_odds = ou_row.odd_under if ou_row else None
-                    if prob is not None and over_odds and under_odds and over_odds > 0 and under_odds > 0:
+                    if over_odds and under_odds and over_odds > 0 and under_odds > 0:
                         ev_over = (prob * over_odds) - 1
                         ev_under = ((1 - prob) * under_odds) - 1
                         if ev_over >= ev_under and ev_over > 0:
@@ -748,15 +822,14 @@ def api_predictions():
                             odds, pick, ev = under_odds, 'Under', ev_under
                         else:
                             continue
-                    elif prob is not None and over_odds and over_odds > 0:
+                    elif over_odds and over_odds > 0:
                         odds, pick, ev = over_odds, 'Over', (prob * over_odds) - 1
                     else:
                         continue
                 elif market == 'ou15':
-                    prob = pred_records.get('ou15').our_prob if pred_records.get('ou15') else None
                     over_odds = ou_row.odd_over15 if ou_row else None
                     under_odds = ou_row.odd_under15 if ou_row else None
-                    if prob is not None and over_odds and under_odds and over_odds > 0 and under_odds > 0:
+                    if over_odds and under_odds and over_odds > 0 and under_odds > 0:
                         ev_over = (prob * over_odds) - 1
                         ev_under = ((1 - prob) * under_odds) - 1
                         if ev_over >= ev_under and ev_over > 0:
@@ -765,17 +838,16 @@ def api_predictions():
                             odds, pick, ev = under_odds, 'Under', ev_under
                         else:
                             continue
-                    elif prob is not None and over_odds and over_odds > 0:
+                    elif over_odds and over_odds > 0:
                         odds, pick, ev = over_odds, 'Over', (prob * over_odds) - 1
                     else:
                         continue
                 elif market == 'h2h':
-                    prob = pred_records.get('h2h').our_prob if pred_records.get('h2h') else None
                     home_odds = h2h_row.odd_home if h2h_row else None
                     draw_odds = h2h_row.odd_draw if h2h_row else None
                     away_odds = h2h_row.odd_away if h2h_row else None
                     # H2H is 3-way, pick highest EV
-                    if prob is not None and home_odds and draw_odds and away_odds:
+                    if home_odds and draw_odds and away_odds:
                         ev_home = (prob * home_odds) - 1
                         ev_draw = (0.33 * draw_odds) - 1  # Simplified
                         ev_away = ((1 - prob) * away_odds) - 1
@@ -788,7 +860,7 @@ def api_predictions():
                             odds, pick, ev = away_odds, 'Away', ev_away
                         else:
                             continue
-                    elif prob is not None and home_odds and home_odds > 0:
+                    elif home_odds and home_odds > 0:
                         odds, pick, ev = home_odds, 'Home', (prob * home_odds) - 1
                     else:
                         continue
@@ -1759,6 +1831,25 @@ def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
             s.add(retrain_event)
 
         s.commit()
+
+    # Save model and calibrator to disk for predictions to use
+    import pickle
+    import os
+    model_dir = '/opt/projects/bootball/data'
+    os.makedirs(model_dir, exist_ok=True)
+
+    model_data = {
+        'model': model,
+        'calibrator': calibrator,
+        'market': market,
+        'version': version_number,
+        'features_used': ['rank', 'goal_diff', 'goals_for', 'goals_against', 'rank_diff'],
+    }
+
+    model_path = os.path.join(model_dir, f'model_{market}.pkl')
+    with open(model_path, 'wb') as f:
+        pickle.dump(model_data, f)
+    logger.info(f"Saved {market} model to {model_path}")
 
     logger.info(f"Trained {market} v{version_number}: Brier={brier_calibrated:.4f}, ECE={ece:.4f}, Accuracy={accuracy:.3f}")
 
