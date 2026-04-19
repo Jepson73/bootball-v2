@@ -1295,7 +1295,6 @@ def admin_page():
             <button class="btn btn-primary" onclick="runDailyRun()">Run Daily Run</button>
             <button class="btn btn-primary" onclick="placeBets()">Place Bets</button>
             <button class="btn btn-danger" onclick="settleBets()">Settle Bets</button>
-            <button class="btn btn-primary" onclick="trainModels()">Train Models</button>
         </div>
     </div>
     <div class="col">
@@ -1315,6 +1314,20 @@ def admin_page():
             <div class="card-title">Model Status</div>
             <div id="modelStats">Loading...</div>
         </div>
+    </div>
+</div>
+
+<h3>Train Individual Market</h3>
+<div class="card" style="margin-bottom: 16px;">
+    <div style="display: flex; gap: 8px; align-items: center;">
+        <select id="trainMarketSelect">
+            <option value="btts">BTTS</option>
+            <option value="ou25">Over/Under 2.5</option>
+            <option value="ou15">Over/Under 1.5</option>
+            <option value="h2h">Head to Head</option>
+        </select>
+        <button class="btn btn-primary" onclick="trainSelectedMarket()">Train Selected Market</button>
+        <button class="btn btn-secondary" onclick="trainAllMarkets()">Train All Markets</button>
     </div>
 </div>
 
@@ -1352,11 +1365,53 @@ function settleBets() {
         .then(d => showMsg(d.message || 'Done', 'success'));
 }
 
-function trainModels() {
-    const btn = document.querySelector('button[onclick="trainModels()"]');
+function trainSelectedMarket() {
+    const market = document.getElementById('trainMarketSelect').value;
+    const btn = document.querySelector('button[onclick="trainSelectedMarket()"]');
     btn.disabled = true;
-    btn.textContent = 'Training...';
-    showMsg('Training models with isotonic calibration...', 'info');
+    btn.textContent = 'Training ' + market + '...';
+    showMsg('Training ' + market + ' with isotonic calibration...', 'info');
+
+    fetch('/api/admin/train', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({market: market}),
+        credentials: 'include'
+    })
+        .then(r => r.json())
+        .then(d => {
+            if (d.ok) {
+                let msg = 'Trained ' + market + '\n\n';
+                for (const [mkt, result] of Object.entries(d.results)) {
+                    if (result.error) {
+                        msg += mkt + ': ERROR - ' + result.error + '\n';
+                    } else {
+                        msg += mkt + ' v' + result.version + ': ';
+                        msg += 'Brier=' + result.brier_score + ' (raw=' + result.brier_raw + ') ';
+                        msg += ' ECE=' + result.ece + ' Acc=' + (result.accuracy * 100).toFixed(1) + '%';
+                        msg += ' [' + result.sample_size + ' samples]\n';
+                    }
+                }
+                showMsg(msg, 'success');
+            } else {
+                showMsg('Training failed: ' + (d.error || 'Unknown error'), 'error');
+            }
+            btn.disabled = false;
+            btn.textContent = 'Train Selected Market';
+            loadModelStats();
+        })
+        .catch(e => {
+            showMsg('Training error: ' + e, 'error');
+            btn.disabled = false;
+            btn.textContent = 'Train Selected Market';
+        });
+}
+
+function trainAllMarkets() {
+    const btn = document.querySelector('button[onclick="trainAllMarkets()"]');
+    btn.disabled = true;
+    btn.textContent = 'Training All...';
+    showMsg('Training all markets with isotonic calibration...', 'info');
 
     fetch('/api/admin/train', {
         method: 'POST',
@@ -1374,7 +1429,7 @@ function trainModels() {
                     } else {
                         msg += market + ' v' + result.version + ': ';
                         msg += 'Brier=' + result.brier_score + ' (raw=' + result.brier_raw + ') ';
-                        msg += ' ECE=' + result.ece + ' Accuracy=' + (result.accuracy * 100).toFixed(1) + '%';
+                        msg += ' ECE=' + result.ece + ' Acc=' + (result.accuracy * 100).toFixed(1) + '%';
                         msg += ' [' + result.sample_size + ' samples]\n';
                     }
                 }
@@ -1383,13 +1438,13 @@ function trainModels() {
                 showMsg('Training failed: ' + (d.error || 'Unknown error'), 'error');
             }
             btn.disabled = false;
-            btn.textContent = 'Train Models';
+            btn.textContent = 'Train All Markets';
             loadModelStats();
         })
         .catch(e => {
             showMsg('Training error: ' + e, 'error');
             btn.disabled = false;
-            btn.textContent = 'Train Models';
+            btn.textContent = 'Train All Markets';
         });
 }
 
