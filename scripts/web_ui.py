@@ -649,8 +649,6 @@ def api_leagues():
         return jsonify(grouped)
 
 
-@app.route('/api/predictions')
-@require_auth
 def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, league_id: int) -> float | None:
     """Get prediction from trained LightGBM model.
 
@@ -730,6 +728,8 @@ def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, lea
         return None
 
 
+@app.route('/api/predictions')
+@require_auth
 def api_predictions():
     days_str = request.args.get('days', '7')
     league_filter = request.args.get('league', '')
