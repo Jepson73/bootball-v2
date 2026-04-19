@@ -24,6 +24,14 @@ class Settings(BaseSettings):
     calendar_year_leagues: list[int] = Field(default_factory=lambda: [1602, 253, 98, 176, 113, 1191])
     bootball_password: str = Field(default="changeme")
 
+    # Discord webhook for alerts
+    discord_webhook_url: str = Field(default="")
+
+    # Alert settings
+    alerts_enabled: bool = Field(default=True)
+    alerts_top_n: int = Field(default=5)
+    alerts_min_ev: float = Field(default=0.05)
+
     @property
     def current_season(self) -> int:
         """
