@@ -649,11 +649,12 @@ def api_leagues():
         return jsonify(grouped)
 
 
-def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, league_id: int) -> float | None:
+def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, league_id: int, error_counts: dict | None = None) -> float | None:
     """Get prediction from trained LightGBM model.
 
     Returns probability or None if model not available.
     Handles both old format (model only) and new format (dict with model+calibrator).
+    If error_counts dict is provided, errors are counted instead of logged.
     """
     import pickle
     import os
@@ -722,10 +723,11 @@ def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, lea
 
         return raw_prob
 
-        return raw_prob
-
     except Exception as e:
-        logger.warning(f"Model prediction error for {market}: {e}")
+        if error_counts is not None:
+            error_counts[market] = error_counts.get(market, 0) + 1
+        else:
+            logger.warning(f"Model prediction error for {market}: {e}")
         return None
 
 
@@ -757,6 +759,7 @@ def api_predictions():
         results = []
         cache_hits = 0
         cache_misses = 0
+        model_errors = {}
 
         for fix in fixtures[:100]:
             league_name = LEAGUE_NAMES.get(fix.league_id, '')
@@ -798,7 +801,7 @@ def api_predictions():
                 cache_misses += 1
 
                 # Try trained model first, fall back to PredictionRecord
-                model_prob = _get_model_prediction(market, fix.home_team_id, fix.away_team_id, fix.league_id)
+                model_prob = _get_model_prediction(market, fix.home_team_id, fix.away_team_id, fix.league_id, model_errors)
                 record_prob = pred_records.get(market).our_prob if pred_records.get(market) else None
                 prob = model_prob if model_prob is not None else record_prob
 
@@ -936,6 +939,11 @@ def api_predictions():
                 pred_result['away_name'] = away
                 pred_result['league_name'] = league_name
                 results.append(pred_result)
+
+        if model_errors:
+            total_errors = sum(model_errors.values())
+            error_summary = ', '.join(f"{m}: {c}" for m, c in sorted(model_errors.items()))
+            logger.warning(f"Model prediction errors ({total_errors}): {error_summary}")
 
         return jsonify(results)
 
