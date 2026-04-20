@@ -1471,13 +1471,19 @@ def api_predictions_recent():
             away = TEAM_NAMES.get(away_id, str(away_id))
             actual = f"{goals_home}-{goals_away}" if goals_home is not None else None
 
+            model_ver = None
+            if pred.model_version_id:
+                mv = s.execute(select(ModelVersion).where(ModelVersion.id == pred.model_version_id)).scalar_one_or_none()
+                if mv:
+                    model_ver = mv.version_name or f"v{mv.version_number}"
+
             results.append({
                 'fixture_id': pred.fixture_id,
                 'home': home,
                 'away': away,
                 'date': fix_date.isoformat() + 'Z' if fix_date else None,
                 'market': pred.market,
-                'model_version': pred.model_version_id,
+                'model_version': model_ver,
                 'predicted': pred.predicted_outcome,
                 'actual': actual,
                 'prob': pred.our_prob,
@@ -2622,9 +2628,16 @@ def betting_action():
                     home = TEAM_NAMES.get(fix.home_team_id, str(fix.home_team_id)) if fix else '?'
                     away = TEAM_NAMES.get(fix.away_team_id, str(fix.away_team_id)) if fix else '?'
                     fix_date = format_date(fix.date, tz_name) if fix else '-'
+
+                    model_ver = None
+                    if b.model_version_id:
+                        mv = s.execute(select(ModelVersion).where(ModelVersion.id == b.model_version_id)).scalar_one_or_none()
+                        if mv:
+                            model_ver = mv.version_name or f"v{mv.version_number}"
+
                     bets_list.append({
                         'home': home, 'away': away, 'date': fix_date, 'market': b.market,
-                        'model_version': b.model_version_id,
+                        'model_version': model_ver,
                         'outcome': b.outcome, 'stake': b.stake, 'odds': b.odds,
                         'ev': b.ev, 'settled': b.settled, 'won': b.won
                     })
