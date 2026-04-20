@@ -93,7 +93,7 @@ def main():
     logger.info(f"Updated {updated} fixtures")
 
     result = settle_all()
-    print(f"Settled: {result['bets_settled']}, P/L: {result['total_pnl']:+.2f}")
+    print(f"Settled: {result['bets_settled']} bets, {result['predictions_settled']} predictions, {result['value_bets_settled']} value bets, P/L: {result['bets_pnl']:+.2f}")
 
     if not args.no_auto_bet and not args.dry_run:
         check_and_place_bets()

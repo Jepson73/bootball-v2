@@ -227,16 +227,92 @@ def send_settlement_alert(bet_details: list[dict], total_pnl: float):
 
 
 def settle_all() -> dict:
-    """Settle pending bets. Does NOT fetch fixtures - caller should fetch first."""
+    """Settle pending bets and predictions. Does NOT fetch fixtures - caller should fetch first.
+
+    Settles:
+    - PlacedBets: actual bets placed by auto_bet (affects bankroll tracking)
+    - PredictionRecords: model predictions for tracking accuracy
+    - ValueBets: potential bet opportunities from daily_run (for analysis)
+    """
     init_db()
 
-    settled, total_pnl, bet_details = settle_placed_bets()
+    bets_settled, bets_pnl, bet_details = settle_placed_bets()
+    preds_settled = settle_predictions()
+    value_bets_settled = settle_value_bets()
 
     return {
-        'bets_settled': settled,
-        'total_pnl': total_pnl,
+        'bets_settled': bets_settled,
+        'predictions_settled': preds_settled,
+        'value_bets_settled': value_bets_settled,
+        'bets_pnl': bets_pnl,
         'bet_details': bet_details,
     }
+
+
+def settle_predictions() -> int:
+    """Settle unsettled PredictionRecords for completed fixtures.
+
+    Returns count of settled predictions.
+    """
+    from src.storage.models import PredictionRecord, Fixture
+
+    settled = 0
+    with get_session() as s:
+        unsettled = s.execute(
+            select(PredictionRecord, Fixture)
+            .join(Fixture, PredictionRecord.fixture_id == Fixture.id)
+            .where(PredictionRecord.settled == False)
+            .where(Fixture.status.in_(["FT", "AET", "PEN"]))
+        ).all()
+
+        for pred, fixture in unsettled:
+            actual = get_market_result(fixture, pred.market)
+            if actual:
+                pred.actual_outcome = actual
+                pred.won = (pred.predicted_outcome == actual)
+                pred.settled = True
+                pred.settled_at = datetime.utcnow()
+                settled += 1
+
+        if settled > 0:
+            s.commit()
+
+    logger.info(f"Settled {settled} predictions")
+    return settled
+
+
+def settle_value_bets() -> int:
+    """Settle unsettled ValueBets for completed fixtures.
+
+    ValueBets are potential bet opportunities found by daily_run.
+    They are for tracking/analysis only, not bankroll.
+
+    Returns count of settled value bets.
+    """
+    from src.storage.models import ValueBet, Fixture
+
+    settled = 0
+    with get_session() as s:
+        unsettled = s.execute(
+            select(ValueBet, Fixture)
+            .join(Fixture, ValueBet.fixture_id == Fixture.id)
+            .where(ValueBet.settled == False)
+            .where(Fixture.status.in_(["FT", "AET", "PEN"]))
+        ).all()
+
+        for bet, fixture in unsettled:
+            actual = get_market_result(fixture, bet.market)
+            if actual:
+                bet.settled = True
+                bet.result = actual
+                bet.won = (bet.outcome == actual)
+                settled += 1
+
+        if settled > 0:
+            s.commit()
+
+    logger.info(f"Settled {settled} value bets")
+    return settled
 
 
 if __name__ == '__main__':
