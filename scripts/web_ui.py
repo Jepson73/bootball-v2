@@ -451,7 +451,6 @@ def predictions_page():
     <button class="tab" data-market="h2h" onclick="setMarket(this, 'h2h')">1X2</button>
 </div>
 <div id="dateRow" style="margin-bottom: 24px; display: flex; gap: 8px; flex-wrap: wrap;">
-    <p style="color: #8b949e;">Loading dates...</p>
 </div>
 <div id="predictionsList">
     <p style="color: #8b949e;">Loading predictions...</p>
