@@ -1089,6 +1089,7 @@ def betting_page():
             <th>Date</th>
             <th>Match</th>
             <th>Market</th>
+            <th>Ver</th>
             <th>Pick</th>
             <th>Stake</th>
             <th>Odds</th>
@@ -1133,6 +1134,7 @@ function loadBets() {
                 '<td>' + b.date + '</td>' +
                 '<td>' + b.home + ' vs ' + b.away + '</td>' +
                 '<td>' + b.market + '</td>' +
+                '<td>' + (b.model_version || '-') + '</td>' +
                 '<td>' + b.outcome + '</td>' +
                 '<td>$' + b.stake + '</td>' +
                 '<td>' + b.odds + '</td>' +
@@ -1261,6 +1263,7 @@ def tracking_page():
             <th>Date</th>
             <th>Match</th>
             <th>Market</th>
+            <th>Ver</th>
             <th>Pick</th>
             <th>Prob</th>
             <th>Odds</th>
@@ -1328,6 +1331,7 @@ function loadTracking() {
                 '<td>' + formatLocalDateTime(r.date) + '</td>' +
                 '<td>' + r.home + ' vs ' + r.away + '</td>' +
                 '<td>' + (r.market || '') + '</td>' +
+                '<td>' + (r.model_version || '-') + '</td>' +
                 '<td>' + (r.predicted || '-') + '</td>' +
                 '<td>' + (r.prob ? (r.prob * 100).toFixed(0) + '%' : '-') + '</td>' +
                 '<td>' + (r.odds || '-') + '</td>' +
@@ -1473,6 +1477,7 @@ def api_predictions_recent():
                 'away': away,
                 'date': fix_date.isoformat() + 'Z' if fix_date else None,
                 'market': pred.market,
+                'model_version': pred.model_version_id,
                 'predicted': pred.predicted_outcome,
                 'actual': actual,
                 'prob': pred.our_prob,
@@ -2619,6 +2624,7 @@ def betting_action():
                     fix_date = format_date(fix.date, tz_name) if fix else '-'
                     bets_list.append({
                         'home': home, 'away': away, 'date': fix_date, 'market': b.market,
+                        'model_version': b.model_version_id,
                         'outcome': b.outcome, 'stake': b.stake, 'odds': b.odds,
                         'ev': b.ev, 'settled': b.settled, 'won': b.won
                     })
