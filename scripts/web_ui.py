@@ -1852,9 +1852,11 @@ def api_admin_maintenance():
         ).scalar() or 0
         results['pending_bets'] = pending_bets
 
+        non_cup_leagues = select(League.id).where(~League.name.ilike('%cup%'))
         orphaned = s.execute(
             select(Fixture)
             .where(Fixture.league_id.notin_(select(Standing.league_id).distinct()))
+            .where(Fixture.league_id.in_(non_cup_leagues))
             .limit(5)
         ).scalars().all()
         results['orphaned_fixtures'] = len(orphaned)
