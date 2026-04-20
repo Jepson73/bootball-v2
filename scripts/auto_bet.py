@@ -63,7 +63,7 @@ MAX_STAKE = 50.0
 MAX_TOTAL_STAKE_PER_DAY = 100.0
 MIN_ODDS = 1.5
 MAX_ODDS = 10.0
-BET_MARKETS = ["btts", "ou25", "ou15"]
+BET_MARKETS = ["h2h", "btts", "ou25", "ou15"]
 MAX_BETS_PER_DAY = 5
 
 MODEL_PATH = '/opt/projects/bootball/data/model_{market}.pkl'

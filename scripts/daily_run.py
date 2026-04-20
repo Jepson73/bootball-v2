@@ -615,7 +615,7 @@ class DailyPipeline:
                     'odds': candidate['decimal_odd'],
                     'prob': candidate['our_prob'],
                     'ev': candidate['ev'] * 100,
-                    'kelly': candidate['kelly_fraction'] * 100,
+                    'kelly': candidate['kelly_fraction'],
                     'stake': stake,
                     'edge': (candidate['our_prob'] - candidate['implied_prob_shin']) * 100,
                 })

@@ -716,19 +716,21 @@ def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, lea
         # For binary, use positive class
         if len(raw_probs) == 2:
             raw_prob = float(raw_probs[1])
+            calibrated = raw_prob
         else:
+            # For 3-class H2H, return all probabilities (not max) for correct EV calculation
             raw_prob = float(np.max(raw_probs))
+            calibrated = raw_prob
 
         # Apply isotonic calibration if available
         if calibrator:
             try:
                 calibrated = calibrator.predict([raw_prob])[0]
                 calibrated = max(0.01, min(0.99, calibrated))
-                return calibrated
             except Exception:
                 pass
 
-        return raw_prob
+        return calibrated
 
     except Exception as e:
         if error_counts is not None:
@@ -868,18 +870,63 @@ def api_predictions():
                     home_odds = h2h_row.odd_home if h2h_row else None
                     draw_odds = h2h_row.odd_draw if h2h_row else None
                     away_odds = h2h_row.odd_away if h2h_row else None
-                    # H2H is 3-way, pick highest EV
+                    # H2H is 3-way, pick highest EV using class-specific probabilities
                     if home_odds and draw_odds and away_odds:
-                        ev_home = (prob * home_odds) - 1
-                        ev_draw = (0.33 * draw_odds) - 1  # Simplified
-                        ev_away = ((1 - prob) * away_odds) - 1
-                        best_ev = max(ev_home, ev_draw, ev_away)
-                        if best_ev == ev_home and ev_home > 0:
-                            odds, pick, ev = home_odds, 'Home', ev_home
-                        elif best_ev == ev_draw and ev_draw > 0:
-                            odds, pick, ev = draw_odds, 'Draw', ev_draw
-                        elif ev_away > 0:
-                            odds, pick, ev = away_odds, 'Away', ev_away
+                        # Get all 3 probabilities for correct EV calculation
+                        model_path = f'/opt/projects/bootball/data/model_{market}.pkl'
+                        if os.path.exists(model_path):
+                            try:
+                                with open(model_path, 'rb') as f:
+                                    obj = pickle.load(f)
+                                h2h_model = obj['model'] if isinstance(obj, dict) else obj
+
+                                with get_session() as s:
+                                    home_standing = s.execute(
+                                        select(Standing).where(Standing.team_id == fix.home_team_id).where(Standing.season >= 2024)
+                                    ).first()
+                                    away_standing = s.execute(
+                                        select(Standing).where(Standing.team_id == fix.away_team_id).where(Standing.season >= 2024)
+                                    ).first()
+
+                                    if home_standing and away_standing:
+                                        hs = home_standing[0]
+                                        as_ = away_standing[0]
+                                        features = np.array([[
+                                            float(hs.rank or 15),
+                                            float(as_.rank or 15),
+                                            float((hs.goals_for or 1) - (hs.goals_against or 1)),
+                                            float((as_.goals_for or 1) - (as_.goals_against or 1)),
+                                            float(hs.goals_for or 1),
+                                            float(as_.goals_for or 1),
+                                            float(hs.goals_against or 1),
+                                            float(as_.goals_against or 1),
+                                            float(abs((hs.rank or 15) - (as_.rank or 15))),
+                                        ]])
+
+                                import warnings
+                                with warnings.catch_warnings():
+                                    warnings.filterwarnings('ignore', message='X does not have valid feature names')
+                                    h2h_raw_probs = h2h_model.predict_proba(features)[0]
+
+                                prob_home = h2h_raw_probs[0]
+                                prob_draw = h2h_raw_probs[1]
+                                prob_away = h2h_raw_probs[2]
+
+                                ev_home = (prob_home * home_odds) - 1
+                                ev_draw = (prob_draw * draw_odds) - 1
+                                ev_away = (prob_away * away_odds) - 1
+                                best_ev = max(ev_home, ev_draw, ev_away)
+                                if best_ev == ev_home and ev_home > 0:
+                                    odds, pick, ev = home_odds, 'Home', ev_home
+                                elif best_ev == ev_draw and ev_draw > 0:
+                                    odds, pick, ev = draw_odds, 'Draw', ev_draw
+                                elif ev_away > 0:
+                                    odds, pick, ev = away_odds, 'Away', ev_away
+                                else:
+                                    continue
+                            except Exception as e:
+                                logger.warning(f"H2H prediction error: {e}")
+                                continue
                         else:
                             continue
                     elif home_odds and home_odds > 0:
@@ -2666,8 +2713,22 @@ def betting_action():
                 })
 
             elif action == 'new-round':
+                from sqlalchemy import func
+                from src.storage.models import PlacedBet
+
+                settled = s.execute(
+                    select(PlacedBet).where(PlacedBet.round_id == r.id).where(PlacedBet.settled == True)
+                ).scalars().all()
+
                 r.is_active = False
                 r.ended_at = datetime.utcnow()
+                r.ending_balance = initial + sum(b.pnl or 0 for b in settled)
+                r.total_bets = len(settled)
+                r.total_wins = sum(1 for b in settled if b.won)
+                r.total_staked = sum(b.stake for b in settled)
+                r.total_pnl = sum(b.pnl or 0 for b in settled)
+                r.roi_pct = (r.total_pnl / r.total_staked * 100) if r.total_staked > 0 else 0
+                r.reason = 'manual_reset'
 
                 new_round = BankrollRound(
                     round_number=r.round_number + 1,
