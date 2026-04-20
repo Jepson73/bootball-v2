@@ -1149,7 +1149,7 @@ function loadBets() {
 }
 
 function placeBets() {
-    showMsg('Placing bets...', 'info');
+    showMsg('Placing bet...', 'info');
     fetch('/betting/action', {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
@@ -1157,8 +1157,12 @@ function placeBets() {
     })
     .then(r => r.json())
     .then(d => {
-        showMsg(d.placed + ' bets placed', d.ok ? 'success' : 'error');
-        loadBets();
+        if (d.ok) {
+            showMsg(d.message || '1 bet placed', 'success');
+            loadBets();
+        } else {
+            showMsg(d.message || 'Failed', 'error');
+        }
     });
 }
 
@@ -2639,8 +2643,20 @@ def betting_action():
                 })
 
             elif action == 'place-bets':
-                from src.betting.value_bets import find_all_market_value_bets
-                from src.betting.kelly import fractional_kelly
+                from src.betting.kelly import fractional_kelly, kelly_stake
+                from src.betting.ev import expected_value
+                from src.models.trainer import get_cache_path
+                import pickle
+                import numpy as np
+                import warnings
+
+                MIN_ODDS = 1.5
+                MAX_ODDS = 10.0
+                EV_THRESHOLD = 0.05
+                KELLY_FRACTION = 0.25
+                MAX_STAKE = 50.0
+                MIN_STAKE = 1.0
+                BET_MARKETS = ["h2h", "btts", "ou25", "ou15"]
 
                 now = datetime.now()
                 today = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -2654,57 +2670,144 @@ def betting_action():
                     .where(Fixture.date < tomorrow)
                 ).all()
 
-                placed = 0
-                for fix, odds in fixes[:15]:
-                    try:
-                        candidates = find_all_market_value_bets(
-                            fix.id, fix.home_team_id, fix.away_team_id,
-                            odds, markets=['btts', 'ou25'], ev_threshold=0.05
-                        )
-                        if not candidates:
-                            continue
-                        cand = candidates[0]
-                        if cand.decimal_odd < 1.5 or cand.decimal_odd > 10:
-                            continue
-                        kf = fractional_kelly(cand.our_prob, cand.decimal_odd, 0.25)
-                        if kf < 0.02:
+                all_candidates = []
+
+                for fix, odds in fixes:
+                    for market in BET_MARKETS:
+                        model_path = get_cache_path(market)
+                        if not os.path.exists(model_path):
                             continue
 
-                        existing = s.execute(
-                            select(PlacedBet)
-                            .where(PlacedBet.fixture_id == fix.id)
-                            .where(PlacedBet.round_id == round_id)
-                            .where(PlacedBet.settled == False)
-                        ).first()
-                        if existing:
+                        try:
+                            with open(model_path, 'rb') as f:
+                                obj = pickle.load(f)
+                            model = obj['model'] if isinstance(obj, dict) else obj
+
+                            home_st = s.execute(
+                                select(Standing).where(Standing.team_id == fix.home_team_id).where(Standing.season >= 2024)
+                            ).first()
+                            away_st = s.execute(
+                                select(Standing).where(Standing.team_id == fix.away_team_id).where(Standing.season >= 2024)
+                            ).first()
+
+                            if not home_st or not away_st:
+                                continue
+
+                            hs = home_st[0]
+                            as_ = away_st[0]
+                            features = np.array([[
+                                float(hs.rank or 15),
+                                float(as_.rank or 15),
+                                float((hs.goals_for or 1) - (hs.goals_against or 1)),
+                                float((as_.goals_for or 1) - (as_.goals_against or 1)),
+                                float(hs.goals_for or 1),
+                                float(as_.goals_for or 1),
+                                float(hs.goals_against or 1),
+                                float(as_.goals_against or 1),
+                                float(abs((hs.rank or 15) - (as_.rank or 15))),
+                            ]])
+
+                            with warnings.catch_warnings():
+                                warnings.filterwarnings('ignore')
+                                raw_probs = model.predict_proba(features)[0]
+
+                            if market == 'h2h':
+                                if len(raw_probs) == 3:
+                                    model_probs = {"1": float(raw_probs[0]), "X": float(raw_probs[1]), "2": float(raw_probs[2])}
+                                else:
+                                    continue
+                            elif len(raw_probs) == 2:
+                                model_probs = {"Yes": float(raw_probs[1]), "No": float(1 - raw_probs[1])}
+                            else:
+                                continue
+
+                            odds_map = {
+                                "h2h": {"1": odds.odd_home, "X": odds.odd_draw, "2": odds.odd_away},
+                                "btts": {"Yes": odds.odd_btts_yes, "No": odds.odd_btts_no},
+                                "ou25": {"Over": odds.odd_over, "Under": odds.odd_under},
+                                "ou15": {"Over": odds.odd_over15, "Under": odds.odd_under15},
+                            }
+
+                            market_odds = odds_map.get(market, {})
+                            if not market_odds:
+                                continue
+
+                            for outcome, odd in market_odds.items():
+                                if not odd or odd <= 0:
+                                    continue
+                                our_prob = model_probs.get(outcome, 0.0)
+                                if our_prob <= 0:
+                                    continue
+                                ev = expected_value(our_prob, odd)
+                                if ev < EV_THRESHOLD:
+                                    continue
+                                kf = fractional_kelly(our_prob, odd, KELLY_FRACTION)
+                                if kf < 0.01:
+                                    continue
+
+                                all_candidates.append({
+                                    'fixture': fix,
+                                    'odds_row': odds,
+                                    'market': market,
+                                    'outcome': outcome,
+                                    'decimal_odd': odd,
+                                    'our_prob': our_prob,
+                                    'ev': ev,
+                                    'kelly_fraction': kf,
+                                })
+                        except Exception as e:
                             continue
 
-                        stake = round(min(50, max(1, kf * 1000)), 2)
+                if not all_candidates:
+                    return jsonify({'ok': True, 'placed': 0, 'message': 'No value bets found'})
 
-                        active_version = s.execute(
-                            select(ModelVersion).where(
-                                ModelVersion.market == cand.market,
-                                ModelVersion.is_active == True
-                            )
-                        ).scalar_one_or_none()
-                        model_version_id = active_version.id if active_version else None
+                all_candidates.sort(key=lambda x: x['ev'], reverse=True)
+                cand = all_candidates[0]
+                fix = cand['fixture']
 
-                        bet = PlacedBet(
-                            round_id=round_id, fixture_id=fix.id,
-                            market=cand.market, model_version_id=model_version_id,
-                            outcome=cand.outcome,
-                            stake=stake, odds=cand.decimal_odd,
-                            our_prob=cand.our_prob, ev=cand.ev,
-                            kelly_fraction=kf,
-                        )
-                        s.add(bet)
-                        placed += 1
-                    except Exception as e:
-                        logger.warning("Bet error: %s", e)
-                        continue
+                if cand['decimal_odd'] < MIN_ODDS or cand['decimal_odd'] > MAX_ODDS:
+                    return jsonify({'ok': True, 'placed': 0, 'message': 'Best bet odds outside range'})
 
+                stake = kelly_stake(
+                    initial, cand['our_prob'], cand['decimal_odd'],
+                    KELLY_FRACTION, 0.2
+                )
+                stake = round(max(MIN_STAKE, min(stake, MAX_STAKE)), 2)
+
+                active_version = s.execute(
+                    select(ModelVersion).where(
+                        ModelVersion.market == cand['market'],
+                        ModelVersion.is_active == True
+                    )
+                ).scalar_one_or_none()
+                model_version_id = active_version.id if active_version else None
+
+                bet = PlacedBet(
+                    round_id=r.id, fixture_id=fix.id,
+                    market=cand['market'], model_version_id=model_version_id,
+                    outcome=cand['outcome'],
+                    stake=stake, odds=cand['decimal_odd'],
+                    our_prob=cand['our_prob'], ev=cand['ev'],
+                    kelly_fraction=cand['kelly_fraction'],
+                )
+                s.add(bet)
                 s.commit()
-                return jsonify({'ok': True, 'placed': placed})
+
+                home = TEAM_NAMES.get(fix.home_team_id, str(fix.home_team_id))
+                away = TEAM_NAMES.get(fix.away_team_id, str(fix.away_team_id))
+                league_name = LEAGUE_NAMES.get(fix.league_id, '')
+
+                return jsonify({
+                    'ok': True, 'placed': 1, 'message': f"Bet placed: {home} vs {away} - {cand['market']} {cand['outcome']} @ {cand['decimal_odd']}",
+                    'bet': {
+                        'home': home, 'away': away,
+                        'market': cand['market'],
+                        'model_version': active_version.version_name if active_version else None,
+                        'outcome': cand['outcome'],
+                        'stake': stake, 'odds': cand['decimal_odd'],
+                        'ev': cand['ev'], 'settled': False
+                    }
+                })
 
             elif action == 'settle':
                 from src.settlement import settle_all
