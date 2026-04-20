@@ -39,7 +39,7 @@ def fractional_kelly(our_prob: float, decimal_odd: float, fraction: float = 0.25
     return kelly_fraction(our_prob, decimal_odd) * fraction
 
 
-def stake(
+def kelly_stake(
     bankroll: float,
     our_prob: float,
     decimal_odd: float,
