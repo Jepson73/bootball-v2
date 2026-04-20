@@ -41,8 +41,8 @@ from src.models.iteration_graph import generate_all_graphs
 from src.storage.db import get_session, init_db
 from src.storage.models import (
     Fixture, FixtureOdds, Standing, PredictionRecord, PlacedBet,
-    BankrollRound, Team, League, SettledBet, UserPreference, WatchedFixture,
-    ModelVersion
+    BankrollRound, Team, League, UserPreference, WatchedFixture,
+    ModelVersion, Bankroll
 )
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s')

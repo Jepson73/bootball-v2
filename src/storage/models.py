@@ -431,11 +431,12 @@ class RetrainEvent(Base):
 class Bankroll(Base):
     __tablename__ = "bankroll"
     __table_args__ = (
-        UniqueConstraint("date", name="uq_bankroll_date"),
+        UniqueConstraint("date", "round_id", name="uq_bankroll_date_round"),
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     date: Mapped[datetime] = mapped_column(DateTime)
+    round_id: Mapped[int | None] = mapped_column(ForeignKey("bankroll_rounds.id"), nullable=True)
     balance: Mapped[float] = mapped_column(Float)           # Running balance
     total_staked: Mapped[float] = mapped_column(Float, default=0)
     total_won: Mapped[float] = mapped_column(Float, default=0)
@@ -444,6 +445,8 @@ class Bankroll(Base):
     win_count: Mapped[int] = mapped_column(Integer, default=0)
 
     notes: Mapped[str | None] = mapped_column(String(500))
+
+    round: Mapped["BankrollRound | None"] = relationship("BankrollRound", foreign_keys=[round_id])
 
 
 # ── Betting rounds (for tracking resets) ───────────────────────────────────────
