@@ -512,18 +512,16 @@ function loadPredictions() {
     const marketParam = currentMarket !== 'all' ? '&market=' + currentMarket : '';
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
 
-    // date filter: 'all' = all predictions, '0' = today, '1' = tomorrow, '2' = day after, etc
-    let url;
+    // date filter: 'all' = no filter, '0' = today, '1' = 2 days, '2' = 3 days, '3' = 4 days
+    let daysParam;
     if (currentDateFilter === 'all') {
-        url = '/api/predictions?days=all' + (league ? '&league=' + league : '') + marketParam + '&tz=' + encodeURIComponent(tz);
+        daysParam = 'days=7';
     } else {
-        const today = new Date();
-        const target = new Date(today);
-        target.setDate(today.getDate() + parseInt(currentDateFilter));
-        const dateStr = target.toISOString().slice(0, 10);
-        url = '/api/predictions?date=' + dateStr + (league ? '&league=' + league : '') + marketParam + '&tz=' + encodeURIComponent(tz);
+        const daysAhead = parseInt(currentDateFilter) + 1;
+        daysParam = 'days=' + daysAhead;
     }
 
+    const url = '/api/predictions?' + daysParam + (league ? '&league=' + league : '') + marketParam + '&tz=' + encodeURIComponent(tz);
     console.log('Fetching:', url);
     return fetch(url, {credentials: 'include'})
         .then(r => {
@@ -731,20 +729,11 @@ def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, lea
 @require_auth
 def api_predictions():
     days_str = request.args.get('days', '7')
-    date_str = request.args.get('date', '')
     league_filter = request.args.get('league', '')
     market_filter = request.args.get('market', 'all')
     tz_name = request.args.get('tz', 'Europe/Stockholm')
 
-    if date_str:
-        # Exact date filter: YYYY-MM-DD
-        try:
-            target = datetime.strptime(date_str, '%Y-%m-%d')
-            now = target.replace(hour=0, minute=0, second=0, microsecond=0)
-            end = target.replace(hour=23, minute=59, second=59, microsecond=999999)
-        except ValueError:
-            return jsonify([])
-    elif days_str == 'all':
+    if days_str == 'all':
         now = datetime.utcnow()
         end = now + timedelta(days=365)
     else:
