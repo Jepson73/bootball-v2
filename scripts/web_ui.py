@@ -440,12 +440,6 @@ def predictions_page():
     <select id="leagueFilter" style="min-width: 200px;">
         <option value="">All Leagues</option>
     </select>
-    <select id="daysFilter">
-        <option value="1">1 Day</option>
-        <option value="3" selected>3 Days</option>
-        <option value="7">7 Days</option>
-        <option value="all">All</option>
-    </select>
     <label style="display: flex; align-items: center; gap: 6px; color: #c9d1d9;">
         <input type="checkbox" id="minOddsCheck" checked style="width: 16px; height: 16px; accent-color: #3fb950;">
         Odds ≥ <span id="minOddsValue">1.6</span>
@@ -455,8 +449,6 @@ def predictions_page():
         🌟 Sweet Spot
     </label>
     <button class="btn btn-primary" onclick="loadPredictions()">Refresh</button>
-    <button class="btn btn-sm" onclick="debugLoad()">Debug Load</button>
-    <span id="debugStatus" style="margin-left: 10px; color: #8b949e;"></span>
 </div>
 <div id="predictionsList">
     <p style="color: #8b949e;">Loading predictions...</p>
@@ -464,45 +456,6 @@ def predictions_page():
 <script>
 let currentMarket = 'all';
 let predictionsData = [];
-
-function debugLoad() {
-    const status = document.getElementById('debugStatus');
-    status.textContent = 'Starting...';
-    status.style.color = '#fff';
-
-    // First test leagues API directly
-    status.textContent = 'Testing leagues API...';
-    fetch('/api/leagues', {credentials: 'include'})
-        .then(r => {
-            status.textContent = 'Leagues status: ' + r.status;
-            if (!r.ok) throw new Error('leagues failed: ' + r.status);
-            return r.json();
-        })
-        .then(d => {
-            status.textContent = 'Leagues OK: ' + Object.keys(d).length + ' countries';
-            status.style.color = '#0f0';
-            // Now test predictions
-            const days = document.getElementById('daysFilter').value;
-            const league = document.getElementById('leagueFilter').value;
-            return fetch('/api/predictions?days=' + days + (league ? '&league=' + league : ''), {credentials: 'include'});
-        })
-        .then(r => {
-            status.textContent += ', Predictions status: ' + r.status;
-            if (!r.ok) throw new Error('predictions failed: ' + r.status);
-            return r.json();
-        })
-        .then(d => {
-            status.textContent += ', Predictions: ' + d.length + ' results';
-            status.style.color = '#0f0';
-            predictionsData = d;
-            renderPredictions(d);
-        })
-        .catch(e => {
-            status.textContent = 'Error: ' + e.message;
-            status.style.color = '#f00';
-            console.error('Debug error:', e);
-        });
-}
 
 function loadLeagues() {
     console.log('loadLeagues called');
@@ -531,13 +484,12 @@ function loadLeagues() {
 }
 
 function loadPredictions() {
-    const days = document.getElementById('daysFilter').value;
     const league = document.getElementById('leagueFilter').value;
     const container = document.getElementById('predictionsList');
     container.innerHTML = '<p style="color: #8b949e;">Loading predictions...</p>';
     const marketParam = currentMarket !== 'all' ? '&market=' + currentMarket : '';
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const url = '/api/predictions?days=' + days + (league ? '&league=' + league : '') + marketParam + '&tz=' + encodeURIComponent(tz);
+    const url = '/api/predictions?days=7' + (league ? '&league=' + league : '') + marketParam + '&tz=' + encodeURIComponent(tz);
     console.log('Fetching:', url);
     return fetch(url, {credentials: 'include'})
         .then(r => {
@@ -620,7 +572,6 @@ document.querySelectorAll('.tab').forEach(tab => {
     });
 });
 
-document.getElementById('daysFilter').addEventListener('change', loadPredictions);
 document.getElementById('leagueFilter').addEventListener('change', loadPredictions);
 document.getElementById('minOddsCheck').addEventListener('change', function() {
     // Re-render with current data
