@@ -429,96 +429,91 @@ def home():
 def predictions_page():
     content = '''
 <h1>Predictions</h1>
-<div class="row" style="margin-bottom: 16px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center;">
+<div class="tabs">
+    <button class="tab active" data-market="all">All Markets</button>
+    <button class="tab" data-market="btts">BTTS</button>
+    <button class="tab" data-market="ou25">O/U 2.5</button>
+    <button class="tab" data-market="ou15">O/U 1.5</button>
+    <button class="tab" data-market="h2h">1X2</button>
+</div>
+<div class="row" style="margin-bottom: 16px;">
     <select id="leagueFilter" style="min-width: 200px;">
         <option value="">All Leagues</option>
     </select>
+    <select id="daysFilter">
+        <option value="1">1 Day</option>
+        <option value="3" selected>3 Days</option>
+        <option value="7">7 Days</option>
+        <option value="all">All</option>
+    </select>
     <label style="display: flex; align-items: center; gap: 6px; color: #c9d1d9;">
         <input type="checkbox" id="minOddsCheck" checked style="width: 16px; height: 16px; accent-color: #3fb950;">
-        Odds ≥ 1.6
+        Odds ≥ <span id="minOddsValue">1.6</span>
     </label>
     <label style="display: flex; align-items: center; gap: 6px; color: #c9d1d9;">
         <input type="checkbox" id="sweetOnlyCheck" style="width: 16px; height: 16px; accent-color: #d29922;">
         🌟 Sweet Spot
     </label>
     <button class="btn btn-primary" onclick="loadPredictions()">Refresh</button>
-</div>
-<div id="marketRow" style="margin-bottom: 16px; display: flex; gap: 8px;">
-    <button class="tab active" data-market="all" onclick="setMarket(this, 'all')">All</button>
-    <button class="tab" data-market="btts" onclick="setMarket(this, 'btts')">BTTS</button>
-    <button class="tab" data-market="ou25" onclick="setMarket(this, 'ou25')">O/U 2.5</button>
-    <button class="tab" data-market="ou15" onclick="setMarket(this, 'ou15')">O/U 1.5</button>
-    <button class="tab" data-market="h2h" onclick="setMarket(this, 'h2h')">1X2</button>
-</div>
-<div id="dateRow" style="margin-bottom: 24px; display: flex; gap: 8px; flex-wrap: wrap;">
+    <button class="btn btn-sm" onclick="debugLoad()">Debug Load</button>
+    <span id="debugStatus" style="margin-left: 10px; color: #8b949e;"></span>
 </div>
 <div id="predictionsList">
     <p style="color: #8b949e;">Loading predictions...</p>
 </div>
 <script>
 let currentMarket = 'all';
-let currentDate = 'all';
 let predictionsData = [];
 
-function formatDateButtonLabel(date) {
-    const d = new Date(date);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const tomorrow = new Date(today);
-    tomorrow.setDate(tomorrow.getDate() + 1);
-    const checkDate = new Date(date);
-    checkDate.setHours(0, 0, 0, 0);
+function debugLoad() {
+    const status = document.getElementById('debugStatus');
+    status.textContent = 'Starting...';
+    status.style.color = '#fff';
 
-    if (checkDate.getTime() === today.getTime()) return 'Today';
-    if (checkDate.getTime() === tomorrow.getTime()) {
-        const d = new Date(date);
-        const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        return days[d.getDay()] + ' ' + d.getDate();
-    }
-
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    return days[d.getDay()] + ' ' + d.getDate();
-}
-
-function generateDateButtons() {
-    const container = document.getElementById('dateRow');
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // Always start with All and Today
-    let html = '<button class="tab ' + (currentDate === 'all' ? 'active' : '') + '" onclick="setDate(this, \'all\')">All</button>';
-    html += '<button class="tab ' + (currentDate === today.toISOString().slice(0,10) ? 'active' : '') + '" onclick="setDate(this, \'today\')">Today</button>';
-
-    // Generate 6 days forward and back is too many, so just next 6 days
-    for (let i = 1; i <= 6; i++) {
-        const d = new Date(today);
-        d.setDate(d.getDate() + i);
-        const dateStr = d.toISOString().slice(0, 10);
-        html += '<button class="tab ' + (currentDate === dateStr ? 'active' : '') + '" onclick="setDate(this, \'' + dateStr + '\')">' + formatDateButtonLabel(d) + '</button>';
-    }
-
-    container.innerHTML = html;
-}
-
-function setMarket(el, market) {
-    document.querySelectorAll('#marketRow .tab').forEach(t => t.classList.remove('active'));
-    el.classList.add('active');
-    currentMarket = market;
-    loadPredictions();
-}
-
-function setDate(el, date) {
-    document.querySelectorAll('#dateRow .tab').forEach(t => t.classList.remove('active'));
-    el.classList.add('active');
-    currentDate = date;
-    currentPage = 1;
-    loadPredictions();
+    // First test leagues API directly
+    status.textContent = 'Testing leagues API...';
+    fetch('/api/leagues', {credentials: 'include'})
+        .then(r => {
+            status.textContent = 'Leagues status: ' + r.status;
+            if (!r.ok) throw new Error('leagues failed: ' + r.status);
+            return r.json();
+        })
+        .then(d => {
+            status.textContent = 'Leagues OK: ' + Object.keys(d).length + ' countries';
+            status.style.color = '#0f0';
+            // Now test predictions
+            const days = document.getElementById('daysFilter').value;
+            const league = document.getElementById('leagueFilter').value;
+            return fetch('/api/predictions?days=' + days + (league ? '&league=' + league : ''), {credentials: 'include'});
+        })
+        .then(r => {
+            status.textContent += ', Predictions status: ' + r.status;
+            if (!r.ok) throw new Error('predictions failed: ' + r.status);
+            return r.json();
+        })
+        .then(d => {
+            status.textContent += ', Predictions: ' + d.length + ' results';
+            status.style.color = '#0f0';
+            predictionsData = d;
+            renderPredictions(d);
+        })
+        .catch(e => {
+            status.textContent = 'Error: ' + e.message;
+            status.style.color = '#f00';
+            console.error('Debug error:', e);
+        });
 }
 
 function loadLeagues() {
+    console.log('loadLeagues called');
     return fetch('/api/leagues', {credentials: 'include'})
-        .then(r => r.json())
+        .then(r => {
+            console.log('leagues response:', r.status);
+            if (!r.ok) throw new Error('leagues failed: ' + r.status);
+            return r.json();
+        })
         .then(d => {
+            console.log('leagues data:', d);
             const select = document.getElementById('leagueFilter');
             select.innerHTML = '<option value="">All Leagues</option>';
             for (const country in d) {
@@ -536,23 +531,20 @@ function loadLeagues() {
 }
 
 function loadPredictions() {
+    const days = document.getElementById('daysFilter').value;
     const league = document.getElementById('leagueFilter').value;
     const container = document.getElementById('predictionsList');
     container.innerHTML = '<p style="color: #8b949e;">Loading predictions...</p>';
     const marketParam = currentMarket !== 'all' ? '&market=' + currentMarket : '';
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-
-    let dateParam = '';
-    if (currentDate === 'today') {
-        dateParam = '&days=1';
-    } else if (currentDate !== 'all') {
-        dateParam = '&date=' + currentDate;
-    }
-
-    const url = '/api/predictions?' + (currentDate === 'all' ? 'days=all' : currentDate === 'today' ? 'days=1' : 'date=' + currentDate) + (league ? '&league=' + league : '') + marketParam + '&tz=' + encodeURIComponent(tz);
+    const url = '/api/predictions?days=' + days + (league ? '&league=' + league : '') + marketParam + '&tz=' + encodeURIComponent(tz);
     console.log('Fetching:', url);
     return fetch(url, {credentials: 'include'})
-        .then(r => r.json())
+        .then(r => {
+            console.log('Response status:', r.status);
+            if (!r.ok) throw new Error('predictions failed: ' + r.status);
+            return r.json();
+        })
         .then(d => {
             console.log('Got data:', d.length, 'results');
             predictionsData = d;
@@ -571,14 +563,16 @@ function renderPredictions(data) {
         return;
     }
 
+    // Get filter settings
     const minOddsChecked = document.getElementById('minOddsCheck').checked;
-    const minOdds = minOddsChecked ? 1.6 : 0;
+    const minOdds = minOddsChecked ? 1.6 : 0;  // Default 1.6, or 0 if unchecked
     const sweetOnly = document.getElementById('sweetOnlyCheck').checked;
 
     let filtered = data.filter(p => {
         const o = p.odds || 0;
         if (o < minOdds) return false;
         if (sweetOnly) {
+            // Sweet spot: odds 1.8-2.2 with positive EV
             if (o < 1.8 || o > 2.2 || !p.ev_positive) return false;
         }
         return true;
@@ -593,6 +587,8 @@ function renderPredictions(data) {
         const pick = p.pick || '?';
         const odds = p.odds || '-';
         const ev = p.ev || 0;
+
+        // Sweet spot badge: odds 1.8-2.2 with positive EV
         const isSweet = odds >= 1.8 && odds <= 2.2 && ev > 0;
 
         html += '<div class="prediction-card ' + cardClass + '">';
@@ -615,15 +611,27 @@ function renderPredictions(data) {
     container.innerHTML = html;
 }
 
+document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', function() {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        this.classList.add('active');
+        currentMarket = this.dataset.market;
+        loadPredictions();
+    });
+});
+
+document.getElementById('daysFilter').addEventListener('change', loadPredictions);
 document.getElementById('leagueFilter').addEventListener('change', loadPredictions);
 document.getElementById('minOddsCheck').addEventListener('change', function() {
+    // Re-render with current data
     renderPredictions(predictionsData);
 });
 document.getElementById('sweetOnlyCheck').addEventListener('change', function() {
+    // Re-render with current data
     renderPredictions(predictionsData);
 });
 
-generateDateButtons();
+// Load on page load
 loadLeagues();
 loadPredictions();
 </script>
@@ -738,21 +746,11 @@ def _get_model_prediction(market: str, home_team_id: int, away_team_id: int, lea
 @require_auth
 def api_predictions():
     days_str = request.args.get('days', '7')
-    date_str = request.args.get('date', '')
     league_filter = request.args.get('league', '')
     market_filter = request.args.get('market', 'all')
     tz_name = request.args.get('tz', 'Europe/Stockholm')
 
-    # Handle specific date filter
-    if date_str:
-        try:
-            from datetime import date as date_type
-            target_date = datetime.strptime(date_str, '%Y-%m-%d').replace(hour=0, minute=0, second=0, microsecond=0)
-            now = target_date
-            end = target_date.replace(hour=23, minute=59, second=59)
-        except ValueError:
-            return jsonify([])
-    elif days_str == 'all':
+    if days_str == 'all':
         now = datetime.utcnow()
         end = now + timedelta(days=365)
     else:
