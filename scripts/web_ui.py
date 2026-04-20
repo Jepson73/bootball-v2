@@ -450,12 +450,34 @@ def predictions_page():
     </label>
     <button class="btn btn-primary" onclick="loadPredictions()">Refresh</button>
 </div>
+<div class="predictionday">
+    <button class="tab active" data-date="all" onclick="setDateFilter(this, 'all')">All Predictions</button>
+    <button class="tab" data-date="0" onclick="setDateFilter(this, '0')">Today</button>
+    <button class="tab" data-date="1" onclick="setDateFilter(this, '1')">Tomorrow</button>
+    <button class="tab" data-date="2" onclick="setDateFilter(this, '2')">Day after tomorrow</button>
+    <button class="tab" data-date="3" onclick="setDateFilter(this, '3')">...</button>
+</div>
 <div id="predictionsList">
     <p style="color: #8b949e;">Loading predictions...</p>
 </div>
 <script>
 let currentMarket = 'all';
+let currentDateFilter = 'all';
 let predictionsData = [];
+
+function setDateFilter(el, date) {
+    document.querySelectorAll('.predictionday .tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    currentDateFilter = date;
+    loadPredictions();
+}
+
+function setMarket(el, market) {
+    document.querySelectorAll('.tabs .tab').forEach(t => t.classList.remove('active'));
+    el.classList.add('active');
+    currentMarket = market;
+    loadPredictions();
+}
 
 function loadLeagues() {
     console.log('loadLeagues called');
@@ -489,7 +511,17 @@ function loadPredictions() {
     container.innerHTML = '<p style="color: #8b949e;">Loading predictions...</p>';
     const marketParam = currentMarket !== 'all' ? '&market=' + currentMarket : '';
     const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-    const url = '/api/predictions?days=7' + (league ? '&league=' + league : '') + marketParam + '&tz=' + encodeURIComponent(tz);
+
+    // date filter: 'all' = no filter, '0' = today, '1' = 2 days, '2' = 3 days, '3' = 4 days
+    let daysParam;
+    if (currentDateFilter === 'all') {
+        daysParam = 'days=7';
+    } else {
+        const daysAhead = parseInt(currentDateFilter) + 1;
+        daysParam = 'days=' + daysAhead;
+    }
+
+    const url = '/api/predictions?' + daysParam + (league ? '&league=' + league : '') + marketParam + '&tz=' + encodeURIComponent(tz);
     console.log('Fetching:', url);
     return fetch(url, {credentials: 'include'})
         .then(r => {
