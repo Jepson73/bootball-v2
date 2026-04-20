@@ -2783,6 +2783,17 @@ def betting_action():
                 ).scalar_one_or_none()
                 model_version_id = active_version.id if active_version else None
 
+                existing = s.execute(
+                    select(PlacedBet).where(
+                        PlacedBet.round_id == r.id,
+                        PlacedBet.fixture_id == fix.id,
+                        PlacedBet.market == cand['market'],
+                        PlacedBet.outcome == cand['outcome']
+                    )
+                ).scalar_one_or_none()
+                if existing:
+                    return jsonify({'ok': True, 'placed': 0, 'message': 'Bet already exists for this selection'})
+
                 bet = PlacedBet(
                     round_id=r.id, fixture_id=fix.id,
                     market=cand['market'], model_version_id=model_version_id,
