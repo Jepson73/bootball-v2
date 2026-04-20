@@ -23,7 +23,8 @@ sys.path.insert(0, '/opt/projects/bootball')
 
 from src.settlement import settle_all, fetch_and_update_fixtures
 from src.storage.db import init_db, get_session
-from src.storage.models import PlacedBet, BankrollRound
+from src.storage.models import PlacedBet
+from src.betting.round_manager import get_active_round_id
 from sqlalchemy import select, func
 
 logging.basicConfig(
@@ -35,20 +36,12 @@ logger = logging.getLogger(__name__)
 MIN_OPEN_BETS = 5
 
 
-def check_and_place_bets():
+def check_and_place_bets(round_id: int):
     """Check if open bets < 5 and trigger auto_bet if needed."""
     with get_session() as s:
-        active_round = s.execute(
-            select(BankrollRound).where(BankrollRound.is_active == True)
-        ).scalar_one_or_none()
-
-        if not active_round:
-            logger.info("No active bankroll round, skipping auto-bet")
-            return 0
-
         open_bets = s.execute(
             select(func.count()).select_from(PlacedBet)
-            .where(PlacedBet.round_id == active_round.id)
+            .where(PlacedBet.round_id == round_id)
             .where(PlacedBet.settled == False)
         ).scalar() or 0
 
@@ -62,7 +55,7 @@ def check_and_place_bets():
 
     import subprocess
     result = subprocess.run(
-        [sys.executable, 'scripts/auto_bet.py', '--bet-only'],
+        [sys.executable, 'scripts/auto_bet.py', '--bet-only', '--round-id', str(round_id)],
         capture_output=True, text=True, timeout=120
     )
     logger.info(f"Auto-bet output: {result.stdout[:500]}")
@@ -76,6 +69,7 @@ def main():
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--days', type=int, default=1)
     parser.add_argument('--no-auto-bet', action='store_true', help='Skip auto-bet trigger')
+    parser.add_argument('--round-id', type=int, default=None, help='Round ID to use (for consistency across scripts)')
     args = parser.parse_args()
 
     init_db()
@@ -87,7 +81,10 @@ def main():
     print(f"Settled: {result['bets_settled']}, P/L: {result['total_pnl']:+.2f}")
 
     if not args.no_auto_bet and not args.dry_run:
-        check_and_place_bets()
+        # Get the round ID to use
+        with get_session() as s:
+            round_id = args.round_id or get_active_round_id(s)
+        check_and_place_bets(round_id)
 
 
 if __name__ == '__main__':

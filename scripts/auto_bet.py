@@ -648,38 +648,50 @@ def send_bets_alert(bets: list[dict], round_num: int):
         logger.warning(f"Failed to send bets alert: {e}")
 
 
-def run_pipeline(league_ids: list[int] | None = None, bet_only: bool = False, settle_only: bool = False):
+def run_pipeline(league_ids: list[int] | None = None, bet_only: bool = False, settle_only: bool = False, round_id: int | None = None):
     init_db()
     client = APIFootballClient()
 
     with get_session() as session:
-        round = get_or_create_round(session)
+        # Use provided round_id or get active round from file/DB
+        if round_id is None:
+            from src.betting.round_manager import get_active_round_id
+            round_id = get_active_round_id(session, create=True)
 
-        logger.info(f"Auto-bet pipeline | Round #{round.round_number} | "
-                     f"Balance: {get_current_balance(round, session):.2f}")
+        the_round = session.execute(
+            select(BankrollRound).where(BankrollRound.id == round_id)
+        ).scalars().first()
+
+        if not the_round:
+            the_round = get_or_create_round(session)
+            round_id = the_round.id
+
+        logger.info(f"Auto-bet pipeline | Round #{the_round.round_number} | "
+                     f"Balance: {get_current_balance(the_round, session):.2f}")
 
         placed_bets = []
 
         if not settle_only:
-            placed, placed_bets = place_bets(round, session, league_ids)
+            placed, placed_bets = place_bets(the_round, session, league_ids)
 
             if placed_bets:
-                send_bets_alert(placed_bets, round.round_number)
+                send_bets_alert(placed_bets, the_round.round_number)
 
         if not bet_only:
-            settled, total_pnl = settle_bets(round, session)
+            settled, total_pnl = settle_bets(the_round, session)
             if settled > 0:
                 alerts = BettingAlerts(channels=["discord"], min_ev=5.0, min_odds=1.5, min_kelly=0.03)
                 alerts.send_message(
                     f"🔔 **SETTLED {settled} BET(S)**\n"
                     f"P/L: {total_pnl:+.2f}\n"
-                    f"Round #{round.round_number} Balance: {get_current_balance(round, session):.2f}"
+                    f"Round #{the_round.round_number} Balance: {get_current_balance(the_round, session):.2f}"
                 )
 
-            round = check_and_reset(session)
+            the_round = check_and_reset(session)
+            round_id = the_round.id
 
-        balance = get_current_balance(round, session)
-        logger.info(f"Pipeline complete | Round #{round.round_number} | Balance: {balance:.2f}")
+        balance = get_current_balance(the_round, session)
+        logger.info(f"Pipeline complete | Round #{the_round.round_number} | Balance: {balance:.2f}")
 
 
 if __name__ == "__main__":
@@ -691,6 +703,7 @@ if __name__ == "__main__":
     parser.add_argument("--new-round", action="store_true", help="Force start new round")
     parser.add_argument("--reset", type=str, help="Reset bankroll to starting amount")
     parser.add_argument("--leagues", type=str, help="Comma-separated league IDs")
+    parser.add_argument("--round-id", type=int, default=None, help="Round ID to use (for consistency across scripts)")
     args = parser.parse_args()
 
     init_db()
@@ -713,4 +726,4 @@ if __name__ == "__main__":
             new_round = get_or_create_round(session)
             print(f"Reset. New round #{new_round.round_number} with balance {INITIAL_BANKROLL}")
         else:
-            run_pipeline(league_ids=league_ids, bet_only=args.bet_only, settle_only=args.settle_only)
+            run_pipeline(league_ids=league_ids, bet_only=args.bet_only, settle_only=args.settle_only, round_id=args.round_id)
