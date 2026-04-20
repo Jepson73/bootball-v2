@@ -426,33 +426,6 @@ class RetrainEvent(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
-# ── Betting ledger: value bets found + outcomes ───────────────────────────────
-
-class ValueBet(Base):
-    __tablename__ = "value_bets"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id"))
-    model_name: Mapped[str] = mapped_column(String(100))
-    market: Mapped[str] = mapped_column(String(20), default="h2h")  # h2h, btts, ou25, ou15
-
-    outcome: Mapped[str] = mapped_column(String(10))   # H/D/A, Yes/No, Over/Under
-    our_prob: Mapped[float] = mapped_column(Float)
-    bookmaker_odd: Mapped[float] = mapped_column(Float)
-    implied_prob: Mapped[float] = mapped_column(Float)
-    ev: Mapped[float] = mapped_column(Float)           # Expected Value as fraction
-    kelly_fraction: Mapped[float] = mapped_column(Float)
-    recommended_stake: Mapped[float | None] = mapped_column(Float)
-
-    # Filled after match
-    settled: Mapped[bool] = mapped_column(Boolean, default=False)
-    result: Mapped[str | None] = mapped_column(String(10))    # actual outcome
-    won: Mapped[bool | None] = mapped_column(Boolean)
-    pnl: Mapped[float | None] = mapped_column(Float)         # profit/loss in units
-
-    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
-
-
 # ── Bankroll tracking ─────────────────────────────────────────────────────────
 
 class Bankroll(Base):
@@ -471,24 +444,6 @@ class Bankroll(Base):
     win_count: Mapped[int] = mapped_column(Integer, default=0)
 
     notes: Mapped[str | None] = mapped_column(String(500))
-
-
-# ── Settled bet history (for analysis) ───────────────────────────────────────
-
-class SettledBet(Base):
-    __tablename__ = "settled_bets"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id"))
-    market: Mapped[str] = mapped_column(String(20))
-    outcome: Mapped[str] = mapped_column(String(10))
-    stake: Mapped[float] = mapped_column(Float)
-    odds: Mapped[float] = mapped_column(Float)
-    our_prob: Mapped[float] = mapped_column(Float)
-    result: Mapped[str] = mapped_column(String(10))
-    won: Mapped[bool] = mapped_column(Boolean)
-    pnl: Mapped[float] = mapped_column(Float)
-    settled_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 # ── Betting rounds (for tracking resets) ───────────────────────────────────────
