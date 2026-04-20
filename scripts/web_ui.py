@@ -1514,7 +1514,6 @@ def admin_page():
             <div class="card-title">System Actions</div>
             <button class="btn btn-primary" onclick="runMaintenance()">Run Maintenance</button>
             <button class="btn btn-primary" onclick="runDailyRun()">Run Daily Run</button>
-            <button class="btn btn-primary" onclick="placeBets()">Place Bets</button>
             <button class="btn btn-danger" onclick="settleBets()">Settle Bets</button>
         </div>
     </div>
@@ -1612,12 +1611,6 @@ function runDailyRun() {
     fetch('/api/admin/daily_run', {method: 'POST', credentials: 'include'})
         .then(r => r.json())
         .then(d => showMsg(d.output || d.error || 'Done', d.error ? 'error' : 'success'));
-}
-
-function placeBets() {
-    fetch('/api/admin/place_bets', {method: 'POST', credentials: 'include'})
-        .then(r => r.json())
-        .then(d => showMsg(d.message || 'Done', 'success'));
 }
 
 function settleBets() {
@@ -1848,17 +1841,6 @@ def admin_daily_run():
     finally:
         if os.path.exists(lock_file):
             os.remove(lock_file)
-
-
-@app.route('/api/admin/place_bets', methods=['POST'])
-@require_auth
-def admin_place_bets():
-    import subprocess
-    result = subprocess.run(
-        [sys.executable, 'scripts/auto_bet.py', '--bet-only'],
-        capture_output=True, text=True, timeout=60
-    )
-    return jsonify({'ok': True, 'message': f"Bets placed: {result.stdout[:500]}"})
 
 
 @app.route('/api/admin/settle', methods=['POST'])
