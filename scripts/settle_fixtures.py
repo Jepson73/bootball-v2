@@ -36,8 +36,20 @@ logger = logging.getLogger(__name__)
 MIN_OPEN_BETS = 5
 
 
-def check_and_place_bets(round_id: int):
-    """Check if open bets < 5 and trigger auto_bet if needed."""
+def check_and_place_bets():
+    """Check if open bets < 5 and trigger auto_bet if needed.
+
+    Reads active round_id from file (set by get_active_round_id earlier in main).
+    """
+    from src.betting.round_manager import get_active_round_id
+
+    with get_session() as s:
+        round_id = get_active_round_id(s, create=False)
+
+    if not round_id:
+        logger.info("No active round, skipping auto-bet")
+        return 0
+
     with get_session() as s:
         open_bets = s.execute(
             select(func.count()).select_from(PlacedBet)
@@ -55,7 +67,7 @@ def check_and_place_bets(round_id: int):
 
     import subprocess
     result = subprocess.run(
-        [sys.executable, 'scripts/auto_bet.py', '--bet-only', '--round-id', str(round_id)],
+        [sys.executable, 'scripts/auto_bet.py', '--bet-only'],
         capture_output=True, text=True, timeout=120
     )
     logger.info(f"Auto-bet output: {result.stdout[:500]}")
@@ -69,10 +81,13 @@ def main():
     parser.add_argument('--dry-run', action='store_true')
     parser.add_argument('--days', type=int, default=1)
     parser.add_argument('--no-auto-bet', action='store_true', help='Skip auto-bet trigger')
-    parser.add_argument('--round-id', type=int, default=None, help='Round ID to use (for consistency across scripts)')
     args = parser.parse_args()
 
     init_db()
+
+    # Get/create active round (writes to file for auto_bet to read)
+    with get_session() as s:
+        get_active_round_id(s)
 
     updated = fetch_and_update_fixtures(days=args.days)
     logger.info(f"Updated {updated} fixtures")
@@ -81,10 +96,7 @@ def main():
     print(f"Settled: {result['bets_settled']}, P/L: {result['total_pnl']:+.2f}")
 
     if not args.no_auto_bet and not args.dry_run:
-        # Get the round ID to use
-        with get_session() as s:
-            round_id = args.round_id or get_active_round_id(s)
-        check_and_place_bets(round_id)
+        check_and_place_bets()
 
 
 if __name__ == '__main__':

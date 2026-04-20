@@ -653,7 +653,8 @@ def run_pipeline(league_ids: list[int] | None = None, bet_only: bool = False, se
     client = APIFootballClient()
 
     with get_session() as session:
-        # Use provided round_id or get active round from file/DB
+        # Use provided round_id arg first, else read from file (set by settle_fixtures)
+        # else get from DB (creates if needed)
         if round_id is None:
             from src.betting.round_manager import get_active_round_id
             round_id = get_active_round_id(session, create=True)
@@ -703,7 +704,6 @@ if __name__ == "__main__":
     parser.add_argument("--new-round", action="store_true", help="Force start new round")
     parser.add_argument("--reset", type=str, help="Reset bankroll to starting amount")
     parser.add_argument("--leagues", type=str, help="Comma-separated league IDs")
-    parser.add_argument("--round-id", type=int, default=None, help="Round ID to use (for consistency across scripts)")
     args = parser.parse_args()
 
     init_db()
@@ -726,4 +726,4 @@ if __name__ == "__main__":
             new_round = get_or_create_round(session)
             print(f"Reset. New round #{new_round.round_number} with balance {INITIAL_BANKROLL}")
         else:
-            run_pipeline(league_ids=league_ids, bet_only=args.bet_only, settle_only=args.settle_only, round_id=args.round_id)
+            run_pipeline(league_ids=league_ids, bet_only=args.bet_only, settle_only=args.settle_only)
