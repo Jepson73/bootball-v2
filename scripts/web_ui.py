@@ -474,21 +474,20 @@ function formatDateButtonLabel(dateStr) {
     return days[d.getDay()] + ' ' + d.getDate();
 }
 
-function generateDateButtons(allDates) {
+function generateDateButtons() {
     const container = document.getElementById('dateRow');
-    if (!allDates || allDates.length === 0) {
-        container.innerHTML = '<span style="color: #8b949e;">No dates available</span>';
-        return;
-    }
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
 
-    const today = new Date().toISOString().slice(0, 10);
     let html = '<button class="tab ' + (currentDate === 'all' ? 'active' : '') + '" onclick="setDate(this, \'all\')">All</button>';
-    html += '<button class="tab ' + (currentDate === today ? 'active' : '') + '" onclick="setDate(this, \'today\')">Today</button>';
+    html += '<button class="tab ' + (currentDate === today.toISOString().slice(0,10) ? 'active' : '') + '" onclick="setDate(this, \'today\')">Today</button>';
 
-    const uniqueDates = [...new Set(allDates)].sort();
-    for (const dateStr of uniqueDates) {
-        if (dateStr === today) continue;
-        html += '<button class="tab ' + (currentDate === dateStr ? 'active' : '') + '" onclick="setDate(this, \'' + dateStr + '\')">' + formatDateButtonLabel(dateStr) + '</button>';
+    // Generate next 7 days
+    for (let i = 1; i <= 7; i++) {
+        const d = new Date(today);
+        d.setDate(d.getDate() + i);
+        const dateStr = d.toISOString().slice(0, 10);
+        html += '<button class="tab ' + (currentDate === dateStr ? 'active' : '') + '" onclick="setDate(this, \'' + dateStr + '\')">' + formatDateButtonLabel(d) + '</button>';
     }
 
     container.innerHTML = html;
@@ -552,12 +551,6 @@ function loadPredictions() {
             console.log('Got data:', d.length, 'results');
             predictionsData = d;
             renderPredictions(d);
-
-            // Generate date buttons from first load
-            if (currentDate === 'all') {
-                const allDates = d.map(p => (p.date || '').slice(0, 10)).filter(d => d);
-                generateDateButtons(allDates);
-            }
         })
         .catch(e => {
             console.error('loadPredictions error:', e);
@@ -625,6 +618,7 @@ document.getElementById('sweetOnlyCheck').addEventListener('change', function() 
 });
 
 loadLeagues();
+generateDateButtons();
 loadPredictions();
 </script>
 '''
