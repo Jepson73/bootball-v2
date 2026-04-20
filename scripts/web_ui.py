@@ -2820,7 +2820,6 @@ def betting_action():
 
             elif action == 'new-round':
                 from sqlalchemy import func
-                from src.storage.models import PlacedBet
 
                 settled = s.execute(
                     select(PlacedBet).where(PlacedBet.round_id == r.id).where(PlacedBet.settled == True)
