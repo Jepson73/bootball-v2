@@ -1268,7 +1268,7 @@ def tracking_page():
 <table>
     <thead>
         <tr>
-            <th><button onclick="toggleDateSort()" id="dateSortBtn" style="background:none;border:none;color:inherit;cursor:pointer;padding:0;font-weight:bold;">Date ▼</button></th>
+            <th>Date</th>
             <th>Match</th>
             <th>Market</th>
             <th>Ver</th>
@@ -1295,7 +1295,6 @@ def tracking_page():
 <script>
 let currentPage = 1;
 let pageSize = 20;
-let dateSortDesc = true;
 
 function formatLocalDateTime(isoString) {
     if (!isoString) return '-';
@@ -1316,13 +1315,6 @@ function formatLocalDateTime(isoString) {
 }
 let totalResults = 0;
 
-function toggleDateSort() {
-    dateSortDesc = !dateSortDesc;
-    document.getElementById('dateSortBtn').textContent = 'Date ' + (dateSortDesc ? '▼' : '▲');
-    currentPage = 1;
-    loadTracking();
-}
-
 function loadTracking() {
     const market = document.getElementById('marketFilter').value;
     const status = document.getElementById('statusFilter').value;
@@ -1336,7 +1328,6 @@ function loadTracking() {
     else if (status === 'pending') url += '&settled=false';
     if (fromDate) url += '&from_date=' + fromDate;
     if (toDate) url += '&to_date=' + toDate;
-    url += '&sort_desc=' + dateSortDesc;
 
     fetch(url, {credentials: 'include'})
         .then(r => r.json())
@@ -1441,7 +1432,6 @@ def api_predictions_recent():
     market = request.args.get('market', '')
     from_date = request.args.get('from_date', '')
     to_date = request.args.get('to_date', '')
-    sort_desc = request.args.get('sort_desc', 'true') == 'true'
 
     with get_session() as s:
         query = (
@@ -1480,8 +1470,7 @@ def api_predictions_recent():
 
         total = len(s.execute(count_query).scalars().all())
 
-        order_col = Fixture.date.desc() if sort_desc else Fixture.date.asc()
-        query = query.order_by(order_col).offset((page - 1) * page_size).limit(page_size)
+        query = query.order_by(Fixture.date.desc()).offset((page - 1) * page_size).limit(page_size)
         rows = s.execute(query).all()
 
         results = []
