@@ -29,6 +29,10 @@ PY=/opt/projects/bootball/.venv/bin/python
 # 5 AM CET = 3 AM UTC
 0 3 * * * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/auto_bet.py --bet-only >> /var/log/bootball/auto_bet.log 2>&1
 
+# odds_poll: fetch pre-game odds every 30 min during match hours
+# Every 30 min from 8 AM to midnight CET (6 AM to 10 PM UTC)
+*/30 8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 * * * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/odds_poll.py >> /var/log/bootball/odds_poll.log 2>&1
+
 # settle_fixtures: every 30 min from 4 AM to 3 AM CET (4 AM to 1 AM UTC)
 */30 4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 * * * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/settle_fixtures.py >> /var/log/bootball/settle_fixtures.log 2>&1
 */30 0,1 * * * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/settle_fixtures.py >> /var/log/bootball/settle_fixtures.log 2>&1

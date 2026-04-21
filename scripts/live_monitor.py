@@ -28,7 +28,7 @@ from config.leagues import LEAGUES, TIER1_LEAGUE_IDS
 from src.ingestion.client import APIFootballClient
 from src.storage.db import get_session
 from src.storage.models import Fixture
-from src.betting.predict import predict_proba
+from src.betting.prediction import get_model_prediction
 from src.betting.ev import expected_value
 from src.betting.alerts import BettingAlerts, BetAlert
 

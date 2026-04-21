@@ -32,11 +32,13 @@ from sqlalchemy import select
 from config.leagues import ALL_LEAGUE_IDS, LEAGUES
 from src.ingestion.client import APIFootballClient, calls_remaining_today
 from src.storage.db import get_session, init_db
-from src.storage.models import Fixture, FixtureOdds, Standing, ValueBet, Team, PredictionRecord, ModelVersion
+from src.storage.models import Fixture, FixtureOdds, Standing, Team, PredictionRecord, ModelVersion
 from src.betting.ev import expected_value
 from src.betting.kelly import fractional_kelly
 from src.betting.shin import shin_probabilities
 from src.betting.alerts import BettingAlerts, BetAlert
+from src.betting.prediction import get_model_prediction, MARKET_OUTCOMES
+from src.models.calibrator import calibrate_prediction
 
 logging.basicConfig(
     level=logging.INFO,
@@ -46,89 +48,6 @@ logger = logging.getLogger(__name__)
 
 EV_THRESHOLD = 0.05
 KELLY_FRACTION = 0.25
-
-MODEL_PATH = '/opt/projects/bootball/data/model_{market}.pkl'
-
-MARKET_OUTCOMES = {
-    "h2h": ["1", "X", "2"],
-    "btts": ["Yes", "No"],
-    "ou25": ["Over", "Under"],
-    "ou15": ["Over", "Under"],
-}
-
-
-def get_model_prediction(market: str, home_team_id: int, away_team_id: int) -> dict[str, float] | None:
-    """Get prediction from trained LightGBM model.
-
-    Returns dict of outcome -> probability, or None if model unavailable.
-    """
-    model_path = MODEL_PATH.format(market=market)
-    if not os.path.exists(model_path):
-        logger.warning(f"Model not found: {model_path}")
-        return None
-
-    try:
-        with open(model_path, 'rb') as f:
-            obj = pickle.load(f)
-
-        if isinstance(obj, dict):
-            model = obj['model']
-            calibrator = obj.get('calibrator')
-        else:
-            model = obj
-            calibrator = None
-
-        with get_session() as s:
-            home_standing = s.execute(
-                select(Standing).where(Standing.team_id == home_team_id).where(Standing.season >= 2024)
-            ).first()
-            away_standing = s.execute(
-                select(Standing).where(Standing.team_id == away_team_id).where(Standing.season >= 2024)
-            ).first()
-
-            if not home_standing or not away_standing:
-                return None
-
-            hs = home_standing[0]
-            as_ = away_standing[0]
-
-            features = np.array([[
-                float(hs.rank or 15),
-                float(as_.rank or 15),
-                float((hs.goals_for or 1) - (hs.goals_against or 1)),
-                float((as_.goals_for or 1) - (as_.goals_against or 1)),
-                float(hs.goals_for or 1),
-                float(as_.goals_for or 1),
-                float(hs.goals_against or 1),
-                float(as_.goals_against or 1),
-                float(abs((hs.rank or 15) - (as_.rank or 15))),
-            ]])
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings('ignore', message='X does not have valid feature names')
-            raw_probs = model.predict_proba(features)[0]
-
-        outcomes = MARKET_OUTCOMES.get(market, [])
-        if len(outcomes) == 2:
-            probs = {outcomes[0]: float(raw_probs[1]), outcomes[1]: float(1 - raw_probs[1])}
-        elif len(raw_probs) == 3:
-            probs = {outcomes[i]: float(raw_probs[i]) for i in range(3)}
-        else:
-            return None
-
-        if calibrator:
-            try:
-                for k in probs:
-                    probs[k] = max(0.01, min(0.99, calibrator.predict([probs[k]])[0]))
-            except Exception:
-                pass
-
-        return probs
-
-    except Exception as e:
-        logger.warning(f"Model prediction error for {market}: {e}")
-        return None
-
 
 def find_value_bets(
     model_probs: dict[str, float],
@@ -459,6 +378,74 @@ class DailyPipeline:
                 ))
                 return True
 
+    def _fetch_odds_for_fixture(self, s, fixture_id: int):
+        """Fetch and store odds for a fixture from API-Football."""
+        bet_types = {
+            "h2h": 1,
+            "btts": 8,
+            "over_under": 5,
+        }
+
+        for bet_name, bet_id in bet_types.items():
+            try:
+                odds_data = self.client.get_odds(fixture_id=fixture_id, bet_type=bet_id)
+            except Exception as e:
+                logger.warning(f"  Odds fetch failed for fixture {fixture_id} ({bet_name}): {e}")
+                continue
+
+            if not odds_data:
+                continue
+
+            for odd_row in odds_data:
+                bookmaker = odd_row.get('bookmaker', {}).get('name', 'Unknown')
+                values = odd_row.get('values', [])
+
+                if not values:
+                    continue
+
+                odds_dict = {}
+                for v in values:
+                    label = v.get('label', '')
+                    odd_value = v.get('odd')
+                    if label and odd_value:
+                        odds_dict[label] = float(odd_value)
+
+                if not odds_dict:
+                    continue
+
+                existing = s.execute(
+                    select(FixtureOdds).where(
+                        FixtureOdds.fixture_id == fixture_id,
+                        FixtureOdds.bookmaker == bookmaker,
+                        FixtureOdds.bet_type == bet_name,
+                    )
+                ).scalars().first()
+
+                update_data = {
+                    'odd_home': odds_dict.get('1'),
+                    'odd_draw': odds_dict.get('X'),
+                    'odd_away': odds_dict.get('2'),
+                    'odd_over': odds_dict.get('Over 2.5'),
+                    'odd_under': odds_dict.get('Under 2.5'),
+                    'odd_btts_yes': odds_dict.get('Yes'),
+                    'odd_btts_no': odds_dict.get('No'),
+                    'odd_over15': odds_dict.get('Over 1.5'),
+                    'odd_under15': odds_dict.get('Under 1.5'),
+                }
+
+                if existing:
+                    for field, value in update_data.items():
+                        if value is not None:
+                            setattr(existing, field, value)
+                    existing.fetched_at = datetime.utcnow()
+                else:
+                    s.add(FixtureOdds(
+                        fixture_id=fixture_id,
+                        bookmaker=bookmaker,
+                        bet_type=bet_name,
+                        **{k: v for k, v in update_data.items() if v is not None},
+                    ))
+
     def _process_fixture(self, raw: dict, season: int):
         """Process single fixture for all markets."""
         fixture = raw.get("fixture", {})
@@ -490,6 +477,7 @@ class DailyPipeline:
 
         with get_session() as s:
             ensure_fixture(s, fixture_id, league_id, home_team_id, away_team_id, date_utc, season, team_names)
+            self._fetch_odds_for_fixture(s, fixture_id)
 
         logger.info(f"  {home_name} vs {away_name}:")
 
@@ -519,6 +507,14 @@ class DailyPipeline:
         outcome_str = ", ".join(f"{k}={v:.0%}" for k, v in model_probs.items())
         logger.info(f"    {market}: {outcome_str}")
 
+        bet_type_map = {
+            "h2h": "h2h",
+            "btts": "btts",
+            "ou25": "over_under",
+            "ou15": "over_under",
+        }
+        bet_type = bet_type_map.get(market, market)
+
         if not self.dry_run:
             best_outcome = max(model_probs.items(), key=lambda x: x[1])
             predicted_outcome = best_outcome[0]
@@ -538,14 +534,57 @@ class DailyPipeline:
                     )
                 ).scalars().first()
 
-                if not existing_pred:
-                    active_version = ps.execute(
-                        select(ModelVersion).where(
-                            ModelVersion.market == market,
-                            ModelVersion.is_active == True
-                        )
-                    ).scalar_one_or_none()
-                    model_version_id = active_version.id if active_version else None
+                odds_row = ps.execute(
+                    select(FixtureOdds).where(
+                        FixtureOdds.fixture_id == fixture_id,
+                        FixtureOdds.bet_type == bet_type,
+                    )
+                ).scalars().first()
+
+                odds_decimal = None
+                ev = None
+                calibrated_prob = prob
+                implied_prob = None
+                edge = None
+                bookmaker = None
+
+                if odds_row:
+                    field_map = {
+                        "h2h": {"1": "odd_home", "X": "odd_draw", "2": "odd_away"},
+                        "btts": {"Yes": "odd_btts_yes", "No": "odd_btts_no"},
+                        "ou25": {"Over": "odd_over", "Under": "odd_under"},
+                        "ou15": {"Over": "odd_over15", "Under": "odd_under15"},
+                    }
+                    market_fields = field_map.get(market, {})
+                    odd_value = market_fields.get(predicted_outcome)
+                    if odd_value:
+                        odds_decimal = getattr(odds_row, odd_value, None)
+
+                    if odds_decimal and odds_decimal > 0:
+                        ev = expected_value(prob, odds_decimal)
+                        implied_prob = 1.0 / odds_decimal
+                        edge = (prob - implied_prob) * 100
+                        bookmaker = odds_row.bookmaker
+
+                        calibration = calibrate_prediction(market, prob)
+                        calibrated_prob = calibration.calibrated_prob
+
+                active_version = ps.execute(
+                    select(ModelVersion).where(
+                        ModelVersion.market == market,
+                        ModelVersion.is_active == True
+                    )
+                ).scalar_one_or_none()
+                model_version_id = active_version.id if active_version else None
+
+                if existing_pred:
+                    existing_pred.odds_decimal = odds_decimal
+                    existing_pred.ev = ev
+                    existing_pred.calibrated_prob = calibrated_prob
+                    existing_pred.implied_prob = implied_prob
+                    existing_pred.edge = edge
+                    existing_pred.bookmaker = bookmaker
+                else:
                     ps.add(PredictionRecord(
                         fixture_id=fixture_id,
                         market=market,
@@ -554,94 +593,76 @@ class DailyPipeline:
                         predicted_outcome=predicted_outcome,
                         our_prob=prob,
                         sweet_spot=sweet_spot,
+                        odds_decimal=odds_decimal,
+                        ev=ev,
+                        calibrated_prob=calibrated_prob,
+                        implied_prob=implied_prob,
+                        edge=edge,
+                        bookmaker=bookmaker,
                     ))
-                    ps.commit()
+                ps.commit()
 
-        with get_session() as s:
-            odds_row = s.execute(
-                select(FixtureOdds).where(
-                    FixtureOdds.fixture_id == fixture_id,
-                    FixtureOdds.bet_type == market,
-                )
-            ).scalars().first()
+                if not odds_row or not odds_decimal:
+                    return
 
-            if not odds_row:
-                return
+                model_probs = get_model_prediction(market, home_id, away_id)
+                if model_probs is None:
+                    return
 
-            candidates = find_value_bets(
-                model_probs=model_probs,
-                odds_row=odds_row,
-                market=market,
-                fixture_id=fixture_id,
-                ev_threshold=0.02,
-            )
-
-            for candidate in candidates:
-                self.value_bets_found += 1
-
-                stake = candidate['kelly_fraction'] * 1000
-                logger.info(
-                    f"    *** VALUE BET: {market} {candidate['outcome']} @ {candidate['decimal_odd']:.2f} | "
-                    f"EV={candidate['ev']*100:.1f}% | Kelly={candidate['kelly_fraction']:.1%} | "
-                    f"Stake=£{stake:.2f}"
+                candidates = find_value_bets(
+                    model_probs=model_probs,
+                    odds_row=odds_row,
+                    market=market,
+                    fixture_id=fixture_id,
+                    ev_threshold=0.02,
                 )
 
-                league_info = LEAGUES.get(league_id, {})
-                league_name = league_info.get("name", "")
-                country = league_info.get("country", "")
+                for candidate in candidates:
+                    self.value_bets_found += 1
 
-                fixture_date_str = raw.get("fixture", {}).get("date", "")
-                if fixture_date_str:
-                    try:
-                        fix_date = datetime.fromisoformat(fixture_date_str.replace("Z", "+00:00"))
-                        date_key = fix_date.strftime("%Y-%m-%d")
-                        fixture_time = fix_date.strftime("%H:%M")
-                    except:
-                        date_key = fixture_date_str[:10]
-                        fixture_time = fixture_date_str[11:16]
-                else:
-                    date_key = "Unknown"
-                    fixture_time = ""
+                    stake = candidate['kelly_fraction'] * 1000
+                    logger.info(
+                        f"    *** VALUE BET: {market} {candidate['outcome']} @ {candidate['decimal_odd']:.2f} | "
+                        f"EV={candidate['ev']*100:.1f}% | Kelly={candidate['kelly_fraction']:.1%} | "
+                        f"Stake=£{stake:.2f}"
+                    )
 
-                self.value_bets_list.append({
-                    'date': date_key,
-                    'time': fixture_time,
-                    'home': home_name,
-                    'away': away_name,
-                    'country': country,
-                    'league': league_name,
-                    'market': market,
-                    'outcome': candidate['outcome'],
-                    'odds': candidate['decimal_odd'],
-                    'prob': candidate['our_prob'],
-                    'ev': candidate['ev'] * 100,
-                    'kelly': candidate['kelly_fraction'],
-                    'stake': stake,
-                    'edge': (candidate['our_prob'] - candidate['implied_prob_shin']) * 100,
-                })
+                    league_info = LEAGUES.get(league_id, {})
+                    league_name = league_info.get("name", "")
+                    country = league_info.get("country", "")
+
+                    fixture_date_str = raw.get("fixture", {}).get("date", "")
+                    if fixture_date_str:
+                        try:
+                            fix_date = datetime.fromisoformat(fixture_date_str.replace("Z", "+00:00"))
+                            date_key = fix_date.strftime("%Y-%m-%d")
+                            fixture_time = fix_date.strftime("%H:%M")
+                        except:
+                            date_key = fixture_date_str[:10]
+                            fixture_time = fixture_date_str[11:16]
+                    else:
+                        date_key = "Unknown"
+                        fixture_time = ""
+
+                    self.value_bets_list.append({
+                        'date': date_key,
+                        'time': fixture_time,
+                        'home': home_name,
+                        'away': away_name,
+                        'country': country,
+                        'league': league_name,
+                        'market': market,
+                        'outcome': candidate['outcome'],
+                        'odds': candidate['decimal_odd'],
+                        'prob': candidate['our_prob'],
+                        'ev': candidate['ev'] * 100,
+                        'kelly': candidate['kelly_fraction'],
+                        'stake': stake,
+                        'edge': (candidate['our_prob'] - candidate['implied_prob_shin']) * 100,
+                    })
 
                 if not self.dry_run:
-                    existing = s.execute(
-                        select(ValueBet).where(
-                            ValueBet.fixture_id == fixture_id,
-                            ValueBet.market == market,
-                            ValueBet.outcome == candidate['outcome'],
-                        )
-                    ).first()
-
-                    if not existing:
-                        s.add(ValueBet(
-                            fixture_id=fixture_id,
-                            model_name="lgbm",
-                            market=market,
-                            outcome=candidate['outcome'],
-                            our_prob=candidate['our_prob'],
-                            bookmaker_odd=candidate['decimal_odd'],
-                            implied_prob=candidate['implied_prob_shin'],
-                            ev=candidate['ev'],
-                            kelly_fraction=candidate['kelly_fraction'],
-                            recommended_stake=stake,
-                        ))
+                    pass  # ValueBet table archived, value bets tracked via PredictionRecord
 
 
 def main():

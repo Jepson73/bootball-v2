@@ -41,12 +41,13 @@ from src.ingestion.client import APIFootballClient, calls_remaining_today
 from src.storage.db import get_session, init_db
 from src.storage.models import (
     Fixture, FixtureOdds, Standing, Team, League,
-    Bankroll, SettledBet, BankrollRound, PlacedBet,
+    Bankroll, BankrollRound, PlacedBet, ModelVersion,
 )
-from src.betting.kelly import fractional_kelly, stake as kelly_stake
+from src.betting.kelly import fractional_kelly, kelly_stake
 from src.betting.alerts import BettingAlerts, BetAlert
 from src.betting.ev import expected_value
 from src.betting.shin import shin_probabilities
+from src.betting.prediction import get_model_prediction, MARKET_OUTCOMES
 
 logging.basicConfig(
     level=logging.INFO,
@@ -65,89 +66,6 @@ MIN_ODDS = 1.5
 MAX_ODDS = 10.0
 BET_MARKETS = ["h2h", "btts", "ou25", "ou15"]
 MAX_BETS_PER_DAY = 5
-
-MODEL_PATH = '/opt/projects/bootball/data/model_{market}.pkl'
-
-MARKET_OUTCOMES = {
-    "h2h": ["1", "X", "2"],
-    "btts": ["Yes", "No"],
-    "ou25": ["Over", "Under"],
-    "ou15": ["Over", "Under"],
-}
-
-
-def get_model_prediction(market: str, home_team_id: int, away_team_id: int) -> dict[str, float] | None:
-    """Get prediction from trained LightGBM model.
-
-    Returns dict of outcome -> probability, or None if model unavailable.
-    """
-    model_path = MODEL_PATH.format(market=market)
-    if not os.path.exists(model_path):
-        logger.warning(f"Model not found: {model_path}")
-        return None
-
-    try:
-        with open(model_path, 'rb') as f:
-            obj = pickle.load(f)
-
-        if isinstance(obj, dict):
-            model = obj['model']
-            calibrator = obj.get('calibrator')
-        else:
-            model = obj
-            calibrator = None
-
-        with get_session() as s:
-            home_standing = s.execute(
-                select(Standing).where(Standing.team_id == home_team_id).where(Standing.season >= 2024)
-            ).first()
-            away_standing = s.execute(
-                select(Standing).where(Standing.team_id == away_team_id).where(Standing.season >= 2024)
-            ).first()
-
-            if not home_standing or not away_standing:
-                return None
-
-            hs = home_standing[0]
-            as_ = away_standing[0]
-
-            features = np.array([[
-                float(hs.rank or 15),
-                float(as_.rank or 15),
-                float((hs.goals_for or 1) - (hs.goals_against or 1)),
-                float((as_.goals_for or 1) - (as_.goals_against or 1)),
-                float(hs.goals_for or 1),
-                float(as_.goals_for or 1),
-                float(hs.goals_against or 1),
-                float(as_.goals_against or 1),
-                float(abs((hs.rank or 15) - (as_.rank or 15))),
-            ]])
-
-        with warnings.catch_warnings():
-            warnings.filterwarnings('ignore', message='X does not have valid feature names')
-            raw_probs = model.predict_proba(features)[0]
-
-        outcomes = MARKET_OUTCOMES.get(market, [])
-        if len(outcomes) == 2:
-            probs = {outcomes[0]: float(raw_probs[1]), outcomes[1]: float(1 - raw_probs[1])}
-        elif len(raw_probs) == 3:
-            probs = {outcomes[i]: float(raw_probs[i]) for i in range(3)}
-        else:
-            return None
-
-        if calibrator:
-            try:
-                for k in probs:
-                    probs[k] = max(0.01, min(0.99, calibrator.predict([probs[k]])[0]))
-            except Exception:
-                pass
-
-        return probs
-
-    except Exception as e:
-        logger.warning(f"Model prediction error for {market}: {e}")
-        return None
-
 
 ODDS_FIELD_MAP = {
     "h2h": {"1": "odd_home", "X": "odd_draw", "2": "odd_away"},
@@ -363,6 +281,7 @@ def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None =
         .where(Fixture.date >= today_start)
         .where(Fixture.date < today_end)
         .where(Fixture.league_id.in_(leagues))
+        .distinct()  # Avoid duplicate fixtures from multiple bookmaker odds
     ).scalars().all()
 
     placed_bets = []
@@ -435,6 +354,8 @@ def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None =
             select(PlacedBet)
             .where(PlacedBet.fixture_id == fixture.id)
             .where(PlacedBet.round_id == the_round.id)
+            .where(PlacedBet.market == candidate['market'])
+            .where(PlacedBet.outcome == candidate['outcome'])
             .where(PlacedBet.settled == False)
         ).scalars().first()
 
@@ -445,10 +366,19 @@ def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None =
         away_team = session.execute(select(Team).where(Team.id == fixture.away_team_id)).scalar_one_or_none()
         league = session.execute(select(League).where(League.id == fixture.league_id)).scalar_one_or_none()
 
+        active_version = session.execute(
+            select(ModelVersion).where(
+                ModelVersion.market == candidate['market'],
+                ModelVersion.is_active == True
+            )
+        ).scalar_one_or_none()
+        model_version_id = active_version.id if active_version else None
+
         bet = PlacedBet(
             round_id=the_round.id,
             fixture_id=fixture.id,
             market=candidate['market'],
+            model_version_id=model_version_id,
             outcome=candidate['outcome'],
             stake=stake_amount,
             odds=candidate['decimal_odd'],
@@ -502,7 +432,7 @@ def settle_bets(the_round: BankrollRound, session) -> tuple[int, float]:
             select(Fixture).where(Fixture.id == bet.fixture_id)
         ).scalars().first()
 
-        if not fixture or fixture.status not in ("FT", "AET", "PEN"):
+        if not fixture or fixture.status not in ("FT", "FTm", "AET", "PEN"):
             continue
 
         if fixture.goals_home is None or fixture.goals_away is None:

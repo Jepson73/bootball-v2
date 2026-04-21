@@ -360,12 +360,58 @@ input:focus, select:focus {
     <a href="/debug">Debug</a>
 </div>
 <div class="sidebar">
+    <div id="liveGamesSidebar" style="padding: 12px 8px;">
+        <div id="liveGamesHeader" style="font-size: 11px; color: #8b949e; margin-bottom: 8px; text-transform: uppercase;">Live Now</div>
+        <div id="liveGamesList" style="color: #c9d1d9; font-size: 13px;">Loading...</div>
+    </div>
     <a href="/predictions" id="navPredictions">Predictions</a>
     <a href="/betting" id="navBetting">Betting</a>
     <a href="/tracking" id="navTracking">Tracking</a>
     <a href="/admin" id="navAdmin">Admin</a>
     <a href="/debug" id="navDebug">Debug</a>
 </div>
+<script>
+function loadLiveGames() {
+    fetch('/api/live-games', {credentials: 'include'})
+        .then(r => r.ok ? r.json() : [])
+        .then(games => {
+            const list = document.getElementById('liveGamesList');
+            const header = document.getElementById('liveGamesHeader');
+            if (!games || games.length === 0) {
+                list.innerHTML = '<span style="color: #484f58;">No live games</span>';
+                header.textContent = 'Coming Up';
+                return;
+            }
+            const hasLive = games.some(g => g.status !== 'upcoming');
+            header.textContent = hasLive ? 'Live Now' : 'Coming Up';
+            list.innerHTML = games.map(g => {
+                if (g.status === 'upcoming') {
+                    const evBadge = g.best_ev
+                        ? '<span style="font-size: 10px; background: #1f6feb22; color: #58a6ff; padding: 1px 5px; border-radius: 3px; margin-left: 6px;">' + g.best_ev.market.toUpperCase() + ' ' + g.best_ev.outcome + ' @ ' + g.best_ev.odds.toFixed(2) + ' (EV ' + (g.best_ev.ev * 100).toFixed(0) + '%)</span>'
+                        : '';
+                    return '<div style="margin-bottom: 10px; padding-bottom: 6px; border-bottom: 1px solid #21262d;">' +
+                        '<div style="font-weight: 600; font-size: 12px;">' + g.home + ' vs ' + g.away + '</div>' +
+                        '<div style="font-size: 11px; color: #d29922; margin: 2px 0;">Kickoff ' + g.kickoff + ' (SE)</div>' +
+                        evBadge +
+                        '</div>';
+                }
+                const elapsed = g.elapsed ? g.elapsed + "'" : g.status;
+                const score = (g.home_goals !== null && g.away_goals !== null)
+                    ? g.home_goals + '-' + g.away_goals
+                    : 'vs';
+                return '<div style="margin-bottom: 12px; padding-bottom: 8px; border-bottom: 1px solid #21262d;">' +
+                    '<div style="font-weight: 600;">' + g.home + ' <span style="color: #58a6ff;">' + score + '</span> ' + g.away + '</div>' +
+                    '<div style="font-size: 11px; color: #d29922; margin: 2px 0;">' + elapsed + '</div>' +
+                    '</div>';
+            }).join('');
+        })
+        .catch(() => {
+            document.getElementById('liveGamesList').innerHTML = '<span style="color: #484f58;">Error loading</span>';
+        });
+}
+setInterval(loadLiveGames, 30000);
+loadLiveGames();
+</script>
 <div class="main">
 ''' + '\n{{ content }}\n' + '''
 </div>
@@ -1639,7 +1685,10 @@ function trainSelectedMarket() {
 
 function loadModelStats() {
     fetch('/api/models/stats', {credentials: 'include'})
-        .then(r => r.json())
+        .then(r => {
+            if (!r.ok) throw new Error('Auth required');
+            return r.json();
+        })
         .then(d => {
             let html = '<table style="width: 100%;">';
             html += '<thead><tr><th>Market</th><th>Iterations</th><th>Retrains</th><th>Brier</th><th>Baseline</th><th>Drift</th><th>Trend</th></tr></thead>';
@@ -1688,12 +1737,18 @@ function getTrendBadge(trend) {
 }
 
 fetch('/api/admin/system_status', {credentials: 'include'})
-    .then(r => r.json())
+    .then(r => {
+        if (!r.ok) throw new Error('Auth required');
+        return r.json();
+    })
     .then(d => {
         document.getElementById('systemStatus').innerHTML =
             '<div>API Calls Today: <strong>' + (d.api_calls || 0) + '</strong></div>' +
             '<div>DB Fixtures: <strong>' + (d.fixture_count || 0) + '</strong></div>' +
             '<div>Last Daily Run: <strong>' + (d.last_daily_run || 'Never') + '</strong></div>';
+    })
+    .catch(() => {
+        document.getElementById('systemStatus').innerHTML = '<div style="color:#f85149;">Please login</div>';
     });
 
 // Load model stats on page load

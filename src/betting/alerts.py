@@ -226,7 +226,7 @@ class BettingAlerts:
         """Format bet alert message for Discord (markdown)."""
         market_emoji = {"btts": "🎯", "ou25": "⚽", "ou15": "🥅", "h2h": "🏆"}.get(alert.market, "💰")
         lines = [
-            f"{market_emoji} **VALUE BET**",
+            f"🔥 **{alert.market.upper()} UPDATE**",
             "",
             f"**{alert.home_team}** vs **{alert.away_team}**",
             f"Market: **{alert.market.upper()}**",
@@ -252,7 +252,7 @@ class BettingAlerts:
         """Format bet alert message for HTML (Telegram)."""
         market_emoji = {"btts": "🎯", "ou25": "⚽", "ou15": "🥅", "h2h": "🏆"}.get(alert.market, "💰")
         lines = [
-            f"{market_emoji} <b>VALUE BET ALERT</b>",
+            f"🔥 <b>{alert.market.upper()} UPDATE</b>",
             "",
             f"<b>{alert.home_team}</b> vs <b>{alert.away_team}</b>",
             f"Market: <b>{alert.market.upper()}</b>",

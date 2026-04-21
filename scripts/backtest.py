@@ -28,7 +28,7 @@ from sqlalchemy import select, func
 from config.leagues import LEAGUES
 from src.storage.db import get_session
 from src.storage.models import Fixture
-from src.betting.predict import predict_proba, MARKET_OUTCOMES
+from src.betting.prediction import get_model_prediction, MARKET_OUTCOMES
 from src.betting.ev import expected_value
 from src.betting.kelly import fractional_kelly
 from src.evaluation.sharpe import risk_metrics_from_pnl
@@ -202,7 +202,7 @@ def simulate_market(
 
     for f in fixtures:
         try:
-            probs = predict_proba(market, f.home_team_id, f.away_team_id)
+            probs = get_model_prediction(market, f.home_team_id, f.away_team_id)
         except Exception as e:
             continue
 
@@ -287,7 +287,7 @@ def simulate_market_from_dict(
 
     for f in fixtures:
         try:
-            probs = predict_proba(market, f["home_team_id"], f["away_team_id"])
+            probs = get_model_prediction(market, f["home_team_id"], f["away_team_id"])
         except Exception:
             continue
 
