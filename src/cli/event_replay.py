@@ -18,6 +18,7 @@ This is a READ-ONLY debugging tool:
 
 import argparse
 import sys
+import json
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
@@ -260,21 +261,46 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Replay modes
   python -m src.cli.event_replay                    # Replay last 100 events
   python -m src.cli.event_replay --run-id abc123   # Replay specific run
-  python -m src.cli.event_replay --from-date 2025-01-01
+  python -m src.cli.event_replay --from-date 2025-01-01 --to-date 2025-01-31
   python -m src.cli.event_replay --last 1000
+  python -m src.cli.event_replay --market h2h      # Filter by market
+  
+  # Output modes
+  python -m src.cli.event_replay --output json --export results.json
+  python -m src.cli.event_replay --output csv --export events.csv
+  
+  # Compare modes
   python -m src.cli.event_replay --compare-run def456 --run-id abc123
+  python -m src.cli.event_replay --compare-model v12 --model-version v14
+  
+  # Debug
   python -m src.cli.event_replay --verbose
+  python -m src.cli.event_replay --debug
         """
     )
     
+    # Replay filters
     parser.add_argument("--run-id", type=str, help="Filter by run_id")
     parser.add_argument("--from-date", type=str, help="From date (YYYY-MM-DD)")
     parser.add_argument("--to-date", type=str, help="To date (YYYY-MM-DD)")
     parser.add_argument("--last", type=int, help="Replay last N events")
+    parser.add_argument("--market", type=str, help="Filter by market (h2h, btts, ou25)")
+    parser.add_argument("--model-version", type=str, help="Filter by model version")
+    
+    # Compare modes
     parser.add_argument("--compare-run", type=str, help="Compare with another run")
+    parser.add_argument("--compare-model", type=str, help="Compare model versions")
+    
+    # Output
+    parser.add_argument("--output", type=str, choices=["console", "json", "csv"], default="console", help="Output format")
+    parser.add_argument("--export", type=str, help="Export to file")
+    
+    # Debug
     parser.add_argument("--verbose", "-v", action="store_true", help="Show detailed output")
+    parser.add_argument("--debug", "-d", action="store_true", help="Show event-by-event debug output")
     parser.add_argument("--quiet", "-q", action="store_true", help="Suppress progress output")
     parser.add_argument("--event-types", type=str, help="Comma-separated event types to filter")
     
@@ -290,6 +316,35 @@ Examples:
     if args.event_types:
         event_types = [et.strip() for et in args.event_types.split(",")]
     
+    # Handle model version comparison
+    if args.compare_model:
+        from src.analytics.replay_diff import ReplayDiffer
+        differ = ReplayDiffer()
+        result = differ.compare_model_versions(args.model_version, args.compare_model)
+        
+        if "error" in result:
+            print(f"Error: {result['error']}")
+            return 1
+        
+        print(f"\n=== MODEL VERSION COMPARISON ===")
+        print(f"Model A: {result['model_a']['version']}")
+        print(f"Model B: {result['model_b']['version']}")
+        print(f"\nDeltas:")
+        print(f"  ROI: {result['deltas']['roi']:+.2f}%")
+        print(f"  PnL: {result['deltas']['total_pnl']:+,.2f}")
+        print(f"  Wins: {result['deltas']['wins']:+d}")
+        print(f"  Winner: {result['winner']} (+{result['win_margin']:.2f}%)")
+        return 0
+    
+    # Handle run comparison
+    if args.compare_run:
+        events2 = load_events(run_id=args.compare_run)
+        if not events2:
+            print(f"No events found for run {args.compare_run}")
+            return 1
+        compare_runs(events, events2)
+        return 0
+    
     # Load events
     if not args.quiet:
         print("Loading events...")
@@ -302,6 +357,17 @@ Examples:
         event_types=event_types
     )
     
+    # Apply market filter
+    if args.market:
+        events = [
+            e for e in events
+            if any(b.get("market") == args.market for b in e.get("payload", {}).get("bets", []))
+        ]
+    
+    # Apply model version filter
+    if args.model_version:
+        events = [e for e in events if e.get("model_version") == args.model_version]
+    
     if not events:
         print("No events found matching criteria.")
         return 1
@@ -309,22 +375,61 @@ Examples:
     if not args.quiet:
         print(f"Loaded {len(events)} events\n")
     
-    # Compare mode
-    if args.compare_run:
-        events2 = load_events(run_id=args.compare_run)
-        if not events2:
-            print(f"No events found for run {args.compare_run}")
-            return 1
-        compare_runs(events, events2)
-        return 0
-    
     # Replay mode
     if not args.quiet:
         print("Replaying events...\n")
     
-    system = replay_events(events, verbose=args.verbose)
+    system = replay_events(events, verbose=args.verbose or args.debug)
     
-    # Output final states
+    # Export mode
+    if args.output == "json" or args.output == "csv":
+        from src.analytics.audit_exporter import AuditExporter
+        exporter = AuditExporter()
+        
+        audit_data = {
+            "metadata": {
+                "run_id": args.run_id,
+                "event_count": len(events),
+                "filters": {
+                    "market": args.market,
+                    "model_version": args.model_version,
+                    "from_date": args.from_date,
+                    "to_date": args.to_date
+                }
+            },
+            "events": events,
+            "state_final": {
+                "betting": {
+                    "balance": system.betting.balance,
+                    "roi": system.betting.roi,
+                    "wins": system.betting.wins,
+                    "losses": system.betting.losses,
+                    "total_pnl": system.betting.total_pnl
+                },
+                "health": {
+                    "health_score": system.health.health_score,
+                    "error_rate": system.health.error_rate,
+                    "total_runs": system.health.total_runs
+                }
+            }
+        }
+        
+        if args.output == "json":
+            if args.export:
+                exporter.export_to_json(audit_data, args.export)
+                print(f"Exported to {args.export}")
+            else:
+                print(json.dumps(audit_data, indent=2, default=str))
+        else:  # csv
+            if args.export:
+                exporter.export_to_csv(events, args.export)
+                print(f"Exported to {args.export}")
+            else:
+                exporter.export_to_csv(events, "/dev/stdout")
+        
+        return 0
+    
+    # Console output (default)
     print("\n" + "="*50)
     print("FINAL RECONSTRUCTED STATE")
     print("="*50)
