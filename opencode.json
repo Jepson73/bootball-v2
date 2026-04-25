@@ -1,0 +1,6 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "model": "minimax/minimax-2.5-opencode",
+  "instructions": ["AGENTS.md"],
+  "share": "disabled"
+}

@@ -422,8 +422,8 @@ class Backfiller:
         include_odds: bool = False,
     ) -> None:
         """Run full backfill. Stops cleanly if daily budget is low."""
-        from config.leagues import TIER1_LEAGUE_IDS
-        target_leagues = league_ids or TIER1_LEAGUE_IDS
+        from config.leagues import ALL_LEAGUE_IDS
+        target_leagues = league_ids or ALL_LEAGUE_IDS
         target_seasons = seasons or BACKFILL_SEASONS
 
         init_db()

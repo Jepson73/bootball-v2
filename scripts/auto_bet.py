@@ -36,7 +36,7 @@ sys.path.insert(0, '/opt/projects/bootball')
 import numpy as np
 from sqlalchemy import select, func
 
-from config.leagues import TIER1_LEAGUE_IDS, LEAGUES
+from config.leagues import ALL_LEAGUE_IDS, LEAGUES
 from src.ingestion.client import APIFootballClient, calls_remaining_today
 from src.storage.db import get_session, init_db
 from src.storage.models import (
@@ -48,6 +48,7 @@ from src.betting.alerts import BettingAlerts, BetAlert
 from src.betting.ev import expected_value
 from src.betting.shin import shin_probabilities
 from src.betting.prediction import get_model_prediction, MARKET_OUTCOMES
+from src.betting.market_feasibility import should_place_bet, get_all_market_statuses
 
 logging.basicConfig(
     level=logging.INFO,
@@ -64,6 +65,12 @@ MAX_STAKE = 50.0
 MAX_TOTAL_STAKE_PER_DAY = 100.0
 MIN_ODDS = 1.5
 MAX_ODDS = 10.0
+MIN_ODDS_BY_MARKET = {
+    "h2h": 2.5,
+    "btts": 2.0,
+    "ou25": 2.0,
+    "ou15": 2.0,
+}
 BET_MARKETS = ["h2h", "btts", "ou25", "ou15"]
 MAX_BETS_PER_DAY = 5
 
@@ -253,8 +260,12 @@ def _get_market_result(fixture: Fixture, market: str) -> str | None:
     return None
 
 
-def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None = None) -> tuple[int, list[dict]]:
-    leagues = league_ids or TIER1_LEAGUE_IDS
+def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None = None, context: "RunContext | None" = None) -> tuple[int, list[dict]]:
+    from backend.run_context import require_run_context
+    
+    require_run_context(context, "place_bets")
+    
+    leagues = league_ids or ALL_LEAGUE_IDS
 
     today = datetime.now(ZoneInfo("UTC")).date()
     tomorrow = today + timedelta(days=1)
@@ -266,6 +277,7 @@ def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None =
         select(func.count(PlacedBet.id))
         .where(PlacedBet.round_id == the_round.id)
         .where(PlacedBet.placed_at >= today_start)
+        .where(PlacedBet.settled == False)
     ).scalar() or 0
 
     if existing_today >= MAX_BETS_PER_DAY:
@@ -301,16 +313,26 @@ def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None =
         if remaining_balance < MIN_STAKE:
             break
 
-        odds_row = session.execute(
-            select(FixtureOdds)
-            .where(FixtureOdds.fixture_id == fixture.id)
-        ).scalars().first()
-
-        if not odds_row:
-            continue
-
         all_candidates = []
+        
+        market_statuses = get_all_market_statuses()
+        
         for market in BET_MARKETS:
+            market_status = market_statuses.get(market)
+            if market_status and market_status != "learnable":
+                logger.debug(f"Skipping {market}: status = {market_status}")
+                continue
+                
+            bet_type = 'over_under' if market in ('ou25', 'ou15') else market
+            odds_row = session.execute(
+                select(FixtureOdds)
+                .where(FixtureOdds.fixture_id == fixture.id)
+                .where(FixtureOdds.bet_type == bet_type)
+            ).scalars().first()
+
+            if not odds_row:
+                continue
+
             model_probs = get_model_prediction(market, fixture.home_team_id, fixture.away_team_id)
             if not model_probs:
                 continue
@@ -330,7 +352,8 @@ def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None =
         all_candidates.sort(key=lambda x: x['ev'], reverse=True)
         candidate = all_candidates[0]
 
-        if candidate['decimal_odd'] < MIN_ODDS or candidate['decimal_odd'] > MAX_ODDS:
+        market_min_odds = MIN_ODDS_BY_MARKET.get(candidate['market'], MIN_ODDS)
+        if candidate['decimal_odd'] < market_min_odds or candidate['decimal_odd'] > MAX_ODDS:
             continue
 
         ev = candidate['ev']
@@ -385,6 +408,7 @@ def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None =
             our_prob=candidate['our_prob'],
             ev=ev,
             kelly_fraction=kf,
+            run_id=context.run_id if context else None,
         )
         session.add(bet)
         total_staked_today += stake_amount
@@ -413,7 +437,7 @@ def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None =
                     f"(P={candidate['our_prob']:.0%}, EV={ev:.1%}) | Stake: {stake_amount:.2f}")
 
     session.commit()
-    logger.info(f"Placed {placed} bets, staked £{total_staked_today:.2f}")
+    logger.info(f"Placed {placed} bets, staked SEK {total_staked_today:.2f}")
     return placed, placed_bets
 
 
@@ -565,11 +589,11 @@ def send_bets_alert(bets: list[dict], round_num: int):
         msg += f"{market_emoji} **{bet['home']}** vs **{bet['away']}**\n"
         msg += f"   └ {bet['market'].upper()} **{bet['outcome']}** {outcome_emoji} @ {bet['odds']:.2f}\n"
         msg += f"   └ P={bet['prob']:.0%} | EV={bet['ev']:.1%} | Kelly={bet['kelly']:.0%}\n"
-        msg += f"   └ Stake: £{bet['stake']:.2f} | {bet['league']} | {bet['fixture_date']}\n"
+        msg += f"   └ Stake: SEK {bet['stake']:.2f} | {bet['league']} | {bet['fixture_date']}\n"
         msg += "\n"
 
     msg += f"─────────────────────\n"
-    msg += f"Total stake: £{total_stake:.2f}\n"
+    msg += f"Total stake: SEK {total_stake:.2f}\n"
 
     try:
         alerts.send_message(msg)
@@ -578,7 +602,14 @@ def send_bets_alert(bets: list[dict], round_num: int):
         logger.warning(f"Failed to send bets alert: {e}")
 
 
-def run_pipeline(league_ids: list[int] | None = None, bet_only: bool = False, settle_only: bool = False, round_id: int | None = None):
+def run_pipeline(league_ids: list[int] | None = None, bet_only: bool = False, settle_only: bool = False, round_id: int | None = None, context: "RunContext | None" = None):
+    from backend.runtime_mode import get_mode_name
+    from backend.run_context import require_run_context
+    from backend.execution_engine import enforce_execution_boundary
+    
+    enforce_execution_boundary()
+    require_run_context(context, "run_pipeline")
+    
     init_db()
     client = APIFootballClient()
 
@@ -603,7 +634,7 @@ def run_pipeline(league_ids: list[int] | None = None, bet_only: bool = False, se
         placed_bets = []
 
         if not settle_only:
-            placed, placed_bets = place_bets(the_round, session, league_ids)
+            placed, placed_bets = place_bets(the_round, session, league_ids, context=context)
 
             if placed_bets:
                 send_bets_alert(placed_bets, the_round.round_number)
@@ -626,6 +657,11 @@ def run_pipeline(league_ids: list[int] | None = None, bet_only: bool = False, se
 
 
 if __name__ == "__main__":
+    from backend.runtime_mode import get_mode_name
+    from backend.run_context import create_run_context
+    from backend.experiment_tracker import get_tracker
+    from backend.execution_engine import get_execution_engine
+    
     parser = argparse.ArgumentParser(description="Automatic betting bot")
     parser.add_argument("--bet-only", action="store_true", help="Only place bets, don't settle")
     parser.add_argument("--settle-only", action="store_true", help="Only settle pending bets")
@@ -656,4 +692,26 @@ if __name__ == "__main__":
             new_round = get_or_create_round(session)
             print(f"Reset. New round #{new_round.round_number} with balance {INITIAL_BANKROLL}")
         else:
-            run_pipeline(league_ids=league_ids, bet_only=args.bet_only, settle_only=args.settle_only)
+            mode = get_mode_name()
+            tracker = get_tracker()
+            engine = get_execution_engine()
+            
+            run_id = None
+            context = None
+            
+            if mode in ['training', 'dev']:
+                run_id = tracker.start_run(mode=mode)
+                context = create_run_context(run_id, mode)
+                print(f"Started experiment run: {run_id}")
+            
+            try:
+                engine.run_job("betting_pipeline", context)
+                print(f"Execution completed successfully")
+            except Exception as e:
+                print(f"Execution failed: {e}")
+                if run_id:
+                    try:
+                        tracker.finalize_run(run_id, status='failed')
+                    except:
+                        pass
+                raise

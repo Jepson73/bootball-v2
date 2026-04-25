@@ -1,32 +1,53 @@
 """
-src/alerts/discord.py
+Discord webhook alerts for betting + system observability.
 
-Discord webhook alerts for betting opportunities.
-Sends formatted messages with top N value bets.
+Now supports:
+- Bet alerts
+- System events (runs, logs, actions)
+- Health updates (with diff tracking)
+- Model trend + calibration updates
 """
+
 from __future__ import annotations
 
 import logging
-import time
 from dataclasses import dataclass
-from datetime import datetime, timedelta
+from datetime import datetime, timezone
 from typing import Any
 
 import requests
 
 from config.settings import settings
-from src.utils.timezone import format_local
+from src.utils.timezone import format_local, tz_name
 
 logger = logging.getLogger(__name__)
 
 
+# =========================================================
+# Helpers (presentation only)
+# =========================================================
+
+def format_ev_stars(ev: float) -> str:
+    return "⭐" * min(int(ev * 10), 5)
+
+
+def clamp(value: Any, limit: int = 1024) -> str:
+    return str(value)[:limit]
+
+
+# =========================================================
+# Bet model
+# =========================================================
+
 @dataclass
 class BetAlert:
-    """A betting opportunity alert."""
     fixture_id: int
     home_team: str
     away_team: str
+    home_logo: str | None
+    away_logo: str | None
     league: str
+    league_flag: str | None
     market: str
     market_display: str
     outcome: str
@@ -34,177 +55,160 @@ class BetAlert:
     our_prob: float
     ev: float
     confidence: int
-    kickoff: str
-    kickoff_local: str  # Local time string
-    ev_stars: str  # Unicode stars for visual EV rating
+    kickoff_local: str
+    ev_stars: str
 
+
+# =========================================================
+# Discord client
+# =========================================================
 
 class DiscordAlerts:
-    """Sends alerts to Discord via webhook."""
-
     def __init__(self, webhook_url: str | None = None):
         self.webhook_url = webhook_url or settings.discord_webhook_url
         self.enabled = settings.alerts_enabled and bool(self.webhook_url)
 
-    def send(self, content: str, embed: dict | None = None) -> bool:
-        """Send a message to Discord.
+    # -----------------------------
+    # Core sender
+    # -----------------------------
 
-        Args:
-            content: Simple text message
-            embed: Discord embed object (optional)
-
-        Returns:
-            True if sent successfully
-        """
+    def send(self, content: str = "", embed: dict | None = None) -> bool:
         if not self.enabled:
-            logger.debug("Discord alerts disabled")
             return False
 
         payload: dict[str, Any] = {"content": content}
+
         if embed:
             payload["embeds"] = [embed]
 
         try:
-            response = requests.post(
+            r = requests.post(
                 self.webhook_url,
                 json=payload,
                 headers={"Content-Type": "application/json"},
                 timeout=10,
             )
-            if response.status_code == 204:
-                logger.info("Discord alert sent successfully")
+
+            if r.status_code == 204:
                 return True
-            else:
-                logger.warning(f"Discord alert failed: {response.status_code}")
-                return False
-        except Exception as e:
-            logger.error(f"Discord alert error: {e}")
+
+            logger.warning(f"Discord error {r.status_code}: {r.text}")
             return False
+
+        except Exception as e:
+            logger.error(f"Discord exception: {e}")
+            return False
+
+    # =========================================================
+    # BET ALERTS
+    # =========================================================
 
     def send_bet_alerts(self, bets: list[BetAlert]) -> bool:
-        """Send top bets as a formatted Discord message.
-
-        Args:
-            bets: List of BetAlert objects (already top N)
-
-        Returns:
-            True if sent successfully
-        """
         if not bets:
-            logger.debug("No bets to send")
             return False
 
-        n = len(bets)
-        ev_stars_total = sum(b.ev_stars.count("⭐") for b in bets)
+        now = datetime.now(timezone.utc)
 
-        header = (
-            f"⚽ **Top {n} Value Bets** | {format_local(datetime.now(timezone.utc), '%b %d, %H:%M')} {tz_name()}\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        )
-
-        body_parts = []
+        fields = []
         for i, bet in enumerate(bets, 1):
-            body_parts.append(
-                f"**{i}. {bet.home_team} vs {bet.away_team}**\n"
-                f"   🏆 {bet.league} | ⏰ {bet.kickoff_local}\n"
-                f"   📊 {bet.market_display}: **{bet.outcome}** @ {bet.odds:.2f}\n"
-                f"   🎯 Our Prob: {bet.our_prob:.1%} | EV: {bet.ev:.1%} {bet.ev_stars}\n"
-                f"   📈 Confidence: {bet.confidence}%"
-            )
-
-        body = "\n".join(body_parts)
-
-        footer = (
-            f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"💰 Total EV Stars: {ev_stars_total}⭐ | "
-            f"🔬 Model-driven selections"
-        )
-
-        content = f"{header}\n{body}\n{footer}"
+            fields.append({
+                "name": f"{i}. {bet.home_team} vs {bet.away_team}",
+                "value": (
+                    f"🏆 {bet.league}\n"
+                    f"📊 {bet.market_display}: {bet.outcome} @ {bet.odds:.2f}\n"
+                    f"🎯 P: {bet.our_prob:.1%} | EV: {bet.ev:.1%} {bet.ev_stars} | Conf: {bet.confidence}%\n"
+                    f"⏰ {bet.kickoff_local}"
+                ),
+                "inline": False
+            })
 
         embed = {
-            "title": f"⚽ Top {n} Value Bets",
-            "description": content,
-            "color": 5815633,  # Green-ish
+            "title": f"⚽ Top {len(bets)} Value Bets",
+            "color": 0x58B368,
+            "fields": fields,
             "footer": {
-                "text": f"Bootball AI | {format_local(datetime.now(timezone.utc), '%Y-%m-%d %H:%M')} {tz_name()}"
-            },
+                "text": f"Bootball AI | {format_local(now, '%Y-%m-%d %H:%M')} {tz_name()}"
+            }
+        }
+
+        return self.send("", embed=embed)
+
+    # =========================================================
+    # SYSTEM EVENTS
+    # =========================================================
+
+    def send_system_event(self, event: dict[str, Any]) -> bool:
+        fields = [
+            {"name": k, "value": clamp(v), "inline": False}
+            for k, v in event.items()
+            if k != "event_type"
+        ]
+
+        embed = {
+            "title": f"📡 {event.get('event_type', 'SYSTEM_EVENT')}",
+            "color": 0x3498DB,
+            "fields": fields,
+            "footer": {"text": "System Event Stream"}
+        }
+
+        return self.send("", embed=embed)
+
+    # =========================================================
+    # HEALTH MONITORING
+    # =========================================================
+
+    def send_health_update(
+        self,
+        current: dict[str, Any],
+        previous: dict[str, Any] | None = None
+    ) -> bool:
+
+        changes = []
+
+        if previous:
+            for k in current:
+                if k in previous and current[k] != previous[k]:
+                    changes.append(f"{k}: {previous[k]} → {current[k]}")
+
+        embed = {
+            "title": "🩺 System Health",
+            "color": 0xF1C40F,
+            "fields": [
+                {
+                    "name": "Status",
+                    "value": current.get("status", "unknown"),
+                    "inline": False
+                },
+                {
+                    "name": "Changes",
+                    "value": "\n".join(changes) if changes else "No changes",
+                    "inline": False
+                }
+            ]
+        }
+
+        return self.send("", embed=embed)
+
+    # =========================================================
+    # MODEL / TREND MONITORING
+    # =========================================================
+
+    def send_model_trend(self, trend: dict[str, Any]) -> bool:
+        embed = {
+            "title": "📊 Model Performance Update",
+            "color": 0x9B59B6,
+            "fields": [
+                {"name": k, "value": clamp(v), "inline": True}
+                for k, v in trend.items()
+            ],
+            "footer": {"text": "Calibration & Drift Tracking"}
         }
 
         return self.send("", embed=embed)
 
 
-def create_bet_alert(
-    fixture_id: int,
-    home_team: str,
-    away_team: str,
-    league: str,
-    market: str,
-    outcome: str,
-    odds: float,
-    our_prob: float,
-    ev: float,
-    kickoff: datetime,
-) -> BetAlert:
-    """Create a BetAlert from raw data.
-
-    Args:
-        fixture_id: Fixture ID
-        home_team: Home team name
-        away_team: Away team name
-        league: League name
-        market: Market ID (btts, ou25, etc.)
-        outcome: Selected outcome (Yes, Over, Home, etc.)
-        odds: Decimal odds
-        our_prob: Our probability (0-1)
-        ev: Expected value as decimal (0.1 = 10%)
-        kickoff: Match kickoff time
-
-    Returns:
-        Formatted BetAlert
-    """
-    market_displays = {
-        "btts": "Both Teams To Score",
-        "ou25": "Over/Under 2.5",
-        "ou15": "Over/Under 1.5",
-        "h2h": "Match Winner",
-    }
-
-    confidence = int(our_prob * 100)
-
-    ev_stars = "⭐" * min(int(ev * 10), 5)
-    if ev >= 0.3:
-        ev_stars += "🔥"
-
-    return BetAlert(
-        fixture_id=fixture_id,
-        home_team=home_team,
-        away_team=away_team,
-        league=league,
-        market=market,
-        market_display=market_displays.get(market, market.upper()),
-        outcome=outcome,
-        odds=odds,
-        our_prob=our_prob,
-        ev=ev,
-        confidence=confidence,
-        kickoff=kickoff.strftime("%H:%M %b %d") if kickoff else "TBD",
-        kickoff_local=format_local(kickoff, "%H:%M %b %d") if kickoff else "TBD",
-        ev_stars=ev_stars,
-    )
-
-
-def ev_to_stars(ev: float) -> str:
-    """Convert EV to star rating.
-
-    Args:
-        ev: Expected value as decimal (0.1 = 10%)
-
-    Returns:
-        Star string like "⭐⭐⭐"
-    """
-    stars = min(int(ev * 10), 5)
-    return "⭐" * stars if stars > 0 else ""
-
+# =========================================================
+# SINGLETON
+# =========================================================
 
 discord_alerts = DiscordAlerts()

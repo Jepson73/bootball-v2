@@ -24,7 +24,7 @@ sys.path.insert(0, '/opt/projects/bootball')
 
 from sqlalchemy import select
 
-from config.leagues import LEAGUES, TIER1_LEAGUE_IDS
+from config.leagues import LEAGUES, ALL_LEAGUE_IDS
 from src.ingestion.client import APIFootballClient
 from src.storage.db import get_session
 from src.storage.models import Fixture

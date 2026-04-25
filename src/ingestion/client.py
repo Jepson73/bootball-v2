@@ -185,6 +185,7 @@ class APIFootballClient:
         from_date: str | None = None,
         to_date: str | None = None,
         status: str | None = None,        # "FT", "NS", "1H", etc.
+        force_refresh: bool = False,
     ) -> list[dict]:
         params: dict[str, Any] = {}
         if league_id:
@@ -205,7 +206,7 @@ class APIFootballClient:
             params["to"] = to_date
         if status:
             params["status"] = status
-        return self.get("fixtures", params)
+        return self.get("fixtures", params, force_refresh=force_refresh)
 
     def get_fixtures_batch(self, fixture_ids: list[int]) -> list[dict]:
         """

@@ -51,7 +51,10 @@ class BetAlert:
     odds: float
     ev: float
     kelly: float
+    home_logo: Optional[str] = None
+    away_logo: Optional[str] = None
     league: Optional[str] = None
+    league_flag: Optional[str] = None
     edge: Optional[float] = None
     fixture_date: Optional[str] = None
     home_team_id: Optional[int] = None
@@ -236,7 +239,8 @@ class BettingAlerts:
             lines.append(f"🕐 {alert.fixture_date}")
 
         if alert.league:
-            lines.append(f"🏆 {alert.league}")
+            league_display = f"{alert.league_flag} {alert.league}" if alert.league_flag else f"🏆 {alert.league}"
+            lines.append(league_display)
 
         lines.extend([
             "",
@@ -280,7 +284,7 @@ class BettingAlerts:
         emoji = "📈" if change >= 0 else "📉"
         message = (
             f"{emoji} <b>BANKROLL UPDATE</b>\n\n"
-            f"Balance: <b>${balance:.2f}</b>\n"
+            f"Balance: <b>SEK {balance:.2f}</b>\n"
             f"Change: <b>{change:+.2f}</b> ({change_pct:+.1f}%)"
         )
         self.send(message)
@@ -351,6 +355,14 @@ def send_data_alert(
         f"{emoji} <b>DATA ALERT: {title}</b>\n\n"
         f"{message}"
     )
+    
+    from src.alerts.event_bus import event_bus, Events
+    event_bus.emit(Events.HEALTH_UPDATE, {
+        "alert_type": "data",
+        "title": title,
+        "severity": severity,
+        "summary": f"Data alert: {title}"
+    })
 
 
 def send_bet_placed_alert(
@@ -379,9 +391,21 @@ def send_bet_placed_alert(
         f"<b>{home_team}</b> vs <b>{away_team}</b>\n"
         f"Market: {market.upper()}\n"
         f"Pick: <b>{outcome}</b> @ {odds:.2f}\n"
-        f"Stake: <b>${stake:.2f}</b>\n"
+        f"Stake: <b>SEK {stake:.2f}</b>\n"
         + (f"League: {league}" if league else "")
     )
+    
+    from src.alerts.event_bus import event_bus, Events
+    event_bus.emit(Events.BETS_GENERATED, {
+        "count": 1,
+        "market": market,
+        "home": home_team,
+        "away": away_team,
+        "outcome": outcome,
+        "odds": odds,
+        "stake": stake,
+        "summary": f"Bet placed: {home_team} vs {away_team}"
+    })
 
 
 def send_daily_run_alert(
@@ -409,10 +433,21 @@ def send_daily_run_alert(
             f"{emoji} <b>DAILY RUN COMPLETE</b>\n\n"
             f"Matches analyzed: <b>{matches_analyzed}</b>\n"
             f"Bets placed: <b>{bets_placed}</b>\n"
-            f"Total staked: <b>${total_staked:.2f}</b>"
+            f"Total staked: <b>SEK {total_staked:.2f}</b>"
         )
     else:
         alerts.send_message(
             f"{emoji} <b>DAILY RUN FAILED</b>\n\n"
             f"Error: {error}"
         )
+    
+    from src.alerts.event_bus import event_bus, Events
+    event_bus.emit(Events.RUN_FINISHED, {
+        "run_type": "daily_run",
+        "status": status,
+        "matches_analyzed": matches_analyzed,
+        "bets_placed": bets_placed,
+        "total_staked": total_staked,
+        "error": error,
+        "summary": f"Daily run {status}: {matches_analyzed} matches, {bets_placed} bets"
+    })

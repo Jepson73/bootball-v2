@@ -157,3 +157,53 @@ Key insight: A confident prediction (e.g., 60%+) at fair odds is a valid bet - y
 | H2H (1X2) | HARDEST | 2.00+ | Bookmakers expert at these |
 | Asian Handicap | HARD | 1.90-2.10 | Complex, sharp market |
 | Correct Score | HARDEST | 3.00+ | High variance |
+
+### Live Game Prediction Research (April 2026)
+
+#### Core In-Game Features
+- **Score & Time**: Current goals, elapsed minutes, period, minutes since last goal
+- **Match Stats**: Possession %, shots (total/on target), corners, fouls, cards
+- **xG Data**: Cumulative expected goals, xG timeline, shot quality
+- **Momentum**: Recent xG differential (last 10 min), attack strength trends
+
+#### Key Features for In-Play ML
+```python
+live_features = [
+    'elapsed_minutes', 'score_diff',
+    'home_xg_cumulative', 'away_xg_cumulative',
+    'possession_home_pct', 'shots_diff', 'corners_diff',
+    'momentum_10min',  # home_xg_last_10min - away_xg_last_10min
+    'home_form_5', 'away_form_5',
+    'days_rest_home', 'days_rest_away'
+]
+```
+
+#### Betting Markets That Work In-Play
+1. **Next Goal** - High predictive value, time horizons (15/30 min)
+2. **Over/Under** - At half-time, or 10/15/20 minute windows
+3. **BTTS** - Binary, changes throughout match based on current score
+4. **Comeback Probabilities** - Trailing team + time remaining
+
+#### API-Football Live Data
+| Endpoint | Data |
+|----------|------|
+| `/fixtures?live=1` | Current score, time, stats |
+| `/fixtures/events` | Goals, cards, subs with minute |
+| `/fixtures/statistics` | Possession, shots, corners |
+| `/odds?live=1` | Available in-play markets |
+
+#### Training Approach
+1. **Collect per-minute snapshots** - Store live stats every 30 seconds
+2. **Create labels at each minute** - Next goal (who + when), final score, BTTS outcome
+3. **Time-series models** - LSTM for match flow patterns, or gradient boosting with engineered features
+4. **Validate against odds movement** - Market is baseline, beat it = edge
+
+#### High-Value Predictors (Research-Backed)
+1. **xG differential** - Strongest single predictor of future goals
+2. **Time remaining** - Non-linear impact on comeback probability
+3. **Score state** - Trailing team often creates more, but efficiency varies
+4. **Momentum shifts** - Minutes after goals/conceded show patterns
+5. **Possession quality** - Not just %, but where possession is held
+
+#### Key Insight: Odds as Signal
+**For in-play betting, odds movement is the strongest signal.** xG differential predicts scoring direction, but odds already encode bookmaker knowledge. The edge comes from reacting faster to match events than the market.

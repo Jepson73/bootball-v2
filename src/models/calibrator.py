@@ -242,25 +242,56 @@ class CalibrationCache:
     """Manages calibrators for all markets."""
 
     CACHE_DIR = Path("data/models/calibrators")
+    MIN_VARIANCE_THRESHOLD = 0.005
 
     def __init__(self):
         self.CACHE_DIR.mkdir(parents=True, exist_ok=True)
         self._calibrators: dict[str, MarketCalibrator] = {}
+        self._validation_failures: dict[str, str] = {}
+
+    def _validate_calibrator(self, calibrator: MarketCalibrator) -> bool:
+        """Validate that calibrator produces meaningful output."""
+        if calibrator.isotonic is None:
+            self._validation_failures[calibrator.market] = "No isotonic model"
+            return False
+        
+        test_probs = np.linspace(0.1, 0.9, 17)
+        try:
+            calibrated = np.array([calibrator.isotonic.predict([p])[0] for p in test_probs])
+        except Exception as e:
+            self._validation_failures[calibrator.market] = f"Prediction failed: {e}"
+            return False
+        
+        variance = np.var(calibrated)
+        if variance < self.MIN_VARIANCE_THRESHOLD:
+            self._validation_failures[calibrator.market] = f"Variance collapsed: {variance:.6f} < {self.MIN_VARIANCE_THRESHOLD}"
+            logger.warning(f"CALIBRATION FAILURE [{calibrator.market}]: Variance collapsed ({variance:.6f}). Using raw probability.")
+            return False
+        
+        return True
 
     def get_calibrator(self, market: str) -> MarketCalibrator | None:
-        """Get calibrator for market, loading from disk if available."""
+        """Get calibrator for market, loading from disk if available.
+        
+        Validates calibrator before returning. Logs failures for broken calibrators.
+        """
         if market in self._calibrators:
-            return self._calibrators[market]
+            calibrator = self._calibrators[market]
+            if self._validate_calibrator(calibrator):
+                return calibrator
+            return None
 
         path = self.CACHE_DIR / f"calibrator_{market}.pkl"
         if path.exists():
             try:
                 calibrator = MarketCalibrator.load(path)
-                if calibrator.is_fresh():
+                if self._validate_calibrator(calibrator):
                     self._calibrators[market] = calibrator
                     return calibrator
+                else:
+                    logger.warning(f"CALIBRATION INVALID [{market}]: {self._validation_failures.get(market, 'Unknown')}. Falling back to raw probability.")
             except Exception as e:
-                logger.warning(f"Failed to load calibrator: {e}")
+                logger.warning(f"Failed to load calibrator for {market}: {e}")
 
         return None
 

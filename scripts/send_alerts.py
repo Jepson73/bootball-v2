@@ -19,7 +19,7 @@ sys.path.insert(0, '/opt/projects/bootball')
 from sqlalchemy import select
 
 from config.settings import settings
-from config.leagues import TIER1_LEAGUE_IDS
+from config.leagues import ALL_LEAGUE_IDS
 from src.alerts import discord_alerts, create_bet_alert
 from src.storage.db import get_session
 from src.storage.models import Fixture, FixtureOdds, PredictionRecord, League, Team
@@ -51,7 +51,7 @@ def get_top_bets(session, top_n: int = 5, min_ev: float = 0.05):
         .where(Fixture.status == "NS")
         .where(Fixture.date >= now)
         .where(Fixture.date < tomorrow)
-        .where(Fixture.league_id.in_(TIER1_LEAGUE_IDS))
+        .where(Fixture.league_id.in_(ALL_LEAGUE_IDS))
     ).scalars().all()
 
     fixture_ids = list(set(fixture_ids))  # Deduplicate
@@ -126,7 +126,10 @@ def get_top_bets(session, top_n: int = 5, min_ev: float = 0.05):
                 fixture_id=fix_id,
                 home_team=home_team.name,
                 away_team=away_team.name,
+                home_logo=home_team.logo_url,
+                away_logo=away_team.logo_url,
                 league=league.name,
+                league_flag=league.flag,
                 market=market,
                 outcome=outcome,
                 odds=odds,

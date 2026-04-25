@@ -92,11 +92,18 @@ def main():
     updated = fetch_and_update_fixtures(days=args.days)
     logger.info(f"Updated {updated} fixtures")
 
+    # Update live game statuses
+    from src.settlement import update_live_fixture_statuses
+    live_updated = update_live_fixture_statuses()
+    logger.info(f"Updated {live_updated} live fixtures")
+
     result = settle_all()
     print(f"Settled: {result['bets_settled']} bets, {result['predictions_settled']} predictions, {result['value_bets_settled']} value bets, P/L: {result['bets_pnl']:+.2f}")
 
     if not args.no_auto_bet and not args.dry_run:
         check_and_place_bets()
+
+    return {"fixtures_updated": updated}
 
 
 if __name__ == '__main__':

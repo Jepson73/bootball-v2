@@ -18,7 +18,7 @@ import time
 from datetime import datetime
 
 from config.leagues import (
-    TIER1_LEAGUE_IDS, TIER2_LEAGUE_IDS, TIER3_LEAGUE_IDS, 
+    ALL_LEAGUE_IDS, TIER2_LEAGUE_IDS, TIER3_LEAGUE_IDS,
     BACKFILL_SEASONS, LEAGUES
 )
 from config.settings import settings
@@ -443,7 +443,7 @@ class EuropeanBackfiller:
         
         league_ids = []
         if 1 in tiers:
-            league_ids.extend(TIER1_LEAGUE_IDS)
+            league_ids.extend(ALL_LEAGUE_IDS)
         if 2 in tiers:
             league_ids.extend(TIER2_LEAGUE_IDS)
         if 3 in tiers:

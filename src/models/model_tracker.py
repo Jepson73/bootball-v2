@@ -185,6 +185,19 @@ class ModelTracker:
                 s.add(event)
                 s.commit()
                 logger.info(f"Recorded retrain for {self.market}: {reason}")
+                
+                from src.alerts.event_bus import event_bus, Events
+                event_bus.emit(Events.MODEL_TREND, {
+                    "market": self.market,
+                    "old_version_id": old_version_id,
+                    "new_version_id": new_version_id,
+                    "reason": reason,
+                    "brier_score_before": brier_score_before,
+                    "brier_score_after": brier_score_after,
+                    "drift_score": drift_score,
+                    "summary": f"Model retrain: {self.market}, {reason}"
+                })
+                
                 return True
         except Exception as e:
             logger.error(f"Failed to record retrain: {e}")

@@ -250,7 +250,7 @@ def calculate_ev_trace(model_probs: dict, odds_row, market: str, verbose: bool =
             logger.info(f"    Implied (Shin): {shin_implied:.4f} ({shin_implied*100:.2f}%)")
             logger.info(f"    EV: {ev:.4f} ({ev*100:.2f}%)")
             logger.info(f"    Kelly fraction: {kf:.4f} ({kf*100:.2f}%)")
-            logger.info(f"    Stake (Kelly*1000): £{kf * 1000:.2f}")
+            logger.info(f"    Stake (Kelly*1000): SEK {kf * 1000:.2f}")
             logger.info(f"    Edge vs Shin: {(model_prob - shin_implied)*100:.2f}%")
 
     return candidates
@@ -386,7 +386,7 @@ def main():
         if ev_candidates:
             logger.info(f"\n[3] Top EV candidates:")
             for c in sorted(ev_candidates, key=lambda x: x['ev'], reverse=True):
-                logger.info(f"    {c['outcome']}: EV={c['ev_percent']:.2f}%, Kelly={c['kelly_percent']:.2f}%, Stake=£{c['stake_kelly_1000']:.2f}")
+                logger.info(f"    {c['outcome']}: EV={c['ev_percent']:.2f}%, Kelly={c['kelly_percent']:.2f}%, Stake=SEK {c['stake_kelly_1000']:.2f}")
 
         logger.info(f"\n[4] Web_ui style calculation (for comparison)...")
         if market == 'h2h' and pred_result['raw_probs']:

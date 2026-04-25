@@ -129,58 +129,62 @@ def poll_and_update_odds(s, client, fixture_ids, dry_run=False):
                 logger.debug(f"No {bet_name} odds returned for fixture {fix_id}")
                 continue
 
-            for odd_row in odds_data:
-                bookmaker = odd_row.get('bookmaker', {}).get('name', 'Unknown')
-                values = odd_row.get('values', [])
+            for response in odds_data:
+                bookmakers = response.get('bookmakers', [])
+                for bm in bookmakers:
+                    bookmaker = bm.get('name', 'Unknown')
+                    bets = bm.get('bets', [])
+                    
+                    for bet in bets:
+                        bet_values = bet.get('values', [])
+                        if not bet_values:
+                            continue
 
-                if not values:
-                    continue
+                        odds_dict = {}
+                        for v in bet_values:
+                            label = v.get('value', '')
+                            odd_value = v.get('odd')
+                            if label and odd_value:
+                                odds_dict[label] = float(odd_value)
 
-                odds_dict = {}
-                for v in values:
-                    label = v.get('label', '')
-                    odd_value = v.get('odd')
-                    if label and odd_value:
-                        odds_dict[label] = float(odd_value)
+                        if not odds_dict:
+                            continue
 
-                if not odds_dict:
-                    continue
+                        if dry_run:
+                            logger.info(f"  [DRY RUN] Would update {bet_name} odds from {bookmaker}")
+                            continue
 
-                if dry_run:
-                    logger.info(f"  [DRY RUN] Would update {bet_name} odds from {bookmaker}")
-                    continue
+                        existing = s.execute(
+                            select(FixtureOdds).where(
+                                FixtureOdds.fixture_id == fix_id,
+                                FixtureOdds.bookmaker == bookmaker,
+                                FixtureOdds.bet_type == bet_name,
+                            )
+                        ).scalars().first()
 
-                existing = s.execute(
-                    select(FixtureOdds).where(
-                        FixtureOdds.fixture_id == fix_id,
-                        FixtureOdds.bookmaker == bookmaker,
-                        FixtureOdds.bet_type == bet_name,
-                    )
-                ).scalars().first()
+                        update_data = {
+                            'odd_home': odds_dict.get('Home'),
+                            'odd_draw': odds_dict.get('Draw'),
+                            'odd_away': odds_dict.get('Away'),
+                            'odd_over': odds_dict.get('Over 2.5'),
+                            'odd_under': odds_dict.get('Under 2.5'),
+                            'odd_btts_yes': odds_dict.get('Yes'),
+                            'odd_btts_no': odds_dict.get('No'),
+                            'odd_over15': odds_dict.get('Over 1.5'),
+                            'odd_under15': odds_dict.get('Under 1.5'),
+                        }
 
-                update_data = {
-                    'odd_home': odds_dict.get('1'),
-                    'odd_draw': odds_dict.get('X'),
-                    'odd_away': odds_dict.get('2'),
-                    'odd_over': odds_dict.get('Over 2.5'),
-                    'odd_under': odds_dict.get('Under 2.5'),
-                    'odd_btts_yes': odds_dict.get('Yes'),
-                    'odd_btts_no': odds_dict.get('No'),
-                    'odd_over15': odds_dict.get('Over 1.5'),
-                    'odd_under15': odds_dict.get('Under 1.5'),
-                }
-
-                if existing:
-                    for field, value in update_data.items():
-                        setattr(existing, field, value)
-                    existing.fetched_at = datetime.utcnow()
-                else:
-                    s.add(FixtureOdds(
-                        fixture_id=fix_id,
-                        bookmaker=bookmaker,
-                        bet_type=bet_name,
-                        **{k: v for k, v in update_data.items() if v is not None},
-                    ))
+                        if existing:
+                            for field, value in update_data.items():
+                                setattr(existing, field, value)
+                            existing.fetched_at = datetime.utcnow()
+                        else:
+                            s.add(FixtureOdds(
+                                fixture_id=fix_id,
+                                bookmaker=bookmaker,
+                                bet_type=bet_name,
+                                **{k: v for k, v in update_data.items() if v is not None},
+                            ))
 
                 updated += 1
 
@@ -228,12 +232,11 @@ def recalculate_prediction_ev(s, fixture_ids, dry_run=False):
             if not odds_decimal or odds_decimal <= 0:
                 continue
 
-            ev = expected_value(pred.our_prob, odds_decimal)
-            implied_prob = 1.0 / odds_decimal
-            edge = (pred.our_prob - implied_prob) * 100
-
             calibration = calibrate_prediction(pred.market, pred.our_prob)
             calibrated_prob = calibration.calibrated_prob
+            ev = expected_value(calibrated_prob, odds_decimal)
+            implied_prob = 1.0 / odds_decimal
+            edge = (calibrated_prob - implied_prob) * 100
 
             if dry_run:
                 logger.info(f"  [DRY RUN] Would update pred {pred.id}: EV={ev:.3f}, calibrated_prob={calibrated_prob:.3f}")
@@ -252,6 +255,20 @@ def recalculate_prediction_ev(s, fixture_ids, dry_run=False):
 
     return updated
 
+
+MARKET_BET_TYPE_MAP = {
+        "h2h": "h2h",
+        "btts": "btts",
+        "ou25": "over_under",
+        "ou15": "over_under",
+    }
+
+MARKET_MIN_ODDS = {
+    "h2h": 1.5,
+    "btts": 1.5,
+    "ou25": 1.5,
+    "ou15": 0,  # Skip ou15 entirely
+}
 
 def find_new_value_bets(s, fixture_ids, min_ev=0.05, min_odds=1.5, limit=5):
     """Find new value bet opportunities after odds update."""
@@ -288,10 +305,22 @@ def find_new_value_bets(s, fixture_ids, min_ev=0.05, min_odds=1.5, limit=5):
         ).scalars().all()
 
         for pred in preds:
+            # Skip ou15 entirely
+            if pred.market == "ou15":
+                continue
+                
+            # Use market-specific min_odds
+            market_min = MARKET_MIN_ODDS.get(pred.market, min_odds)
+            if market_min == 0:
+                continue
+            
+            # Map market to correct bet_type
+            bet_type = MARKET_BET_TYPE_MAP.get(pred.market, pred.market)
+            
             odds_row = s.execute(
                 select(FixtureOdds).where(
                     FixtureOdds.fixture_id == fix_id,
-                    FixtureOdds.bet_type == pred.market,
+                    FixtureOdds.bet_type == bet_type,
                 )
             ).scalars().first()
 
@@ -304,7 +333,7 @@ def find_new_value_bets(s, fixture_ids, min_ev=0.05, min_odds=1.5, limit=5):
                 continue
 
             odds_decimal = getattr(odds_row, odd_field, None)
-            if not odds_decimal or odds_decimal < min_odds:
+            if not odds_decimal or odds_decimal < market_min:
                 continue
 
             ev = expected_value(pred.our_prob, odds_decimal)
@@ -372,11 +401,23 @@ def main():
         updated_odds = poll_and_update_odds(s, client, fixture_ids, args.dry_run)
         logger.info(f"Updated {updated_odds} odds rows")
 
+        if not args.dry_run and updated_odds > 0:
+            # Make predictions for fixtures that now have odds
+            logger.info("Making predictions for fixtures with new odds...")
+            from scripts.make_predictions import make_predictions_for_fixture
+            
+            for fix_id in fixture_ids:
+                with get_session() as ps:
+                    count = make_predictions_for_fixture(ps, fix_id, args.dry_run)
+                    if count > 0:
+                        ps.commit()
+                        logger.info(f"  Fixture {fix_id}: made {count} predictions")
+
         recalculated = recalculate_prediction_ev(s, fixture_ids, args.dry_run)
         logger.info(f"Recalculated EV for {recalculated} predictions")
 
         if not args.dry_run and updated_odds > 0:
-            new_value_bets = find_new_value_bets(s, fixture_ids, min_ev=0.05)
+            new_value_bets = find_new_value_bets(s, fixture_ids, min_ev=0.05, min_odds=1.2)
             if new_value_bets:
                 alerts = BettingAlerts(
                     channels=["discord"],

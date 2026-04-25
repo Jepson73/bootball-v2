@@ -33,6 +33,7 @@ class League(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)  # API-Football league ID
     name: Mapped[str] = mapped_column(String(100))
     country: Mapped[str] = mapped_column(String(100))
+    flag: Mapped[str | None] = mapped_column(String(500))  # URL to country flag
     tier: Mapped[int] = mapped_column(Integer, default=3)       # 1/2/3 from config
 
     fixtures: Mapped[list["Fixture"]] = relationship(back_populates="league")
@@ -113,6 +114,7 @@ class Fixture(Base):
 
     # Result
     status: Mapped[str | None] = mapped_column(String(10))   # FT, NS, 1H, HT, …
+    elapsed: Mapped[int | None] = mapped_column(Integer)      # Live match minute (45, 60, 90, etc.)
     goals_home: Mapped[int | None] = mapped_column(Integer)
     goals_away: Mapped[int | None] = mapped_column(Integer)
     ht_goals_home: Mapped[int | None] = mapped_column(Integer)
@@ -279,9 +281,20 @@ class PredictionRecord(Base):
     market: Mapped[str] = mapped_column(String(20))   # h2h, btts, ou25, ou15
     model_version_id: Mapped[int | None] = mapped_column(ForeignKey("model_versions.id"), nullable=True)
     model_name: Mapped[str] = mapped_column(String(50), default="ensemble")
+    
+    run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    calibration_version_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    feature_pipeline_version: Mapped[str] = mapped_column(String(20), default="v1.0.0")
 
     predicted_outcome: Mapped[str] = mapped_column(String(10))   # H/D/A, Yes/No, Over/Under
     our_prob: Mapped[float] = mapped_column(Float)
+    calibrated_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
+    implied_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
+    ev: Mapped[float | None] = mapped_column(Float, nullable=True)
+    edge: Mapped[float | None] = mapped_column(Float, nullable=True)
+    odds_decimal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bookmaker: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    odds_snapshot: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     sweet_spot: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -486,6 +499,11 @@ class PlacedBet(Base):
     fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id"))
     market: Mapped[str] = mapped_column(String(20))
     model_version_id: Mapped[int | None] = mapped_column(ForeignKey("model_versions.id"), nullable=True)
+    
+    run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    calibration_version_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    feature_pipeline_version: Mapped[str] = mapped_column(String(20), default="v1.0.0")
+    
     outcome: Mapped[str] = mapped_column(String(10))
     stake: Mapped[float] = mapped_column(Float)
     odds: Mapped[float] = mapped_column(Float)
@@ -504,9 +522,6 @@ class PlacedBet(Base):
     round: Mapped["BankrollRound"] = relationship("BankrollRound", foreign_keys=[round_id])
     fixture: Mapped["Fixture"] = relationship()
     model_version: Mapped["ModelVersion | None"] = relationship("ModelVersion", foreign_keys=[model_version_id])
-
-
-BankrollRound.bets: Mapped[list["PlacedBet"]] = relationship("PlacedBet", foreign_keys=[PlacedBet.round_id], viewonly=True)
 
 
 # ── User preferences (future multi-user ready) ─────────────────────────────────
@@ -574,3 +589,116 @@ class WatchedFixture(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
     fixture: Mapped["Fixture"] = relationship()
+
+
+# ── System Governance Tables ─────────────────────────────────────────────────
+
+class LayerGovernanceMetrics(Base):
+    """
+    Tracks long-term utility per layer across runs.
+    Used for layer promotion/demotion decisions.
+    """
+    __tablename__ = "layer_governance_metrics"
+    __table_args__ = (
+        UniqueConstraint("layer_name", "run_id", name="uq_layer_governance"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    layer_name: Mapped[str] = mapped_column(String(50), nullable=False)
+    run_id: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    ev_contribution: Mapped[float] = mapped_column(Float, default=0.0)
+    roi_contribution: Mapped[float] = mapped_column(Float, default=0.0)
+    stability_score: Mapped[float] = mapped_column(Float, default=0.0)
+    fragility_score: Mapped[float] = mapped_column(Float, default=0.0)
+    redundancy_index: Mapped[float] = mapped_column(Float, default=0.0)
+    failure_correlation: Mapped[float] = mapped_column(Float, default=0.0)
+    convergence_score: Mapped[float] = mapped_column(Float, default=0.0)
+
+    promotion_recommended: Mapped[int] = mapped_column(Integer, default=0)
+    demotion_recommended: Mapped[int] = mapped_column(Integer, default=0)
+
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class LayerAblationResults(Base):
+    """
+    Stores counterfactual layer ablation simulation results.
+    Tracks EV delta, calibration delta, and risk delta when each layer is removed.
+    """
+    __tablename__ = "layer_ablation_results"
+    __table_args__ = (
+        UniqueConstraint("run_id", "layer_removed", name="uq_layer_ablation"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(50), nullable=False)
+    layer_removed: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    baseline_ev: Mapped[float] = mapped_column(Float, default=0.0)
+    ablated_ev: Mapped[float] = mapped_column(Float, default=0.0)
+    ev_delta: Mapped[float] = mapped_column(Float, default=0.0)
+
+    baseline_calibration: Mapped[float] = mapped_column(Float, default=0.0)
+    ablated_calibration: Mapped[float] = mapped_column(Float, default=0.0)
+    calibration_delta: Mapped[float] = mapped_column(Float, default=0.0)
+
+    baseline_risk: Mapped[float] = mapped_column(Float, default=0.0)
+    ablated_risk: Mapped[float] = mapped_column(Float, default=0.0)
+    risk_delta: Mapped[float] = mapped_column(Float, default=0.0)
+
+    prediction_count: Mapped[int] = mapped_column(Integer, default=0)
+    recommendation: Mapped[str] = mapped_column(String(20), default="keep")
+
+    recorded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# ── Architecture Evolution Tables ─────────────────────────────────────────────
+
+class ArchitectureVersions(Base):
+    """
+    Immutable architecture snapshots for version control.
+    """
+    __tablename__ = "architecture_versions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    architecture_id: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
+    parent_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    
+    active_layers: Mapped[str] = mapped_column(Text, default="[]")
+    layer_weights: Mapped[str] = mapped_column(Text, default="{}")
+    feature_set: Mapped[str] = mapped_column(Text, default="{}")
+    calibration_stack: Mapped[str] = mapped_column(Text, default="{}")
+    
+    governance_score: Mapped[float] = mapped_column(Float, default=0.0)
+    ev_score: Mapped[float] = mapped_column(Float, default=0.0)
+    risk_score: Mapped[float] = mapped_column(Float, default=0.0)
+    validation_score: Mapped[float] = mapped_column(Float, default=0.0)
+    
+    is_candidate: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[int] = mapped_column(Integer, default=0)
+    
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ArchitectureTransitions(Base):
+    """
+    Architecture transition history for audit and rollback.
+    """
+    __tablename__ = "architecture_transitions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    from_architecture: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    to_architecture: Mapped[str] = mapped_column(String(50), nullable=False)
+    
+    ev_delta: Mapped[float] = mapped_column(Float, default=0.0)
+    risk_delta: Mapped[float] = mapped_column(Float, default=0.0)
+    calibration_delta: Mapped[float] = mapped_column(Float, default=0.0)
+    
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    approved: Mapped[int] = mapped_column(Integer, default=0)
+    rolled_back: Mapped[int] = mapped_column(Integer, default=0)
+    
+    timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    transition_type: Mapped[str] = mapped_column(String(20), default="upgrade")

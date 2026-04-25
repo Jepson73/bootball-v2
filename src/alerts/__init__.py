@@ -3,6 +3,6 @@ src/alerts/__init__.py
 
 Alerts package for notifications.
 """
-from src.alerts.discord import DiscordAlerts, discord_alerts, create_bet_alert, BetAlert
+from src.alerts.event_bus import event_bus, Events
 
-__all__ = ["DiscordAlerts", "discord_alerts", "create_bet_alert", "BetAlert"]
+__all__ = ["event_bus", "Events"]
