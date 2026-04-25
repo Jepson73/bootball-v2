@@ -219,10 +219,14 @@ def get_model_prediction(market: str, home_team_id: int, away_team_id: int, fixt
         logger.warning(f"Model not found: {model_path}")
         return None
 
-    try:
-        with open(model_path, 'rb') as f:
-            obj = pickle.load(f)
+    from src.security import safe_model_load
+    obj = safe_model_load(model_path)
 
+    if obj is None:
+        logger.error(f"Failed to load model: {model_path}")
+        return None
+
+    try:
         if isinstance(obj, dict):
             model = obj['model']
             calibrator = obj.get('calibrator')

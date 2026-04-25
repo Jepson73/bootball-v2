@@ -206,9 +206,14 @@ class MarketCalibrator:
     @classmethod
     def load(cls, path: Path) -> "MarketCalibrator":
         """Load calibrator from disk."""
-        with open(path, "rb") as f:
-            data = pickle.load(f)
-
+        from src.security import safe_model_load
+        
+        data = safe_model_load(str(path))
+        
+        if data is None:
+            logger.error(f"Failed to load calibrator from {path}")
+            return None
+        
         calibrator = cls(data["market"])
         calibrator.isotonic = data["isotonic"]
         calibrator.sample_size = data["sample_size"]

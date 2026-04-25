@@ -31,6 +31,17 @@ RUN_SYSTEM_ACTIVATION_TIMESTAMP = "2026-04-25 06:30:00"
 
 sys.path.insert(0, '/opt/projects/bootball')
 
+# ── .env Safety Check ─────────────────────────────────────
+_env_path = os.path.join(os.path.dirname(__file__), '.env')
+if os.path.exists(_env_path):
+    _env_stat = os.stat(_env_path)
+    if _env_stat.st_mode & 0o77:  # Check if group/other have any permissions
+        import warnings
+        warnings.warn(
+            "SECURITY WARNING: .env file has permissions that allow group/other access. "
+            "Run: chmod 600 .env"
+        )
+
 from flask import Flask, jsonify, request, make_response, render_template_string
 from sqlalchemy import select, func
 
@@ -2649,13 +2660,16 @@ def api_live_games():
             league_info = {}
             all_fixture_ids = list(live_fresh.keys())
             if all_fixture_ids:
-                ids_list = ','.join(str(x) for x in all_fixture_ids)
-                league_rows = s.execute(text(f"""
-                    SELECT f.id, l.name, l.country, COALESCE(l.tier, 99)
-                    FROM fixtures f
-                    LEFT JOIN leagues l ON f.league_id = l.id
-                    WHERE f.id IN ({ids_list})
-                """)).fetchall()
+                # Use SQLAlchemy parameter binding for IN clause (safe from SQL injection)
+                league_rows = s.execute(
+                    text("""
+                        SELECT f.id, l.name, l.country, COALESCE(l.tier, 99)
+                        FROM fixtures f
+                        LEFT JOIN leagues l ON f.league_id = l.id
+                        WHERE f.id IN :fixture_ids
+                    """),
+                    {"fixture_ids": tuple(all_fixture_ids)}
+                ).fetchall()
                 for row in league_rows:
                     country = row[2] or ''
                     flag = league_flags.get(country, '🌍')

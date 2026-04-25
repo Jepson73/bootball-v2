@@ -236,14 +236,14 @@ def load_market(market: str) -> tuple[GradientBoostingClassifier | None, ModelSt
     model = None
     
     if os.path.exists(cache_path):
-        try:
-            with open(cache_path, 'rb') as f:
-                model = pickle.load(f)
+        from src.security import safe_model_load
+        model = safe_model_load(cache_path)
+        if model is not None:
             logger.info(f"Loaded {market} model from cache")
             stats.trained_samples = 4996
             stats.leagues_used = 50
-        except Exception as e:
-            logger.warning(f"Failed to load {market} model: {e}")
+        else:
+            logger.warning(f"Failed to load {market} model from cache")
     
     return model, stats
 

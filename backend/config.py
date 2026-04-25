@@ -1,7 +1,40 @@
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+
+def _validate_production_config():
+    """Validate production configuration for security."""
+    env = os.getenv("FLASK_ENV", "development").lower()
+    is_production = env == "production"
+    
+    if not is_production:
+        return
+    
+    # Check SECRET_KEY
+    secret_key = os.getenv("SECRET_KEY", "")
+    if not secret_key or secret_key == "dev-secret-change-me" or len(secret_key) < 32:
+        raise ValueError(
+            "PRODUCTION SECURITY ERROR: SECRET_KEY must be set to a secure value "
+            "(minimum 32 characters) in production mode. "
+            "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
+        )
+    
+    # Check BOOTBALL_PASSWORD
+    password = os.getenv("BOOTBALL_PASSWORD", "")
+    if not password or password == "changeme":
+        raise ValueError(
+            "PRODUCTION SECURITY ERROR: BOOTBALL_PASSWORD must be set to a secure value "
+            "in production mode. Cannot use default 'changeme'."
+        )
+
+
+# Validate config at module load time
+_validate_production_config()
 
 
 class Config:
