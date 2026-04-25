@@ -1,93 +1,307 @@
 # Bootball - Football Prediction Platform
 
-Bootball is a full-stack football prediction and simulated betting intelligence platform. It combines machine learning models with an event-driven architecture to generate value bets and track performance.
+Bootball is an **event-driven autonomous betting intelligence platform with closed-loop learning and deterministic replay capability**.
 
 ## Project Description
 
-Bootball uses historical match data, odds, and machine learning to identify positive expected value (EV) betting opportunities. The system:
+Bootball combines machine learning models with a fully event-sourced architecture to generate value bets, track performance, detect model drift, and automatically improve through self-training.
 
-1. Ingests fixture and odds data from api-football
-2. Generates calibrated probability predictions using ML ensembles
-3. Identifies value bets where our probability differs from bookmaker odds
-4. Simulates bet placement using Kelly criterion sizing (fake money)
-5. Tracks performance, ROI, and model health
+### Core Capabilities
 
-### Why Event-Driven Architecture?
+1. **Event-Driven Execution**: Pipelines emit immutable events; consumers handle all side effects
+2. **Deterministic State**: Any system state can be reconstructed by replaying events
+3. **Drift Detection**: Real-time monitoring for model performance degradation
+4. **Automated Retraining**: Self-improving model lifecycle with version control
+5. **Full Auditability**: Every decision traceable through immutable event history
 
-The system was built with an event-driven architecture for several reasons:
+---
 
-1. **Determinism**: Any system state can be reconstructed by replaying events
-2. **Auditability**: Every decision is traceable through immutable event history
-3. **Separation of Concerns**: Pipelines emit events; consumers handle side effects
-4. **Extensibility**: New consumers can be added without modifying core logic
-5. **Testability**: Each component can be tested in isolation
-
-## Architecture Diagram
+## Full System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────────────────┐
-│                           PIPELINE                                   │
-│  scripts/daily_run.py                                               │
-│       │                                                             │
-│       ├─► Fetch Fixtures + Odds                                      │
-│       ├─► Run ML Predictions                                         │
-│       ├─► Detect Value Bets                                          │
-│       └─► EventBus.emit() ────────────────────────────────────────► │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           EXECUTION LAYER                                   │
+│  scripts/daily_run.py                                                       │
+│       │                                                                     │
+│       ├─► Fetch Fixtures + Odds                                             │
+│       ├─► Run ML Predictions                                                │
+│       ├─► Detect Value Bets                                                  │
+│       └─► EventBus.emit() ──────────────────────────────────────────────► │
+└─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                         EVENT SYSTEM                                  │
-│  src/alerts/event_bus.py                                             │
-│       │                                                             │
-│       ├─► Log to in-memory buffer                                    │
-│       ├─► Dispatch to consumers                                      │
-│       └─► Persist to EventStore ──────────────────────────────────►  │
-│                                                                     │
-│  src/events/event_store.py (events.jsonl)                           │
-│       │                                                             │
-│       │  Immutable append-only log                                   │
-│       │                                                             │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         EVENT LAYER (CORE TRUTH)                            │
+│  src/alerts/event_bus.py                                                    │
+│       │                                                                     │
+│       ├─► Log to in-memory buffer                                           │
+│       ├─► Dispatch to consumers                                             │
+│       └─► Persist to EventStore ──────────────────────────────────────────►  │
+│                                                                     │        │
+│  src/events/event_store.py (events.jsonl)                      │        │
+│       │                                                        │        │
+│       │  Immutable append-only log                              │        │
+│       │                                                        │        │
+│  Canonical Event Types:                                         │        │
+│  - bets_generated, bet_settled                                    │        │
+│  - run_started, run_finished, predictions_generated               │        │
+│  - health_update, model_trend                                    │        │
+│  - drift_detected, market_shift, roi_anomaly                     │        │
+│  - retraining_started, retraining_progress, retraining_completed │        │
+│  - model_version_promoted, model_version_rejected                │        │
+└─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                          CONSUMERS                                    │
-│       │                        │                    │                  │
-│       ▼                        ▼                    ▼                  │
-│  DiscordConsumer     BettingDashboardConsumer  HealthDashboardConsumer│
-│  (alerts)            (dashboard state)         (health metrics)      │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           STATE LAYER                                       │
+│  src/state/reconstructor.py                                                 │
+│       │                                                                     │
+│       ├─► BettingState (balance, ROI, bets, rounds)                        │
+│       ├─► ModelState (versions, performance, calibration)                     │
+│       ├─► HealthState (error rate, duration, health score)                  │
+│       └─► Snapshot System (incremental reconstruction)                      │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          CONSUMERS LAYER                                     │
+│       │                        │                    │                       │
+│       ▼                        ▼                    ▼                       │
+│  DiscordConsumer     BettingDashboardConsumer  HealthDashboardConsumer      │
+│  (alerts)            (dashboard state)         (health metrics)            │
 │                                                                      │
-│             ◄──────────────────────────────────┘                   │
-│                         │                                            │
-│                         ▼                                            │
-│              ModelTrendConsumer                                      │
-│              (model tracking)                                         │
-└─────────────────────────────────────────────────────────────────────┘
+│       │                        │                    │                       │
+│       ▼                        ▼                    ▼                       │
+│  ModelTrendConsumer    ModelLifecycleConsumer   MonitoringAlerts            │
+│  (model tracking)     (retraining events)       (drift alerts)             │
+└─────────────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      DASHBOARDS                                       │
-│       │                        │                    │                  │
-│       ▼                        ▼                    ▼                  │
-│  Betting Dashboard      Health Dashboard      Model Evaluation       │
-│  (real-time)           (real-time)           (offline analytics)    │
-└─────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           ANALYTICS LAYER                                    │
+│  src/analytics/                                                             │
+│       │                                                                     │
+│       ├─► model_evaluator.py - offline replay analytics                    │
+│       ├─► market_analysis.py - market profitability                         │
+│       ├─► model_comparator.py - model A/B testing                           │
+│       └─► audit_exporter.py - audit trail export                            │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         SIMULATION LAYER                                     │
+│  src/backtesting/                                                           │
+│       │                                                                     │
+│       ├─► backtest_engine.py - historical simulation                       │
+│       ├─► scenarios.py - strategy configurations                            │
+│       └─► comparator.py - strategy comparison                               │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          MONITORING LAYER                                    │
+│  src/monitoring/                                                            │
+│       │                                                                     │
+│       ├─► drift_detector.py - model drift & anomaly detection              │
+│       ├─► window_processor.py - rolling event windows                       │
+│       └─► monitoring_coordinator.py - continuous monitoring                │
+│                                                                            │
+│  Detection Types:                                                           │
+│  - model_drift: Calibration error degradation                              │
+│  - market_shift: Market profitability changes                              │
+│  - roi_anomaly: Performance collapse/volatility spikes                     │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          LEARNING LAYER (NEW)                               │
+│  src/models/                                                                │
+│       │                                                                     │
+│       ├─► lifecycle.py - ModelLifecycleManager                              │
+│       │       - evaluate_retrain_trigger()                                  │
+│       │       - start_retraining()                                          │
+│       │       - finalize_retraining()                                       │
+│       │       - promote_version()                                           │
+│       │                                                                     │
+│       └─► retrain_worker.py - Async training worker                        │
+│               - queue_retrain()                                             │
+│               - _train_model()                                             │
+│               - _validate_against_previous()                               │
+│               - _save_model()                                               │
+│                                                                            │
+│  Retraining Triggers:                                                        │
+│  - drift_score > threshold                                                  │
+│  - ROI degradation over rolling window                                      │
+│  - calibration_error > threshold                                            │
+│  - market instability detected                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                            UI LAYER                                          │
+│  Flask + WebSocket                                                           │
+│       │                                                                     │
+│       ├─► Live Dashboard (real-time)                                        │
+│       ├─► Model Evaluation Dashboard (offline analytics)                   │
+│       ├─► Health Dashboard (system metrics)                                 │
+│       └─► WebSocket subscriptions                                           │
+└─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Alternative Flows
 
 ```
-EventStore ──────────────────────────────────────────────────────────►
-    │                                                                 │
-    ├──► StateReconstructor ──► Snapshots ──► Dashboards (fast init) │
-    │                                                                 │
-    ├──► Replay CLI ──────────────────────────────────────────► Debug│
-    │                                                                 │
+EventStore ──────────────────────────────────────────────────────────────►
+    │                                                                     │
+    ├──► StateReconstructor ──► Snapshots ──► Dashboards (fast init)     │
+    │                                                                     │
+    ├──► Replay CLI ──────────────────────────────────────────────► Debug│
+    │                                                                     │
     ├──► Model Evaluator ──────────────────────────────────────► Analytics│
-    │                                                                 │
-    └──► BacktestEngine ──────────────────────────────────────► Simulation│
+    │                                                                     │
+    ├──► BacktestEngine ──────────────────────────────────────► Simulation│
+    │                                                                     │
+    └──► MonitoringCoordinator ──► Drift Detection ──► Retraining       │
 ```
+
+---
+
+## Closed-Loop Learning System
+
+The system implements a complete feedback loop for self-improvement:
+
+```
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  Event       │ ──► │  Drift       │ ──► │  Retraining  │
+│  Stream      │     │  Detection   │     │  Trigger     │
+└──────────────┘     └──────────────┘     └──────────────┘
+                                               │
+                                               ▼
+┌──────────────┐     ┌──────────────┐     ┌──────────────┐
+│  New         │ ◄── │  Model       │ ◄── │  Version     │
+│  Predictions │     │  Training    │     │  Evaluation  │
+└──────────────┘     └──────────────┘     └──────────────┘
+       │                                           │
+       └──────────────────┬────────────────────────┘
+                          ▼
+              ┌──────────────────────┐
+              │  User Notification  │
+              │  (Discord + Dashboard)│
+              └──────────────────────┘
+```
+
+### Lifecycle Events
+
+1. **MonitoringCoordinator** analyzes event windows for drift/market shifts/ROI anomalies
+2. **DriftDetector** emits high-severity alerts when thresholds exceeded
+3. **MonitoringCoordinator._trigger_retraining()** evaluates retrain trigger
+4. **ModelLifecycleManager** starts async retraining job
+5. **RetrainWorker** loads data, trains model, validates against previous version
+6. **ModelLifecycleManager** emits completion event with metrics
+7. **ModelLifecycleConsumer** notifies user via Discord
+8. New model version is now active for predictions
+
+---
+
+## Key System Properties
+
+| Property | Description |
+|----------|-------------|
+| **Deterministic Replay** | Any state can be reconstructed from events - identical every time |
+| **Event-Sourced** | All state changes captured as immutable events |
+| **No Hidden State** | Every piece of state derived from events |
+| **Full Auditability** | Every decision traceable through event history |
+| **Reproducible Backtests** | Historical simulation with model swapping |
+| **Self-Improving** | Automated model retraining on drift detection |
+
+---
+
+## Quick Start
+
+### Run Daily Pipeline
+
+```bash
+# Run with default leagues
+python scripts/daily_run.py
+
+# Run specific leagues
+python scripts/daily_run.py --leagues 1,2,3
+
+# Dry run (no predictions saved)
+python scripts/daily_run.py --dry-run
+```
+
+### Run Replay CLI
+
+```bash
+# Last 100 events
+python -m src.cli.event_replay --last 100
+
+# Specific run
+python -m src.cli.event_replay --run-id run-abc123
+
+# Compare runs
+python -m src.cli.event_replay --run-id run-abc --compare-run run-def
+
+# Export audit trail
+python -m src.cli.event_replay --run-id run-abc --export
+```
+
+### Run Backtests
+
+```bash
+# List scenarios
+python -m src.cli.backtest --list-scenarios
+
+# Run scenario
+python -m src.cli.backtest --scenario baseline --days 30
+
+# Compare strategies
+python -m src.cli.backtest --compare conservative vs aggressive
+```
+
+### View Live Dashboard
+
+```bash
+# Start Flask app (includes scheduler)
+python backend/app.py
+
+# Or directly
+python scripts/web_ui.py
+```
+
+Dashboard available at: http://localhost:5000
+
+### How Retraining Triggers Work
+
+Retraining is triggered automatically when:
+
+```python
+# In src/monitoring/monitoring_coordinator.py
+if severity == "high":
+    lifecycle = get_lifecycle_manager()
+    trigger = lifecycle.evaluate_retrain_trigger(drift_report, performance_report)
+    
+    if trigger["should_retrain"]:
+        worker = get_retrain_worker()
+        worker.queue_retrain(market, context)
+```
+
+### Inspect Drift Reports
+
+```python
+from src.monitoring.drift_detector import create_drift_detector
+from config.drift_thresholds import get_threshold_config
+
+detector = create_drift_detector(get_threshold_config())
+results = detector.analyze_event_window(events)
+
+print(f"Health: {results['health_status']}")
+for d in results['detections']:
+    print(f"  {d['type']}: {d['severity']} (score: {d['score']:.2f})")
+```
+
+---
 
 ## Core Modules
 
@@ -118,212 +332,25 @@ EventStore ───────────────────────
 | SnapshotStore | `src/state/snapshot_store.py` | Snapshot persistence |
 | Builders | `src/state/builders/` | Dashboard state builders |
 
-### Analytics System
+### Monitoring & Learning
+
+| Module | File | Purpose |
+|--------|------|---------|
+| DriftDetector | `src/monitoring/drift_detector.py` | Model drift detection |
+| MonitoringCoordinator | `src/monitoring/monitoring_coordinator.py` | Continuous monitoring |
+| ModelLifecycleManager | `src/models/lifecycle.py` | Retraining orchestration |
+| RetrainWorker | `src/models/retrain_worker.py` | Async model training |
+
+### Analytics & Simulation
 
 | Module | File | Purpose |
 |--------|------|---------|
 | ModelEvaluator | `src/analytics/model_evaluator.py` | Performance analysis |
 | MarketAnalyzer | `src/analytics/market_analysis.py` | Market profitability |
 | ModelComparator | `src/analytics/model_comparator.py` | Model A/B testing |
-
-### Backtesting System
-
-| Module | File | Purpose |
-|--------|------|---------|
 | BacktestEngine | `src/backtesting/backtest_engine.py` | Historical simulation |
-| Scenarios | `src/backtesting/scenarios.py` | Strategy configurations |
-| Comparator | `src/backtesting/comparator.py` | Strategy comparison |
 
-## Quick Start
-
-### Run Daily Pipeline
-
-```bash
-# Run with default leagues
-python scripts/daily_run.py
-
-# Run specific leagues
-python scripts/daily_run.py --leagues 1,2,3
-
-# Dry run (no predictions saved)
-python scripts/daily_run.py --dry-run
-```
-
-### Start Dashboard
-
-```bash
-# Start Flask app (includes scheduler)
-python backend/app.py
-
-# Or directly
-python scripts/web_ui.py
-```
-
-Dashboard available at: http://localhost:5000
-
-### Run Replay CLI
-
-```bash
-# Last 100 events
-python -m src.cli.event_replay --last 100
-
-# Specific run
-python -m src.cli.event_replay --run-id run-abc123
-
-# Compare runs
-python -m src.cli.event_replay --run-id run-abc --compare-run run-def
-```
-
-### Run Backtests
-
-```bash
-# List scenarios
-python -m src.cli.backtest --list-scenarios
-
-# Run scenario
-python -m src.cli.backtest --scenario baseline --days 30
-
-# Compare strategies
-python -m src.cli.backtest --compare conservative vs aggressive
-```
-
-## Key Design Principles
-
-### 1. Events as Source of Truth
-
-All system state changes are captured as immutable events. The current state is always a derived view reconstructed from events.
-
-```python
-# Bad: Pipeline directly updates dashboard state
-dashboard.update(betting_balance)
-
-# Good: Pipeline emits event
-EventBus.emit(Events.BETS_GENERATED, {"bets": [...], "run_id": "..."})
-```
-
-### 2. Immutability
-
-Events are never modified or deleted. This enables:
-- Deterministic replay
-- Full audit trail
-- Point-in-time reconstruction
-
-```python
-# Events are append-only
-with open("events.jsonl", "a") as f:
-    f.write(json.dumps(event) + "\n")
-```
-
-### 3. Deterministic Replay
-
-Given the same events, state reconstruction always produces identical results:
-
-```python
-# Always produces same state from same events
-def rebuild(events):
-    events = sorted(events, key=lambda e: e["timestamp"])
-    state = initial_state()
-    for event in events:
-        apply_event(state, event)
-    return state
-```
-
-### 4. Snapshot Acceleration
-
-Rather than replaying all events, snapshots provide incremental reconstruction:
-
-```
-Full replay:  10,000 events → 5 seconds
-With snapshot: 500 events (since snapshot) → 0.1 seconds
-```
-
-### 5. Separation of Concerns
-
-Pipelines do NOT:
-- Send alerts
-- Update dashboards
-- Format messages
-- Know about consumers
-
-Consumers do NOT:
-- Run ML models
-- Access api-football
-- Make betting decisions
-
-## Examples
-
-### Sample Event Flow
-
-```bash
-# 1. Pipeline starts
-[RUN_STARTED] run_id=run-20250425-001, mode=daily
-
-# 2. Predictions generated
-[PREDICTIONS_GENERATED] fixture_count=15, prediction_count=45
-
-# 3. Value bets identified
-[BETS_GENERATED] +5 bets (EV: 6.5%, 8.2%, 5.1%, 7.0%, 5.9%)
-
-# 4. Match settles
-[BET_SETTLED] 3 settled, PnL: +12.40, W/L: 2/1
-
-# 5. Pipeline completes
-[RUN_FINISHED] bets=5, total_ev=0.38, duration=45.2s
-```
-
-### Sample Backtest Run
-
-```bash
-$ python -m src.cli.backtest --scenario conservative --days 30
-
-Running backtest: conservative
-Days: 30
-============================================================
-BACKTEST RESULTS
-============================================================
-  Total Bets:     42
-  Total PnL:      +35.20
-  ROI:            +3.52%
-  Win Rate:       58.0%
-  Wins:           24 / 18
-  Avg Stake:      8.50
-
-  Max Bankroll:   1035.20
-  Min Bankroll:   985.00
-  Max Drawdown:   5.2%
-```
-
-### Sample Replay Command
-
-```bash
-$ python -m src.cli.event_replay --run-id run-20250425-001 --verbose
-
-Loading events...
-Loaded 8 events
-
-Replaying events...
-
-[1/8] run_started: run_id=run-2025, mode=daily
-[2/8] predictions_generated: 15 fixtures, 45 predictions
-[3/8] bets_generated: +5 bets (run=run-2025)
-       - h2h: H @ 2.1 (EV: 6.00%)
-       - btts: yes @ 1.9 (EV: 5.00%)
-       - ou25: over @ 2.0 (EV: 8.00%)
-[4/8] run_finished: run_id=run-2025, mode=daily, bets=5, duration=45.2s
-
-==================================================
-FINAL RECONSTRUCTED STATE
-==================================================
-=== BETTING STATE ===
-  Balance:     1,012.40
-  ROI:         +1.24%
-  Pending:     2 bets (15.00)
-
-=== HEALTH STATE ===
-  Health Score:    95.0
-  Error Rate:      5.00%
-  Avg Duration:   45.2s
-```
+---
 
 ## Configuration
 
@@ -348,7 +375,13 @@ BOOTBALL_PASSWORD=changeme
 
 # Alerts (optional)
 DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
+
+# Drift Detection
+DRIFT_ALERT_THRESHOLD=0.15
+ROI_DROP_THRESHOLD=5.0
 ```
+
+---
 
 ## Technology Stack
 
@@ -361,12 +394,8 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 | Frontend | Flask templates |
 | API | api-football (RapidAPI) |
 
+---
+
 ## License
 
 MIT License - See LICENSE file for details.
-
-## Support
-
-For issues or questions:
-- Report bugs: https://github.com/anomalyco/bootball/issues
-- Documentation: This manual and docs/ directory

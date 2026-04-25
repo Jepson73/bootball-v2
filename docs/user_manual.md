@@ -1,10 +1,10 @@
 # Bootball User Manual
 
-This is the comprehensive technical manual for the Bootball betting intelligence system. It describes the complete architecture, event system, and operational procedures.
+This is the comprehensive technical manual for the Bootball betting intelligence platform. It describes the complete architecture, event system, operational procedures, and the automated self-improvement system.
 
 ## A) System Overview
 
-Bootball is a full-stack football prediction and simulated betting intelligence platform. It combines machine learning models with an event-driven architecture to generate value bets and track performance.
+Bootball is a fully event-driven autonomous betting intelligence platform with closed-loop learning. It combines machine learning models with immutable event sourcing to generate value bets, track performance, detect model drift, and automatically improve through self-training.
 
 ### Architecture Summary
 
@@ -14,10 +14,11 @@ The system is built on an **event-driven architecture** where:
 2. **Pipelines emit events, they do not mutate state directly** - The daily pipeline generates predictions and bets, then emits events describing what happened
 3. **Consumers handle all side effects** - Discord alerts, dashboard updates, and health monitoring are handled by separate consumers that subscribe to events
 4. **State is reconstructed from events** - Any point in time can be recreated by replaying events from the beginning
+5. **Self-improvement through automation** - Drift detection triggers automatic model retraining
 
 ### Core Philosophy
 
-The fundamental principle is **immutable event history**:
+The fundamental principle is **immutable event history with closed-loop learning**:
 
 ```
 Pipeline (daily_run) → Events → State Reconstruction
@@ -25,6 +26,16 @@ Pipeline (daily_run) → Events → State Reconstruction
                        Consumers
                             ↓
                        Dashboards
+                            ↓
+                    Monitoring (Drift Detection)
+                            ↓
+                    Retraining Trigger
+                            ↓
+                    Model Training
+                            ↓
+                    Version Evaluation
+                            ↓
+                    New Predictions (Loop)
 ```
 
 This design provides:
@@ -32,6 +43,9 @@ This design provides:
 - **Auditability**: Every decision is traceable through event history
 - **Testability**: Consumers can be tested in isolation
 - **Extensibility**: New consumers can be added without modifying pipelines
+- **Self-Improvement**: Automated model retraining on drift detection
+
+---
 
 ## B) Event System Explanation
 
@@ -39,15 +53,48 @@ This design provides:
 
 The system uses a canonical set of event types defined in `src/alerts/event_bus.py`:
 
+#### Betting System Events
+
+| Event Type | Description | Payload |
+|------------|--------------|---------|
+| `bets_generated` | Value bets identified | `run_id`, `bets` array with fixture_id, market, outcome, odds, ev, stake |
+| `bet_settled` | Bets resolved after match | `run_id`, `settled_count`, `pnl_total`, `wins`, `losses` |
+| `bets_settled` | Batch bet settlement | `run_id`, `settled_bets` array |
+
+#### Run System Events
+
 | Event Type | Description | Payload |
 |------------|--------------|---------|
 | `run_started` | Pipeline execution begins | `run_id`, `mode`, `timestamp` |
 | `run_finished` | Pipeline execution completes | `run_id`, `mode`, `total_bets`, `total_ev`, `errors`, `duration` |
-| `bets_generated` | Value bets identified | `run_id`, `bets` array with fixture_id, market, outcome, odds, ev, stake |
-| `bet_settled` | Bets resolved after match | `run_id`, `settled_count`, `pnl_total`, `wins`, `losses` |
-| `model_trend` | Model metrics updated | `market`, `model_version`, `brier_score`, `ece`, `accuracy` |
-| `health_update` | System health snapshot | `health_score`, `error_rate` |
 | `predictions_generated` | ML predictions made | `run_id`, `fixture_count`, `prediction_count` |
+
+#### Health System Events
+
+| Event Type | Description | Payload |
+|------------|--------------|---------|
+| `health_update` | System health snapshot | `health_score`, `error_rate` |
+
+#### Model System Events
+
+| Event Type | Description | Payload |
+|------------|--------------|---------|
+| `model_trend` | Model lifecycle events | `job_id`, `market`, `status`, `metrics`, `new_version`, `promoted` |
+
+#### Monitoring Events
+
+| Event Type | Description | Payload |
+|------------|--------------|---------|
+| `drift_detected` | Model drift detected | `detection_type`, `severity`, `score`, `details` |
+| `market_shift_detected` | Market profitability shift | `market`, `severity`, `score`, `details` |
+| `roi_anomaly_detected` | ROI anomaly detected | `severity`, `score`, `details` |
+
+#### Notification Events
+
+| Event Type | Description | Payload |
+|------------|--------------|---------|
+| `notification_discord` | Discord webhook payload | `title`, `description`, `severity` |
+| `state_changed` | Dashboard state update | `type`, `subtype`, `data` |
 
 ### How Events Flow
 
@@ -61,16 +108,17 @@ daily_run.py
     │
     └─► EventBus.emit() ─────────────────────────► EventStore (persisted)
             │                                              │
-            └─► Consumers (side effects)                  │
+            └─► Consumers (side effects)                    │
                     │                                      │
-                    ├─► DiscordConsumer (alerts)            │
+                    ├─► DiscordConsumer (alerts)           │
                     ├─► BettingDashboardConsumer            │
-                    ├─► HealthDashboardConsumer             │
-                    └─► ModelTrendConsumer                 │
-                                                     │
-                                            StateReconstructor (replay)
-                                                     │
-                                            Dashboards (derived state)
+                    ├─► HealthDashboardConsumer            │
+                    ├─► ModelTrendConsumer                 │
+                    └─► ModelLifecycleConsumer              │
+                                                      │
+                                             StateReconstructor (replay)
+                                                      │
+                                             Dashboards (derived state)
 ```
 
 ### EventBus Behavior
@@ -119,81 +167,9 @@ events = store.get_events(since=datetime(2025, 1, 1))
 events = store.get_events(run_id="run-123")
 ```
 
-## C) Daily Pipeline (daily_run)
+---
 
-### What It Does
-
-The daily pipeline (`scripts/daily_run.py`) is the core execution engine:
-
-1. **Fetches fixtures** - Retrieves upcoming matches from api-football
-2. **Fetches odds** - Gets latest bookmaker odds
-3. **Generates predictions** - Runs ML models for each fixture
-4. **Detects value bets** - Identifies positive EV opportunities using Kelly criterion
-5. **Emits events** - Publishes structured events for consumption
-
-### What It Does NOT Do
-
-Critically, the daily pipeline:
-
-- ❌ Does NOT send Discord alerts
-- ❌ Does NOT format messages
-- ❌ Does NOT update dashboards directly
-- ❌ Does NOT compute UI state
-- ❌ Does NOT call BettingAlerts or DiscordAlerts
-
-All side effects are delegated to consumers.
-
-### How It Emits Events
-
-```python
-# In scripts/daily_run.py
-from src.alerts.event_bus import event_bus as EventBus, Events
-
-# At pipeline start
-EventBus.emit(Events.RUN_STARTED, {
-    "run_id": run_id,
-    "mode": "daily",
-    "timestamp": now.isoformat(),
-})
-
-# After predictions
-EventBus.emit(Events.PREDICTIONS_GENERATED, {
-    "run_id": run_id,
-    "fixture_count": self.fixture_count,
-    "prediction_count": self.prediction_count,
-})
-
-# When value bets found
-EventBus.emit(Events.BETS_GENERATED, {
-    "run_id": run_id,
-    "bets": [...]  # Array of bet objects
-})
-
-# At completion
-EventBus.emit(Events.RUN_FINISHED, {
-    "run_id": run_id,
-    "mode": "daily",
-    "total_bets": len(self.value_bets),
-    "total_ev": sum(b["ev"] for b in self.value_bets),
-    "errors": self.errors,
-    "duration": duration,
-})
-```
-
-### Lifecycle
-
-```
-1. Initialize → create DailyPipeline instance
-2. run() method:
-   a. _fetch_completed() → settlement input
-   b. _fetch_upcoming() → get next 7 days of fixtures
-   c. _process_fixture() → for each fixture, fetch odds
-   d. _run_predictions() → ML inference
-   e. emit events → EventBus publishes
-3. Return → Pipeline complete
-```
-
-## D) Consumers
+## C) Consumers
 
 Each consumer handles a specific side effect domain.
 
@@ -202,26 +178,21 @@ Each consumer handles a specific side effect domain.
 **File**: `src/events/consumers/discord_consumer.py`
 
 **Responsibilities**:
-- Listens to: `bets_generated`, `run_finished`
+- Listens to: `notification_discord`, `bets_generated`, `run_finished`
 - Formats Discord embeds
 - Sends webhook notifications
 
 **Inputs** (events):
 ```python
+# notification_discord
+{"title": "Model Retraining Started", "description": "...", "severity": "info"}
+
 # bets_generated
 {"run_id": "run-123", "bets": [...]}
-
-# run_finished  
-{"run_id": "run-123", "mode": "daily", "total_bets": 5, "errors": []}
 ```
 
 **Outputs** (side effects):
 - POST to Discord webhook URL from environment
-
-**Configuration**:
-```bash
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
-```
 
 ### BettingDashboardConsumer
 
@@ -238,9 +209,6 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 # bet_settled → moves to settled_bets, updates PnL
 ```
 
-**Outputs** (side effects):
-- JSON file state updates
-
 ### HealthDashboardConsumer
 
 **File**: `src/events/consumers/health_dashboard_consumer.py`
@@ -250,16 +218,6 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 - Tracks system health metrics
 - Computes error rates, average duration, health score
 - Writes to `/opt/projects/bootball/data/health_state.json`
-
-**Inputs**:
-```python
-# run_started → register active run
-# run_finished → update completed runs, calculate metrics
-# health_update → direct health score update
-```
-
-**Outputs**:
-- JSON file with health metrics
 
 ### ModelTrendConsumer
 
@@ -271,16 +229,23 @@ DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/...
 - Stores calibration drift history
 - Writes to `/opt/projects/bootball/data/model_trends.json`
 
-**Inputs**:
-```python
-# model_trend → update market performance, calibration drift
-# run_finished → track completed runs per mode
-```
+### ModelLifecycleConsumer
 
-**Outputs**:
-- JSON file with model metrics
+**File**: `src/events/consumers/model_lifecycle_consumer.py`
 
-## E) State Reconstruction
+**Responsibilities**:
+- Listens to: `model_trend`
+- Handles retraining lifecycle events
+- Emits Discord notifications for:
+  - retraining_started
+  - retraining_progress
+  - retraining_completed
+  - model_version_promoted
+  - model_version_rejected
+
+---
+
+## D) State Reconstruction
 
 The StateReconstructor (`src/state/reconstructor.py`) rebuilds system state from events.
 
@@ -330,8 +295,9 @@ reconstructor = StateReconstructor()
 system = reconstructor.rebuild_incremental(events, snapshot)
 ```
 
-### BettingState
+### State Types
 
+#### BettingState
 ```python
 @dataclass
 class BettingState:
@@ -348,8 +314,7 @@ class BettingState:
     active_round_number: int
 ```
 
-### HealthState
-
+#### HealthState
 ```python
 @dataclass
 class HealthState:
@@ -362,8 +327,7 @@ class HealthState:
     failed_runs: int              # Failed count
 ```
 
-### ModelState
-
+#### ModelState
 ```python
 @dataclass
 class ModelState:
@@ -375,56 +339,9 @@ class ModelState:
     retrain_signals: list[dict]
 ```
 
-## F) Replay CLI
+---
 
-The event replay tool (`src/cli/event_replay.py`) is for debugging and auditing.
-
-### Basic Usage
-
-```bash
-# Replay last 100 events
-python -m src.cli.event_replay --last 100
-
-# Replay specific run
-python -m src.cli.event_replay --run-id run-123
-
-# Replay events from date
-python -m src.cli.event_replay --from-date 2025-01-01
-
-# Verbose output
-python -m src.cli.event_replay --verbose
-
-# Quiet mode (just results)
-python -m src.cli.event_replay --quiet
-```
-
-### Debugging Workflows
-
-**Inspect a specific run:**
-```bash
-python -m src.cli.event_replay --run-id run-123 --verbose
-```
-
-**Compare two runs:**
-```bash
-python -m src.cli.event_replay --run-id run-123 --compare-run run-456
-```
-
-**Filter by event type:**
-```bash
-python -m src.cli.event_replay --event-types run_started,run_finished
-```
-
-**Diff mode output:**
-```
-=== BETTING COMPARISON ===
-  Balance:      1000.00 → 1015.50 (+15.50)
-  ROI:          +0.00% → +1.55% (+1.55%)
-  Pending:      0 → 0
-  Wins/Losses:  0/0 → 2/1
-```
-
-## G) Live System (WebSockets)
+## E) Live System (WebSockets)
 
 Real-time dashboard updates use the EventStream.
 
@@ -464,25 +381,13 @@ curl "http://localhost:5000/api/events?since_id=5"
 curl "http://localhost:5000/api/events/recent?limit=20"
 ```
 
-### Flow
+---
 
-```
-EventBus.emit()
-    → push to EventStream (in-memory)
-    → WebSocket broadcast (if SocketIO available)
-    → Polling endpoint /api/events
-
-Dashboard
-    → Load snapshot (fast init)
-    → Poll /api/events?since_id=X (incremental updates)
-    → Update UI
-```
-
-## H) Model Evaluation Dashboard
+## F) Analytics System
 
 The model evaluation system (`src/analytics/`) provides offline replay analytics.
 
-### How It Works
+### Model Evaluator
 
 ```python
 from src.analytics.model_evaluator import ModelEvaluator
@@ -504,27 +409,7 @@ print(result)
 # }
 ```
 
-### API Endpoints
-
-| Endpoint | Description |
-|----------|-------------|
-| `/api/model-evaluation` | Overall performance |
-| `/api/model-evaluation/markets` | Market profitability |
-| `/api/model-evaluation/markets/rank` | Ranked markets |
-| `/api/model-evaluation/compare` | Compare model versions |
-| `/api/model-evaluation/optimal` | Find best model |
-
-### ROI Calculation
-
-ROI is computed from events:
-
-```
-ROI = (Total PnL / Initial Bankroll) × 100
-
-Initial Bankroll = 1000 SEK (configurable)
-```
-
-### Market Performance Breakdown
+### Market Analysis
 
 ```python
 from src.analytics.market_analysis import MarketAnalyzer
@@ -544,7 +429,18 @@ print(analysis)
 # }
 ```
 
-## I) Backtesting Engine
+### API Endpoints
+
+| Endpoint | Description |
+|----------|-------------|
+| `/api/model-evaluation` | Overall performance |
+| `/api/model-evaluation/markets` | Market profitability |
+| `/api/model-evaluation/markets/rank` | Ranked markets |
+| `/api/model-evaluation/compare` | Compare model versions |
+
+---
+
+## G) Backtesting System
 
 The backtesting system (`src/backtesting/`) enables historical simulation.
 
@@ -567,22 +463,6 @@ result = engine.run_backtest()
 print(result["roi"])  # +5.2%
 ```
 
-### Predefined Scenarios
-
-```python
-from src.backtesting.scenarios import SCENARIOS, run_scenario
-
-# Conservative strategy
-result = run_scenario("conservative", days=30)
-
-# Aggressive strategy  
-result = run_scenario("aggressive", days=30)
-
-# Compare
-from src.backtesting.comparator import compare_scenarios
-comparison = compare_scenarios("baseline", "aggressive", days=30)
-```
-
 ### Available Scenarios
 
 | Scenario | EV Threshold | Kelly | Risk |
@@ -592,32 +472,6 @@ comparison = compare_scenarios("baseline", "aggressive", days=30)
 | aggressive | 0.02 | 0.40 | aggressive |
 | h2h_only | 0.05 | 0.25 | balanced |
 | btts_only | 0.05 | 0.25 | balanced |
-
-### Model Override Logic
-
-The backtest engine can simulate different model versions:
-
-```python
-config = {
-    "model_version_override": "v14",
-    "min_ev_threshold": 0.05,
-}
-
-engine = BacktestEngine(config)
-result = engine.run_backtest()
-```
-
-This replays historical events but substitutes model version decisions.
-
-### Risk Parameters
-
-| Parameter | Description | Range |
-|-----------|-------------|-------|
-| `kelly_multiplier` | Fraction of Kelly to use | 0.1 - 1.0 |
-| `min_ev_threshold` | Minimum EV to bet | 0.02 - 0.15 |
-| `risk_scaling` | Risk multiplier | conservative/balanced/aggressive |
-| `stop_loss_pct` | Stop if drawdown exceeds | 0.1 - 0.5 |
-| `max_stake_pct` | Max stake as % of bankroll | 0.05 - 0.25 |
 
 ### CLI Usage
 
@@ -635,35 +489,242 @@ python -m src.cli.backtest --compare conservative vs aggressive
 python -m src.cli.backtest --scenario baseline --export-json results.json
 ```
 
-### Example: Conservative vs Aggressive
+---
+
+## H) Replay + Audit System
+
+The event replay tool (`src/cli/event_replay.py`) is for debugging and auditing.
+
+### Basic Usage
 
 ```bash
-$ python -m src.cli.backtest --compare conservative vs aggressive
+# Replay last 100 events
+python -m src.cli.event_replay --last 100
 
-SCENARIO COMPARISON
-============================================================
+# Replay specific run
+python -m src.cli.event_replay --run-id run-123
 
-  conservative:
-    ROI: +2.1%
-    PnL: +21.00
-    Bets: 45
+# Replay events from date
+python -m src.cli.event_replay --from-date 2025-01-01
 
-  aggressive:
-    ROI: +8.5%
-    PnL: +85.00
-    Bets: 120
+# Verbose output
+python -m src.cli.event_replay --verbose
 
-------------------------------------------------------------
-  DELTAS:
-    ROI Delta:     +6.4%
-    PnL Delta:     +64.00
-    Bets Delta:    +75
-    Drawdown Delta: +12.3%
-
-  WINNER: aggressive (+6.40%)
+# Quiet mode (just results)
+python -m src.cli.event_replay --quiet
 ```
 
-## J) Manual Operations Guide
+### Export Audit Trail
+
+```bash
+# Export complete audit for a run
+python -m src.cli.event_replay --run-id run-123 --export
+
+# Export as CSV
+python -m src.cli.event_replay --run-id run-123 --export --format csv
+
+# Compare two runs
+python -m src.cli.event_replay --run-id run-123 --compare-run run-456
+```
+
+### Diff Output
+
+```
+=== BETTING COMPARISON ===
+  Balance:      1000.00 → 1015.50 (+15.50)
+  ROI:          +0.00% → +1.55% (+1.55%)
+  Pending:      0 → 0
+  Wins/Losses:  0/0 → 2/1
+```
+
+---
+
+## I) Drift + Anomaly Detection System
+
+The monitoring system (`src/monitoring/`) provides real-time drift and anomaly detection.
+
+### Drift Detector
+
+```python
+from src.monitoring.drift_detector import create_drift_detector
+from config.drift_thresholds import get_threshold_config
+
+detector = create_drift_detector(get_threshold_config())
+
+# Analyze event window
+results = detector.analyze_event_window(events)
+
+print(f"Health: {results['health_status']}")
+for detection in results['detections']:
+    print(f"  {detection['type']}: {detection['severity']} (score: {detection['score']:.2f})")
+```
+
+### Detection Types
+
+| Type | Description | Triggers |
+|------|-------------|----------|
+| `model_drift` | Calibration error degradation | ECE increase over window |
+| `market_shift` | Market profitability changes | ROI drop per market |
+| `roi_anomaly` | Performance collapse/volatility | ROI crash or high volatility |
+
+### Severity Levels
+
+| Severity | Score Range | Action |
+|----------|-------------|--------|
+| high | 0.8-1.0 | Trigger retraining |
+| medium | 0.5-0.79 | Log and monitor |
+| low | 0.3-0.49 | Log only |
+| none | 0.0-0.29 | No action |
+
+### Configuration
+
+Thresholds are configurable in `config/drift_thresholds.py`:
+
+```python
+{
+    "drift_alert_threshold": 0.15,
+    "roi_drop_threshold": 5.0,
+    "volatility_threshold": 2.0,
+    "monitoring_time_window_hours": 24,
+    "alert_cooldown_seconds": 300,
+}
+```
+
+### Monitoring Coordinator
+
+The MonitoringCoordinator runs continuous monitoring:
+
+```python
+from src.monitoring.monitoring_coordinator import get_monitoring_coordinator
+
+coordinator = get_monitoring_coordinator()
+coordinator.start(load_history=True)
+
+# Run analysis on demand
+results = coordinator.run_analysis(hours=24)
+```
+
+When high-severity drift is detected, it automatically triggers retraining:
+
+```python
+# In monitoring_coordinator.py
+if severity == "high":
+    self._trigger_retraining(detection)
+```
+
+---
+
+## J) Automated Retraining System
+
+The system implements a complete closed-loop learning system for self-improvement.
+
+### Lifecycle Manager
+
+The ModelLifecycleManager (`src/models/lifecycle.py`) orchestrates retraining:
+
+```python
+from src.models.lifecycle import get_lifecycle_manager
+
+lifecycle = get_lifecycle_manager()
+
+# Evaluate trigger
+trigger = lifecycle.evaluate_retrain_trigger(
+    drift_report={"detections": [...]},
+    performance_report={"roi": -5.0, "calibration_error": 0.12}
+)
+
+if trigger["should_retrain"]:
+    job_id = lifecycle.start_retraining("h2h", {
+        "trigger": "drift",
+        "reasons": trigger["reasons"],
+        "current_version": "v14"
+    })
+```
+
+### Trigger Evaluation
+
+Retraining is triggered when:
+
+- **drift_score** > threshold (default: 0.15)
+- **ROI degradation** > threshold (default: 3.0%)
+- **calibration_error** > threshold (default: 0.10)
+- **market instability** detected
+
+### Async Worker
+
+The RetrainWorker (`src/models/retrain_worker.py`) runs training asynchronously:
+
+```python
+from src.models.retrain_worker import get_retrain_worker
+
+worker = get_retrain_worker()
+
+# Queue a retraining job (non-blocking)
+job_id = worker.queue_retrain("h2h", {
+    "trigger": "manual",
+    "reasons": ["Testing retrain system"],
+    "current_version": "v14"
+})
+
+# Job runs in background thread
+```
+
+### Training Pipeline
+
+The worker executes:
+
+1. **Load data** - Historical fixtures + predictions (90 days)
+2. **Train model** - Calibrated classifier (LogisticRegression + isotonic)
+3. **Validate** - Compare vs previous version
+4. **Save** - Persist model with version ID
+5. **Promote** - Mark as active if improved
+
+### Version Management
+
+Each model version tracks:
+
+```python
+version = {
+    "id": "v14-h2h-a1b2c3d4",
+    "market": "h2h",
+    "created_at": "2025-04-25T12:00:00Z",
+    "training_data_window": 90,
+    "performance_metrics": {
+        "accuracy": 0.58,
+        "brier_score": 0.22,
+    },
+    "drift_context": {"trigger": "drift", "score": 0.8},
+    "parent_version_id": "v13-h2h",
+}
+```
+
+### Retraining Events
+
+All retraining stages emit events:
+
+| Event | Description |
+|-------|-------------|
+| `retraining_started` | Job queued and started |
+| `retraining_progress` | Progress updates (10%, 30%, 70%, 90%) |
+| `retraining_completed` | Training finished (success/failure) |
+| `model_version_promoted` | New version promoted to active |
+| `model_version_rejected` | New version rejected (no improvement) |
+
+### User Notifications
+
+The ModelLifecycleConsumer handles notifications:
+
+```python
+# Discord notification on completion
+"✅ Model v14 promoted (ROI +2.1%)"
+
+# Or rejection
+"⚠️ Model v14 deprecated - no improvement over v13"
+```
+
+---
+
+## K) Manual Operations Guide
 
 ### Replay a Run
 
@@ -675,32 +736,17 @@ python -m src.cli.event_replay --run-id run-abc123 --verbose
 python -m src.cli.event_replay --run-id run-abc123 --compare-run run-def456
 ```
 
-### Inspect Events
+### Export Audit Logs
 
 ```bash
-# Last 50 events
-python -m src.cli.event_replay --last 50 --quiet
+# Full audit export
+python -m src.cli.event_replay --run-id run-abc123 --export
 
-# By date range
-python -m src.cli.event_replay --from-date 2025-01-01 --to-date 2025-01-31
+# CSV format
+python -m src.cli.event_replay --run-id run-abc123 --export --format csv
 ```
 
-### Rebuild Snapshot
-
-```python
-from src.state.snapshot_writer import save_run_snapshot
-from src.state.reconstructor import StateReconstructor
-
-# Rebuild from events
-reconstructor = StateReconstructor()
-system = reconstructor.rebuild_from_events()
-
-# Save snapshot
-snapshot = save_run_snapshot(run_id="manual", is_complete=True)
-print(f"Saved snapshot {snapshot.id}")
-```
-
-### Run Backtest Scenario
+### Run Backtests
 
 ```bash
 # Run conservative scenario
@@ -710,36 +756,64 @@ python -m src.cli.backtest --scenario conservative --days 90
 python -m src.cli.backtest --compare baseline vs conservative
 ```
 
-### Inspect Model Performance
+### Inspect Drift Reports
 
 ```python
-from src.analytics.model_evaluator import evaluate_model_performance
-from src.analytics.market_analysis import rank_markets_by_profitability
-
-# Overall performance
-result = evaluate_model_performance(days=30)
-print(f"ROI: {result['roi']}%")
-
-# Market ranking
-ranking = rank_markets_by_profitability(days=30)
-for r in ranking:
-    print(f"{r['market']}: {r['roi']}%")
-```
-
-### Query Event Store Directly
-
-```python
+from src.monitoring.drift_detector import create_drift_detector
+from config.drift_thresholds import get_threshold_config
 from src.events.event_store import get_event_store
 
+# Load recent events
 store = get_event_store()
+events = store.get_events(since=datetime(2025, 4, 1))
 
-# Count events
-print(f"Total events: {store.count()}")
+# Analyze
+detector = create_drift_detector(get_threshold_config())
+results = detector.analyze_event_window(events)
 
-# Get specific run
-events = store.get_events(run_id="run-abc")
-for e in events:
-    print(e['event_type'], e.get('timestamp'))
+for d in results['detections']:
+    print(f"{d['type']}: {d['severity']} (score: {d['score']:.2f})")
+```
+
+### Inspect Model Versions
+
+```python
+from src.models.model_tracker import get_model_tracker
+
+tracker = get_model_tracker()
+versions = tracker.get_versions("h2h")
+
+for v in versions:
+    print(f"{v['version_number']}: brier={v['brier_score']}, active={v['is_active']}")
+```
+
+### Manually Trigger Retraining
+
+```python
+from src.models.retrain_worker import get_retrain_worker
+
+worker = get_retrain_worker()
+job_id = worker.queue_retrain("h2h", {
+    "trigger": "manual",
+    "reasons": ["User requested retrain"],
+    "current_version": "v14"
+})
+print(f"Queued job: {job_id}")
+```
+
+### Rebuild State
+
+```python
+from src.state.reconstructor import StateReconstructor
+from src.state.snapshot_writer import save_run_snapshot
+
+# Rebuild from events
+reconstructor = StateReconstructor()
+system = reconstructor.rebuild_from_events()
+
+# Save snapshot
+snapshot = save_run_snapshot(run_id="manual", is_complete=True)
+print(f"Saved snapshot {snapshot.id}")
 ```
 
 ### Check Dashboard State
@@ -755,4 +829,76 @@ print(f"Balance: {betting.balance}")
 # Health state  
 health = build_health_state()
 print(f"Health: {health.health_score}")
+```
+
+---
+
+## L) Daily Pipeline Reference
+
+### What It Does
+
+The daily pipeline (`scripts/daily_run.py`) is the core execution engine:
+
+1. **Fetches fixtures** - Retrieves upcoming matches from api-football
+2. **Fetches odds** - Gets latest bookmaker odds
+3. **Generates predictions** - Runs ML models for each fixture
+4. **Detects value bets** - Identifies positive EV opportunities using Kelly criterion
+5. **Emits events** - Publishes structured events for consumption
+
+### What It Does NOT Do
+
+Critically, the daily pipeline:
+
+- ❌ Does NOT send Discord alerts
+- ❌ Does NOT format messages
+- ❌ Does NOT update dashboards directly
+- ❌ Does NOT compute UI state
+
+All side effects are delegated to consumers.
+
+### Event Emission
+
+```python
+# At pipeline start
+EventBus.emit(Events.RUN_STARTED, {
+    "run_id": run_id,
+    "mode": "daily",
+    "timestamp": now.isoformat(),
+})
+
+# After predictions
+EventBus.emit(Events.PREDICTIONS_GENERATED, {
+    "run_id": run_id,
+    "fixture_count": self.fixture_count,
+    "prediction_count": self.prediction_count,
+})
+
+# When value bets found
+EventBus.emit(Events.BETS_GENERATED, {
+    "run_id": run_id,
+    "bets": [...]  # Array of bet objects
+})
+
+# At completion
+EventBus.emit(Events.RUN_FINISHED, {
+    "run_id": run_id,
+    "mode": "daily",
+    "total_bets": len(self.value_bets),
+    "total_ev": sum(b["ev"] for b in self.value_bets),
+    "errors": self.errors,
+    "duration": duration,
+})
+```
+
+### Lifecycle
+
+```
+1. Initialize → create DailyPipeline instance
+2. run() method:
+   a. _fetch_completed() → settlement input
+   b. _fetch_upcoming() → get next 7 days of fixtures
+   c. _process_fixture() → for each fixture, fetch odds
+   d. _run_predictions() → ML inference
+   e. emit events → EventBus publishes
+3. Return → Pipeline complete
 ```
