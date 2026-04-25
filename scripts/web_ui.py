@@ -3347,11 +3347,13 @@ function loadHistory() {
 loadBets();
 
 function settleBets() {
+    if (!confirm('Settle all pending bets?')) return;
     fetch('/api/settle_bets', {method: 'POST', credentials: 'include'})
         .then(r => r.json())
         .then(d => {
             if (d.ok) {
-                loadBets();
+                alert('Settled: ' + d.settled_count + ' bets, P/L: ' + d.total_pnl.toFixed(2));
+                location.reload();
             } else {
                 alert(d.error || 'Error');
             }
