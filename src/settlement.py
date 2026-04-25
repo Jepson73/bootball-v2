@@ -83,13 +83,16 @@ def update_live_fixture_statuses() -> int:
     from datetime import date as date_type
     today = date_type.today().strftime("%Y-%m-%d")
     tomorrow = (datetime.strptime(today, "%Y-%m-%d") + timedelta(days=1)).strftime("%Y-%m-%d")
+    current_year = date_type.today().year
 
     updated = 0
     with get_session() as s:
         for lid in ALL_LEAGUE_IDS:
-            for status in ['LIVE', '2H', '1H', 'HT']:
+            # Also fetch FT to catch matches that finished since last update
+            for status in ['LIVE', '2H', '1H', 'HT', 'FT']:
                 try:
-                    raw = client.get_fixtures(league_id=lid, season=2025, from_date=today, to_date=tomorrow, status=status)
+                    season = current_year if lid in [1602, 253, 98, 176, 113, 1191] else current_year - 1
+                    raw = client.get_fixtures(league_id=lid, season=season, from_date=today, to_date=tomorrow, status=status)
                     if raw:
                         for r in raw:
                             fix_id = r.get('fixture', {}).get('id')
