@@ -12,6 +12,7 @@ from src.events.consumers import (
     BettingDashboardConsumer,
     HealthDashboardConsumer,
     ModelTrendConsumer,
+    ModelLifecycleConsumer,
 )
 from src.events.consumers.registry import registry
 
@@ -30,6 +31,7 @@ def bootstrap_consumers() -> None:
         BettingDashboardConsumer(),
         HealthDashboardConsumer(),
         ModelTrendConsumer(),
+        ModelLifecycleConsumer(),
     ]
     
     for consumer in consumers:

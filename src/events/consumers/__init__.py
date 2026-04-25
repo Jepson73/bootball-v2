@@ -7,6 +7,7 @@ from src.events.consumers.discord_consumer import DiscordConsumer
 from src.events.consumers.betting_dashboard_consumer import BettingDashboardConsumer
 from src.events.consumers.health_dashboard_consumer import HealthDashboardConsumer
 from src.events.consumers.model_trend_consumer import ModelTrendConsumer
+from src.events.consumers.model_lifecycle_consumer import ModelLifecycleConsumer
 
 __all__ = [
     "EventConsumer",
@@ -15,4 +16,5 @@ __all__ = [
     "BettingDashboardConsumer",
     "HealthDashboardConsumer",
     "ModelTrendConsumer",
+    "ModelLifecycleConsumer",
 ]

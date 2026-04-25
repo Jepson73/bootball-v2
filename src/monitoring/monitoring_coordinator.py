@@ -128,6 +128,52 @@ class MonitoringCoordinator:
         # Update last alert time
         self.last_alert_time[detection_type] = time.time()
         
+        # Trigger retraining if high severity
+        if severity == "high":
+            self._trigger_retraining(detection)
+    
+    def _trigger_retraining(self, detection: dict) -> None:
+        """
+        Trigger model retraining based on detection.
+        
+        Args:
+            detection: The detection that triggered retraining
+        """
+        detection_type = detection.get("type")
+        
+        # Map to market
+        market_map = {
+            "model_drift": "h2h",
+            "market_shift": "btts", 
+            "roi_anomaly": "h2h",
+        }
+        market = market_map.get(detection_type, "h2h")
+        
+        # Get lifecycle manager
+        from src.models.lifecycle import get_lifecycle_manager
+        lifecycle = get_lifecycle_manager()
+        
+        # Evaluate trigger
+        trigger_result = lifecycle.evaluate_retrain_trigger(
+            drift_report={"detections": [detection]},
+            performance_report={}
+        )
+        
+        if trigger_result.get("should_retrain"):
+            # Queue retraining
+            from src.models.retrain_worker import get_retrain_worker
+            worker = get_retrain_worker()
+            
+            context = {
+                "trigger": detection_type,
+                "detection": detection,
+                "reasons": trigger_result.get("reasons", []),
+                "severity": trigger_result.get("severity"),
+            }
+            
+            job_id = worker.queue_retrain(market, context)
+            logger.info(f"Triggered retraining job {job_id} for market {market}")
+        
         logger.warning(
             f"DRIFT ALERT: {detection_type} - {severity} "
             f"(score: {detection.get('score', 0):.2f})"

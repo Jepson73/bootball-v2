@@ -101,3 +101,7 @@ class Events:
     
     # Model system
     MODEL_TREND = "model_trend"
+    
+    # Notifications
+    NOTIFICATION_DISCORD = "notification_discord"
+    STATE_CHANGED = "state_changed"
