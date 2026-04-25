@@ -3345,6 +3345,19 @@ function loadHistory() {
 }
 
 loadBets();
+
+function settleBets() {
+    fetch('/api/settle_bets', {method: 'POST', credentials: 'include'})
+        .then(r => r.json())
+        .then(d => {
+            if (d.ok) {
+                loadBets();
+            } else {
+                alert(d.error || 'Error');
+            }
+        })
+        .catch(e => alert('Error: ' + e));
+}
 </script>
 '''
     return page(content)
@@ -4181,12 +4194,13 @@ function runDailyRun() {
 }
 
 function settleBets() {
+    showMsg('Settling bets...', 'info');
     fetch('/api/settle_bets', {method: 'POST', credentials: 'include'})
         .then(r => r.json())
         .then(d => {
             if (d.ok) {
-                showMsg(d.message || 'Settled', 'success');
-                loadBets();
+                showMsg(d.message || 'Settled: ' + d.settled_count + ' bets', 'success');
+                setTimeout(() => location.reload(), 1500);
             } else {
                 showMsg(d.error || 'Error', 'error');
             }
