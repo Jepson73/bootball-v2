@@ -3395,13 +3395,13 @@ def betting_run_page(run_id):
         
         bets_list = []
         for b in bets:
-            fix_id = b[3]  # fixture_id column
+            fix_id = b[2]  # fixture_id column
             fix = s.execute(select(Fixture).where(Fixture.id == fix_id)).scalar_one_or_none()
             home = TEAM_NAMES.get(fix.home_team_id, str(fix.home_team_id)) if fix else '?'
             away = TEAM_NAMES.get(fix.away_team_id, str(fix.away_team_id)) if fix else '?'
             
             model_ver = None
-            model_ver_id = b[16]  # model_version_id column
+            model_ver_id = b[4]  # model_version_id column
             if model_ver_id:
                 mv = s.execute(select(ModelVersion).where(ModelVersion.id == model_ver_id)).scalar_one_or_none()
                 if mv:
@@ -3411,17 +3411,17 @@ def betting_run_page(run_id):
                 'id': b[0],
                 'home': home,
                 'away': away,
-                'date': format_date(b[14], tz_name),  # placed_at column
-                'market': b[4],  # market column
+                'date': format_date(b[18], tz_name),  # placed_at column
+                'market': b[3],  # market column
                 'model_version': model_ver,
-                'outcome': b[5],  # outcome column
-                'stake': b[6],  # stake column
-                'odds': b[7],  # odds column
-                'ev': b[9],  # ev column
-                'pnl': b[15],  # pnl column
-                'settled': b[11],  # settled column
-                'won': b[14],  # won column
-                'result': b[13]  # actual_result column
+                'outcome': b[8],  # outcome column
+                'stake': b[9],  # stake column
+                'odds': b[10],  # odds column
+                'ev': b[12],  # ev column
+                'pnl': b[17],  # pnl column
+                'settled': b[14],  # settled column
+                'won': b[16],  # won column
+                'result': b[15]  # actual_result column
             })
     
     status_val = rd[5] if len(rd) > 5 else 'unknown'
