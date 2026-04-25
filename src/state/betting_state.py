@@ -74,7 +74,12 @@ def build_betting_state(active_round_id: int | None = None) -> BettingState:
         # -------------------------
         if active_round_id:
             bets_result = s.execute(text("""
-                SELECT pb.*, f.date as fixture_date, f.goals_home, f.goals_away,
+                SELECT pb.id, pb.round_id, pb.fixture_id, pb.market, pb.outcome,
+                       pb.stake, pb.odds, pb.our_prob, pb.ev, pb.kelly_fraction,
+                       pb.settled, pb.actual_result, pb.won, pb.pnl, pb.placed_at,
+                       pb.settled_at, pb.model_version_id, pb.run_id, pb.feature_pipeline_version,
+                       mv.version_name,
+                       f.date as fixture_date, f.goals_home, f.goals_away,
                        ht.name as home_team, aw.name as away_team,
                        l.name as league_name
                 FROM placed_bets pb
@@ -82,6 +87,7 @@ def build_betting_state(active_round_id: int | None = None) -> BettingState:
                 LEFT JOIN teams ht ON f.home_team_id = ht.id
                 LEFT JOIN teams aw ON f.away_team_id = aw.id
                 LEFT JOIN leagues l ON f.league_id = l.id
+                LEFT JOIN model_versions mv ON pb.model_version_id = mv.id
                 WHERE pb.round_id = :round_id
                 ORDER BY f.date DESC
             """), {"round_id": active_round_id}).fetchall()
@@ -105,6 +111,7 @@ def build_betting_state(active_round_id: int | None = None) -> BettingState:
                 "won": row[12],
                 "pnl": row[13],
                 "result": row[11],
+                "model_version": row[19],  # version_name from join
                 "model_version_id": row[16],
                 "settled_at": row[15],
                 "fixture_date": row[20] if len(row) > 20 else None,

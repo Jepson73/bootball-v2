@@ -5368,7 +5368,7 @@ def betting_action():
                         'away': b.get('away_team', '?'),
                         'date': str(b.get('fixture_date', ''))[:16] if b.get('fixture_date') else '-',
                         'market': b.get('market'),
-                        'model_version': '-',
+                        'model_version': b.get('model_version') or '-',
                         'outcome': b.get('outcome'),
                         'stake': b.get('stake'),
                         'odds': b.get('odds'),
