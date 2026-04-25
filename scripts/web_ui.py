@@ -3401,7 +3401,7 @@ def betting_run_page(run_id):
             away = TEAM_NAMES.get(fix.away_team_id, str(fix.away_team_id)) if fix else '?'
             
             model_ver = None
-            model_ver_id = b[4]  # model_version_id column
+            model_ver_id = b[16]  # model_version_id column
             if model_ver_id:
                 mv = s.execute(select(ModelVersion).where(ModelVersion.id == model_ver_id)).scalar_one_or_none()
                 if mv:
@@ -3411,17 +3411,17 @@ def betting_run_page(run_id):
                 'id': b[0],
                 'home': home,
                 'away': away,
-                'date': format_date(b[18], tz_name),  # placed_at column
+                'date': format_date(b[14], tz_name),  # placed_at column
                 'market': b[3],  # market column
                 'model_version': model_ver,
-                'outcome': b[8],  # outcome column
-                'stake': b[9],  # stake column
-                'odds': b[10],  # odds column
-                'ev': b[12],  # ev column
-                'pnl': b[17],  # pnl column
-                'settled': b[14],  # settled column
-                'won': b[16],  # won column
-                'result': b[15]  # actual_result column
+                'outcome': b[4],  # outcome column
+                'stake': b[5],  # stake column
+                'odds': b[6],  # odds column
+                'ev': b[8],  # ev column
+                'pnl': b[13],  # pnl column
+                'settled': b[10],  # settled column
+                'won': b[12],  # won column
+                'result': b[11]  # actual_result column
             })
     
     status_val = rd[5] if len(rd) > 5 else 'unknown'
