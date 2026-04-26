@@ -114,3 +114,4 @@ class Events:
     EXECUTION_SUMMARY = "execution_summary"
     BET_SETTLED = "bet_settled"
     BETS_SETTLED = "bets_settled"
+    PORTFOLIO_BUILT = "portfolio_built"
