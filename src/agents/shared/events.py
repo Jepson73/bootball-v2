@@ -16,9 +16,13 @@ class AgentEvents(BaseEvents):
     # Risk Manager -> Execution Strategist
     RISK_PROFILE_UPDATED = "risk_profile_updated"
     
-    # Execution Strategist -> Execution Engine
+    # Execution Strategist -> Adversarial Agent -> Execution Engine
     PORTFOLIO_ALLOCATED = "portfolio_allocated"
     EXECUTION_REQUESTED = "execution_requested"
+    
+    # Adversarial Agent
+    PORTFOLIO_STRESSED = "portfolio_stressed"
+    PORTFOLIO_VETOED = "portfolio_vetoed"
     
     # Agent lifecycle
     AGENT_INITIALIZED = "agent_initialized"

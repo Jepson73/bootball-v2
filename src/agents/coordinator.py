@@ -17,6 +17,7 @@ from src.agents.shared.events import AgentEvents
 from src.agents.predictor.agent import get_predictor_agent
 from src.agents.risk_manager.agent import get_risk_manager_agent
 from src.agents.execution_strategist.agent import get_execution_strategist_agent
+from src.agents.adversary.agent import get_adversary_agent
 from src.agents.shared.state_store import get_state_store
 from src.notifications.agent_reporter import get_agent_reporter
 
@@ -44,6 +45,7 @@ class AgentCoordinator:
         self.predictor = get_predictor_agent()
         self.risk_manager = get_risk_manager_agent()
         self.execution_strategist = get_execution_strategist_agent()
+        self.adversary = get_adversary_agent()
         
         logger.info("[COORDINATOR] Multi-agent system initialized")
     
@@ -87,6 +89,29 @@ class AgentCoordinator:
             # Step 3: Run Execution Strategist (triggered by events, but run manually)
             logger.info("[COORDINATOR] Step 3: Running Execution Strategist Agent")
             portfolio = self.execution_strategist.run()
+            
+            # Step 4: Run Adversarial Agent (stress test portfolio)
+            logger.info("[COORDINATOR] Step 4: Running Adversarial Agent")
+            adversary_result = self.adversary.run(
+                portfolio=portfolio,
+                risk_profile=risk_profile
+            )
+            
+            # Record adversarial results
+            self.reporter.record_adversarial(
+                risk_score=adversary_result.portfolio_risk_score,
+                max_drawdown=adversary_result.max_drawdown_simulated,
+                recommendation=adversary_result.recommendation,
+                vulnerabilities=len(adversary_result.vulnerable_positions)
+            )
+            
+            # Apply adversarial adjustments if needed
+            if adversary_result.recommendation == "adjust":
+                logger.info("[COORDINATOR] Applying adversarial adjustments")
+                portfolio = self.adversary.apply_adjustments(portfolio)
+            elif adversary_result.recommendation == "reject":
+                logger.warning("[COORDINATOR] Adversary rejected portfolio - no execution")
+                portfolio = []
             
             # Get execution results
             total_stake = sum(b["stake"] for b in portfolio)

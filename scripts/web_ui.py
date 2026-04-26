@@ -3595,7 +3595,7 @@ def tracking_page():
 <table>
     <thead>
         <tr>
-            <th><button onclick="toggleDateSort()" id="dateSortBtn" style="background:none;border:none;color:inherit;cursor:pointer;padding:0;font-weight:bold;">Date ▼</button></th>
+            <th><button onclick="toggleDateSort()" id="dateSortBtn" style="background:none;border:none;color:inherit;cursor:pointer;padding:0;font-weight:bold;">Date ▲</button></th>
             <th>Match</th>
             <th>Market</th>
             <th>Ver</th>
@@ -3623,7 +3623,7 @@ def tracking_page():
 <script>
 let currentPage = 1;
 let pageSize = 20;
-let dateSortDesc = true;
+let dateSortDesc = false;
 
 function toggleDateSort() {
     dateSortDesc = !dateSortDesc;
@@ -3830,7 +3830,13 @@ function goToPage(page) {
     loadTracking();
 }
 
+// Set default "From" date to today BEFORE initial load
+const today = new Date().toISOString().split('T')[0];
+document.getElementById('fromDate').value = today;
+
+// Now load with the date preset
 loadTracking();
+
 document.getElementById('statusFilter').addEventListener('change', () => { currentPage = 1; loadTracking(); });
 document.getElementById('marketFilter').addEventListener('change', () => { currentPage = 1; loadTracking(); });
 document.getElementById('fromDate').addEventListener('change', () => { currentPage = 1; loadTracking(); });

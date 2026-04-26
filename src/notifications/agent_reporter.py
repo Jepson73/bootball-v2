@@ -61,11 +61,27 @@ class AgentReporter:
             "risk": risk,
         }
     
+    def record_adversarial(
+        self,
+        risk_score: float,
+        max_drawdown: float,
+        recommendation: str,
+        vulnerabilities: int
+    ) -> None:
+        """Record adversarial analysis results."""
+        self._run_data["adversary"] = {
+            "risk_score": risk_score,
+            "max_drawdown": max_drawdown,
+            "recommendation": recommendation.upper(),
+            "vulnerabilities": vulnerabilities,
+        }
+    
     def generate_report(self) -> str:
         """Generate markdown report."""
         preds = self._run_data.get("predictions", {})
         risk = self._run_data.get("risk", {})
         exec_data = self._run_data.get("execution", {})
+        adv = self._run_data.get("adversary", {})
         
         report = f"""# Multi-Agent Run Report
 
@@ -88,12 +104,18 @@ class AgentReporter:
 - **Expected Return**: {exec_data.get('expected_return', 0):.2%}
 - **Risk**: {exec_data.get('risk', 0):.2%}
 
+## Adversarial Stress Test
+- **Risk Score**: {adv.get('risk_score', 0):.2f}
+- **Worst-case Drawdown**: {adv.get('max_drawdown', 0):.2%}
+- **Decision**: {adv.get('recommendation', 'N/A')}
+- **Vulnerabilities**: {adv.get('vulnerabilities', 0)}
+
 ## Execution Summary
 - **Bankroll**: {self.state_store.get_current_bankroll():.2f} SEK
 - **Bets This Run**: {self.state_store.get_bets_placed()}
 
 ## Events Trace
-- PREDICTIONS_READY → RISK_PROFILE_UPDATED → PORTFOLIO_ALLOCATED → EXECUTION_REQUESTED
+- PREDICTIONS_READY → RISK_PROFILE_UPDATED → PORTFOLIO_ALLOCATED → PORTFOLIO_STRESSED → EXECUTION_REQUESTED
 """
         
         return report
@@ -118,6 +140,11 @@ class AgentReporter:
         preds = self._run_data.get("predictions", {})
         risk = self._run_data.get("risk", {})
         exec_data = self._run_data.get("execution", {})
+        adv = self._run_data.get("adversary", {})
+        
+        # Determine emoji based on recommendation
+        rec = adv.get("recommendation", "ACCEPT")
+        emoji = "✅" if rec == "ACCEPT" else "⚠️" if rec == "ADJUST" else "🛑"
         
         return f"""🤖 **MULTI-AGENT RUN REPORT**
 
@@ -129,6 +156,11 @@ class AgentReporter:
 - regime: {risk.get('regime', 'N/A')}
 - λ: {risk.get('lambda', 0):.2f}
 - drawdown: {risk.get('drawdown', 0):.1%}
+
+**Adversarial:**
+- risk score: {adv.get('risk_score', 0):.2f}
+- worst-case DD: {adv.get('max_drawdown', 0):.1%}
+- decision: {rec} {emoji}
 
 **Execution:**
 - bets placed: {exec_data.get('bets_placed', 0)}
