@@ -115,3 +115,7 @@ class Events:
     BET_SETTLED = "bet_settled"
     BETS_SETTLED = "bets_settled"
     PORTFOLIO_BUILT = "portfolio_built"
+    
+    # Performance & Allocation
+    PERFORMANCE_UPDATE = "performance_update"
+    ALLOCATION_UPDATED = "allocation_updated"

@@ -81,6 +81,24 @@ def bootstrap_system() -> None:
     except Exception as e:
         logger.warning(f"Could not start execution engine: {e}")
     
+    # Start performance tracker
+    try:
+        from src.performance.performance_tracker import get_performance_tracker
+        get_performance_tracker()
+        logger.info("Performance tracker started")
+    except Exception as e:
+        logger.warning(f"Could not start performance tracker: {e}")
+    
+    # Start adaptive allocator
+    try:
+        from src.portfolio.adaptive_allocator import get_adaptive_allocator
+        allocator = get_adaptive_allocator()
+        # Initial calculation
+        allocator.recalculate()
+        logger.info("Adaptive allocator started")
+    except Exception as e:
+        logger.warning(f"Could not start adaptive allocator: {e}")
+    
     logger.info("System bootstrap complete")
 
 

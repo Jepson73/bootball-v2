@@ -110,6 +110,14 @@ class ExecutionEngine:
         # Stake calculation (fractional Kelly already applied)
         stake = bankroll * kelly
         
+        # Get allocation weight for this market
+        allocation_weights = self._get_allocation_weights()
+        market = bet.get("market", "h2h")
+        market_weight = allocation_weights.get(market, 1.0)
+        
+        # Scale stake by allocation weight
+        stake *= market_weight
+        
         # Risk cap: max 5% bankroll per bet
         max_stake = bankroll * 0.05
         if stake > max_stake:
@@ -125,8 +133,18 @@ class ExecutionEngine:
         
         return {
             "approved": True,
-            "stake": stake
+            "stake": stake,
+            "market_weight": market_weight
         }
+    
+    def _get_allocation_weights(self) -> dict[str, float]:
+        """Get current allocation weights from adaptive allocator."""
+        try:
+            from src.portfolio.adaptive_allocator import get_adaptive_allocator
+            return get_adaptive_allocator().get_weights()
+        except Exception:
+            # Fallback to equal weights
+            return {"h2h": 1.0, "btts": 1.0, "ou25": 1.0, "ou15": 1.0}
     
     def _place_bet(self, bet: dict, stake: float) -> dict:
         """Place a bet by reserving stake."""
