@@ -106,3 +106,4 @@ class Events:
     NOTIFICATION_DISCORD = "notification_discord"
     STATE_CHANGED = "state_changed"
     ALERT_TRIGGERED = "alert_triggered"
+    BETS_ALLOCATED = "bets_allocated"

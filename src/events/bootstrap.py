@@ -65,6 +65,14 @@ def bootstrap_system() -> None:
     except Exception as e:
         logger.warning(f"Could not start decision engine: {e}")
     
+    # Setup capital allocator handler
+    try:
+        from src.alerts.handlers import get_capital_allocator_handler
+        get_capital_allocator_handler()
+        logger.info("Capital allocator handler initialized")
+    except Exception as e:
+        logger.warning(f"Could not setup capital allocator: {e}")
+    
     logger.info("System bootstrap complete")
 
 

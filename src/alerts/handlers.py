@@ -166,3 +166,95 @@ def setup_alert_handlers() -> None:
     event_bus.subscribe(Events.ALERT_TRIGGERED, on_alert_triggered)
     
     logger.info("Alert handlers registered")
+
+
+# =========================================================
+# Capital Allocator Handler
+# =========================================================
+
+class CapitalAllocatorHandler:
+    """Handles bet allocation on BETS_GENERATED events."""
+    
+    def __init__(self, allocator=None):
+        from src.betting.capital_allocator import get_capital_allocator
+        self.allocator = allocator or get_capital_allocator()
+        self._bankroll = 1000.0
+        
+        event_bus.subscribe(Events.BETS_GENERATED, self.on_bets_generated)
+        logger.info("CapitalAllocatorHandler initialized")
+    
+    def update_bankroll(self, bankroll: float):
+        self._bankroll = bankroll
+        self.allocator.set_bankroll(bankroll)
+    
+    def on_bets_generated(self, event):
+        from src.betting.capital_allocator import ValueBet
+        from datetime import datetime
+        
+        data = event.data if hasattr(event, 'data') else event
+        bets_data = data.get("bets", [])
+        
+        if not bets_data:
+            return
+        
+        value_bets = []
+        for bet_data in bets_data:
+            try:
+                kickoff_str = bet_data.get("kickoff")
+                kickoff = (
+                    datetime.fromisoformat(kickoff_str.replace("Z", "+00:00"))
+                    if kickoff_str
+                    else datetime.utcnow()
+                )
+                
+                vb = ValueBet(
+                    fixture_id=bet_data.get("fixture_id", 0),
+                    market=bet_data.get("market", ""),
+                    outcome=bet_data.get("outcome", ""),
+                    odds=bet_data.get("odds", 0),
+                    ev=bet_data.get("ev", 0),
+                    our_prob=bet_data.get("our_prob", 0),
+                    kelly_fraction=bet_data.get("kelly_fraction", 0),
+                    league=bet_data.get("league", "Unknown"),
+                    kickoff=kickoff
+                )
+                value_bets.append(vb)
+            except Exception as e:
+                logger.debug(f"Failed to parse bet: {e}")
+        
+        if not value_bets:
+            return
+        
+        result = self.allocator.allocate(value_bets, self._bankroll)
+        
+        event_bus.emit(Events.BETS_ALLOCATED, {
+            "allocated_bets": [
+                {
+                    "fixture_id": ab.fixture_id,
+                    "market": ab.market,
+                    "outcome": ab.outcome,
+                    "stake": ab.stake,
+                    "ev": ab.ev,
+                    "kelly_fraction": ab.kelly_fraction,
+                    "allocation_weight": ab.allocation_weight,
+                    "risk_flags": ab.risk_flags
+                }
+                for ab in result.allocated_bets
+            ],
+            "total_stake": result.total_stake,
+            "bankroll": result.bankroll,
+            "exposure": result.exposure,
+            "market_distribution": result.market_distribution,
+            "rejected_count": result.rejected_count,
+            "total_input_bets": result.total_input_bets
+        })
+
+
+_capital_allocator_handler = None
+
+
+def get_capital_allocator_handler():
+    global _capital_allocator_handler
+    if _capital_allocator_handler is None:
+        _capital_allocator_handler = CapitalAllocatorHandler()
+    return _capital_allocator_handler
