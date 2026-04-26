@@ -119,3 +119,4 @@ class Events:
     # Performance & Allocation
     PERFORMANCE_UPDATE = "performance_update"
     ALLOCATION_UPDATED = "allocation_updated"
+    CORRELATION_ANALYZED = "correlation_analyzed"

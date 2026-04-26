@@ -13,6 +13,8 @@ import logging
 from dataclasses import dataclass, field
 from typing import Optional
 
+from src.betting.correlation import get_correlation_engine
+
 logger = logging.getLogger(__name__)
 
 
@@ -53,6 +55,11 @@ class CandidateBet:
     kelly_fraction: float
     model_confidence: float
     correlation_key: str = ""
+    normalized_score: float = 0.0
+    adjusted_ev: float = 0.0
+    correlation_risk: float = 0.0
+    correlation_rejected: bool = False
+    reject_reason: str = ""
     
     def __post_init__(self):
         if not self.correlation_key:
@@ -73,6 +80,8 @@ class OptimizedBet:
     final_stake: float
     portfolio_weight: float
     correlation_key: str
+    adjusted_ev: float = 0.0
+    correlation_risk: float = 0.0
 
 
 @dataclass
@@ -141,8 +150,11 @@ class PortfolioOptimizer:
         # Step 2: Normalize opportunity scores
         bets = self._normalize_scores(bets)
         
-        # Step 3: Correlation handling
+        # Step 3: Correlation handling (basic - per fixture limit)
         bets = self._handle_correlation(bets)
+        
+        # Step 3b: Advanced correlation risk adjustment
+        bets = self._apply_correlation_risk(bets, bankroll)
         
         # Step 4: Market diversification
         bets = self._apply_market_diversification(bets)
@@ -260,6 +272,59 @@ class PortfolioOptimizer:
             result.extend(kept)
         
         return result
+    
+    def _apply_correlation_risk(
+        self, 
+        bets: list[CandidateBet], 
+        bankroll: float
+    ) -> list[CandidateBet]:
+        """Apply advanced correlation risk using correlation engine."""
+        if not bets:
+            return bets
+        
+        # Convert to dict format for correlation engine
+        candidates = []
+        for b in bets:
+            candidates.append({
+                "fixture_id": b.fixture_id,
+                "market": b.market,
+                "outcome": b.outcome,
+                "odds": b.odds,
+                "ev": b.ev,
+                "kelly_fraction": b.kelly_fraction,
+            })
+        
+        # Use correlation engine
+        corr_engine = get_correlation_engine()
+        scored_bets = corr_engine.adjust_portfolio(candidates, bankroll)
+        
+        # Map results back to CandidateBet
+        scored_map = {
+            (s.fixture_id, s.market, s.outcome): s 
+            for s in scored_bets
+        }
+        
+        # Update bets with correlation-adjusted values
+        for bet in bets:
+            key = (bet.fixture_id, bet.market, bet.outcome)
+            if key in scored_map:
+                scored = scored_map[key]
+                bet.adjusted_ev = scored.adjusted_ev
+                bet.correlation_risk = scored.correlation_risk
+                if scored.rejected:
+                    bet.correlation_rejected = True
+                    bet.reject_reason = scored.reject_reason
+            else:
+                # Not in selected portfolio
+                bet.correlation_rejected = True
+                bet.reject_reason = "correlation_filter"
+        
+        # Return only non-rejected
+        accepted = [b for b in bets if not b.correlation_rejected]
+        
+        logger.info(f"[CORRELATION] Passed: {len(accepted)}/{len(bets)}")
+        
+        return accepted
     
     def _apply_market_diversification(self, bets: list[CandidateBet]) -> list[CandidateBet]:
         """Step 4: Apply market diversification targets."""
@@ -388,7 +453,9 @@ class PortfolioOptimizer:
                 model_confidence=bet.model_confidence,
                 final_stake=bet.final_stake,
                 portfolio_weight=bet.portfolio_weight,
-                correlation_key=bet.correlation_key
+                correlation_key=bet.correlation_key,
+                adjusted_ev=bet.adjusted_ev,
+                correlation_risk=bet.correlation_risk
             ))
         
         # Market distribution
