@@ -73,6 +73,14 @@ def bootstrap_system() -> None:
     except Exception as e:
         logger.warning(f"Could not setup capital allocator: {e}")
     
+    # Start execution engine
+    try:
+        from src.betting.execution_engine import get_execution_engine
+        get_execution_engine()
+        logger.info("Execution engine started")
+    except Exception as e:
+        logger.warning(f"Could not start execution engine: {e}")
+    
     logger.info("System bootstrap complete")
 
 

@@ -107,3 +107,10 @@ class Events:
     STATE_CHANGED = "state_changed"
     ALERT_TRIGGERED = "alert_triggered"
     BETS_ALLOCATED = "bets_allocated"
+    
+    # Execution
+    BET_PLACED = "bet_placed"
+    BET_REJECTED = "bet_rejected"
+    EXECUTION_SUMMARY = "execution_summary"
+    BET_SETTLED = "bet_settled"
+    BETS_SETTLED = "bets_settled"
