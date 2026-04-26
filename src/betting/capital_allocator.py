@@ -381,7 +381,7 @@ class CapitalAllocator:
         """Log allocation results."""
         logger.info(f"[ALLOCATOR] Total bets input: {result.total_input_bets}")
         logger.info(f"[ALLOCATOR] Selected bets: {len(result.allocated_bets)}")
-        logger.info(f"[ALLOCATOR] Total stake: £{result.total_stake:.2f}")
+        logger.info(f"[ALLOCATOR] Total stake: SEK {result.total_stake:.2f}")
         logger.info(f"[ALLOCATOR] Exposure: {result.exposure * 100:.1f}%")
         logger.info(f"[ALLOCATOR] Market split: {result.market_distribution}")
         
