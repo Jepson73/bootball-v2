@@ -3691,7 +3691,7 @@ function loadTracking() {
                 '<td class="' + (r.settled ? (r.won ? 'win' : 'loss') : 'pending') + '">' +
                     (r.settled ? (r.won ? 'WIN' : 'LOSS') : 'PENDING') +
                 '</td>' +
-                '<td>' + (r.pnl !== null && r.pnl !== undefined ? (r.pnl >= 0 ? '+' : '') + r.pnl.toFixed(2) : '-') + '</td>' +
+                '<td>' + (r.pnl != null && typeof r.pnl === 'number' ? (r.pnl >= 0 ? '+' : '') + r.pnl.toFixed(2) : '-') + '</td>' +
                 '</tr>';
             }).join('');
 
@@ -3735,9 +3735,9 @@ function loadTracking() {
                 highEvHtml += '<tr>' +
                     '<td>' + r.home + ' vs ' + r.away + '</td>' +
                     '<td>' + r.predicted + ' @ ' + r.odds + '</td>' +
-                    '<td style="color:#3fb950;font-weight:bold;">' + (r.ev * 100).toFixed(0) + '%</td>' +
+                    '<td style="color:#3fb950;font-weight:bold;">' + (r.ev ? (r.ev * 100).toFixed(0) + '%' : '-') + '</td>' +
                     '<td class="' + (r.settled ? (r.won ? 'win' : 'loss') : 'pending') + '">' + (r.actual || '-') + '</td>' +
-                    '<td>' + (r.pnl !== undefined ? r.pnl.toFixed(2) : '-') + '</td>' +
+                    '<td>' + (r.pnl != null && typeof r.pnl === 'number' ? r.pnl.toFixed(2) : '-') + '</td>' +
                     '</tr>';
             }
             highEvHtml += '</table>';
@@ -3755,9 +3755,11 @@ function loadTracking() {
                 if (buckets.length === 0) continue;
                 calHtml += '<tr><td colspan="5" style="background:#21262d;padding:4px;">' + m.toUpperCase() + '</td></tr>';
                 for (const b of buckets) {
-                    const diff = b.wins - b.expected_wins;
-                    const diffStr = diff >= 0 ? '+' + diff.toFixed(1) : diff.toFixed(1);
-                    calHtml += '<tr><td>' + b.bucket + '</td><td>' + b.wins + '</td><td>' + b.total + '</td><td>' + b.win_pct + '%</td><td style="color:' + (diff >= 0 ? '#3fb950' : '#f85149') + ';">' + diffStr + '</td></tr>';
+                    const wins = b.wins != null ? b.wins : 0;
+                    const expected = b.expected_wins != null ? b.expected_wins : 0;
+                    const diff = wins - expected;
+                    const diffStr = (typeof diff === 'number' && !isNaN(diff)) ? (diff >= 0 ? '+' + diff.toFixed(1) : diff.toFixed(1)) : '0.0';
+                    calHtml += '<tr><td>' + b.bucket + '</td><td>' + wins + '</td><td>' + b.total + '</td><td>' + b.win_pct + '%</td><td style="color:' + (diff >= 0 ? '#3fb950' : '#f85149') + ';">' + diffStr + '</td></tr>';
                 }
             }
             calHtml += '</table>';
@@ -3842,6 +3844,8 @@ document.getElementById('pageSize').addEventListener('change', () => { currentPa
 @app.route('/api/predictions/recent')
 @require_auth
 def api_predictions_recent():
+    from datetime import datetime as dt
+    
     page = int(request.args.get('page', 1))
     page_size = int(request.args.get('page_size', 20))
     settled_only = request.args.get('settled', 'false') == 'true'
@@ -3867,11 +3871,9 @@ def api_predictions_recent():
             query = query.where(PredictionRecord.market == market)
 
         if from_date:
-            from datetime import datetime
-            query = query.where(Fixture.date >= datetime.strptime(from_date, '%Y-%m-%d'))
+            query = query.where(Fixture.date >= dt.strptime(from_date, '%Y-%m-%d'))
         if to_date:
-            from datetime import datetime
-            query = query.where(Fixture.date <= datetime.strptime(to_date + ' 23:59:59', '%Y-%m-%d %H:%M:%S'))
+            query = query.where(Fixture.date <= dt.strptime(to_date + ' 23:59:59', '%Y-%m-%d %H:%M:%S'))
 
         # Get total count before pagination
         count_query = select(PredictionRecord.id).join(Fixture, PredictionRecord.fixture_id == Fixture.id)
@@ -3882,47 +3884,69 @@ def api_predictions_recent():
         if market:
             count_query = count_query.where(PredictionRecord.market == market)
         if from_date:
-            count_query = count_query.where(Fixture.date >= datetime.strptime(from_date, '%Y-%m-%d'))
+            count_query = count_query.where(Fixture.date >= dt.strptime(from_date, '%Y-%m-%d'))
         if to_date:
-            count_query = count_query.where(Fixture.date <= datetime.strptime(to_date + ' 23:59:59', '%Y-%m-%d %H:%M:%S'))
+            count_query = count_query.where(Fixture.date <= dt.strptime(to_date + ' 23:59:59', '%Y-%m-%d %H:%M:%S'))
 
-        total = len(s.execute(count_query).scalars().all())
+        total = s.execute(select(func.count()).select_from(count_query.subquery())).scalar() or 0
 
-        # Server-side stats across ALL predictions (not filtered)
-        all_settled = s.execute(
-            select(PredictionRecord).where(PredictionRecord.settled == True)
-        ).scalars().all()
-        all_wins = sum(1 for p in all_settled if p.won)
-        total_settled = len(all_settled)
+        # Server-side stats using SQL aggregation (no loading all records)
+        from sqlalchemy import case
+        
+        total_settled = s.execute(
+            select(func.count(PredictionRecord.id)).where(PredictionRecord.settled == True)
+        ).scalar() or 0
+        
+        total_wins = s.execute(
+            select(func.sum(case((PredictionRecord.won == True, 1), else_=0)))
+            .where(PredictionRecord.settled == True)
+        ).scalar() or 0
+        
         total_unsettled = s.execute(
             select(func.count(PredictionRecord.id)).where(PredictionRecord.settled == False)
         ).scalar() or 0
 
-        # Stats by market
+        # Stats by market using SQL aggregation
         market_stats = {}
         for m in ['h2h', 'btts', 'ou25', 'ou15']:
-            market_preds = [p for p in all_settled if p.market == m]
-            market_wins = sum(1 for p in market_preds if p.won)
+            result = s.execute(
+                select(
+                    func.count(PredictionRecord.id),
+                    func.sum(case((PredictionRecord.won == True, 1), else_=0))
+                )
+                .where(PredictionRecord.settled == True)
+                .where(PredictionRecord.market == m)
+            ).one()
+            total_m = result[0] or 0
+            wins_m = result[1] or 0
             market_stats[m] = {
-                'wins': market_wins,
-                'total': len(market_preds),
-                'win_pct': round(market_wins / len(market_preds) * 100) if market_preds else 0
+                'wins': wins_m,
+                'total': total_m,
+                'win_pct': round(wins_m / total_m * 100) if total_m else 0
             }
 
-        # Calibration buckets: win% by probability bucket
+        # Calibration buckets using SQL aggregation
         calibration_buckets = {}
         bucket_edges = [0.4, 0.5, 0.6, 0.7, 0.8, 1.0]
         bucket_labels = ['40-50%', '50-60%', '60-70%', '70-80%', '80%+']
         
         for m in ['h2h', 'btts', 'ou25', 'ou15']:
-            market_preds = [p for p in all_settled if p.market == m and p.calibrated_prob is not None]
             bucket_data = []
             for i in range(len(bucket_edges) - 1):
                 low, high = bucket_edges[i], bucket_edges[i + 1]
-                bucket_preds = [p for p in market_preds if low <= p.calibrated_prob < high]
-                wins = sum(1 for p in bucket_preds if p.won)
-                total = len(bucket_preds)
-                expected_wins = total * ((low + high) / 2)  # mid-point as expected
+                result = s.execute(
+                    select(
+                        func.count(PredictionRecord.id),
+                        func.sum(case((PredictionRecord.won == True, 1), else_=0))
+                    )
+                    .where(PredictionRecord.settled == True)
+                    .where(PredictionRecord.market == m)
+                    .where(PredictionRecord.calibrated_prob >= low)
+                    .where(PredictionRecord.calibrated_prob < high)
+                ).one()
+                total = result[0] or 0
+                wins = result[1] or 0
+                expected_wins = total * ((low + high) / 2)
                 bucket_data.append({
                     'bucket': bucket_labels[i],
                     'total': total,
@@ -3932,58 +3956,73 @@ def api_predictions_recent():
                 })
             calibration_buckets[m] = bucket_data
         
-        # Odds summary per market
+        # Odds summary per market using SQL aggregation
         odds_summary = {}
         for m in ['h2h', 'btts', 'ou25', 'ou15']:
-            market_preds = [p for p in all_settled if p.market == m and p.odds_decimal is not None]
-            if not market_preds:
+            result = s.execute(
+                select(
+                    func.avg(PredictionRecord.odds_decimal),
+                    func.max(PredictionRecord.odds_decimal),
+                    func.min(PredictionRecord.odds_decimal),
+                    func.count(PredictionRecord.id)
+                )
+                .where(PredictionRecord.settled == True)
+                .where(PredictionRecord.market == m)
+                .where(PredictionRecord.odds_decimal.isnot(None))
+            ).one()
+            
+            avg_odds = result[0] or 0
+            count = result[3] or 0
+            
+            if count == 0:
                 odds_summary[m] = {'avg': 0, 'highest_won': 0, 'lowest_lost': 0, 'count': 0}
                 continue
             
-            avg_odds = sum(p.odds_decimal for p in market_preds) / len(market_preds)
-            won_preds = [p.odds_decimal for p in market_preds if p.won]
-            lost_preds = [p.odds_decimal for p in market_preds if not p.won]
-            highest_won = max(won_preds) if won_preds else 0
-            lowest_lost = min(lost_preds) if lost_preds else 0
+            # Get highest won and lowest lost
+            highest_won = s.execute(
+                select(func.max(PredictionRecord.odds_decimal))
+                .where(PredictionRecord.settled == True)
+                .where(PredictionRecord.market == m)
+                .where(PredictionRecord.won == True)
+            ).scalar() or 0
+            
+            lowest_lost = s.execute(
+                select(func.min(PredictionRecord.odds_decimal))
+                .where(PredictionRecord.settled == True)
+                .where(PredictionRecord.market == m)
+                .where(PredictionRecord.won == False)
+            ).scalar() or 0
             
             odds_summary[m] = {
                 'avg': round(avg_odds, 2),
-                'highest_won': round(highest_won, 2) if highest_won else 0,
-                'lowest_lost': round(lowest_lost, 2) if lowest_lost else 0,
-                'count': len(market_preds)
+                'highest_won': round(float(highest_won), 2) if highest_won else 0,
+                'lowest_lost': round(float(lowest_lost), 2) if lowest_lost else 0,
+                'count': count
             }
         
         # Odds coverage stats
         from datetime import datetime as dt
-        from sqlalchemy import func as sql_func
         
         total_fixtures_with_preds = s.execute(
-            select(sql_func.count(sql_func.distinct(PredictionRecord.fixture_id)))
+            select(func.count(func.distinct(PredictionRecord.fixture_id)))
         ).scalar() or 0
         
-        # Fixtures that have both predictions and at least one odds entry
-        fixtures_with_odds = s.execute(
-            select(sql_func.count(sql_func.distinct(FixtureOdds.fixture_id)))
+        fixtures_with_both = s.execute(
+            select(func.count(func.distinct(FixtureOdds.fixture_id)))
+            .join(PredictionRecord, FixtureOdds.fixture_id == PredictionRecord.fixture_id)
         ).scalar() or 0
         
         total_ns_fixtures = s.execute(
-            select(sql_func.count(Fixture.id))
+            select(func.count(Fixture.id))
             .where(Fixture.status == 'NS')
             .where(Fixture.date >= dt.utcnow())
         ).scalar() or 0
         
-        # NS fixtures that have at least one odds entry
         ns_with_odds = s.execute(
-            select(sql_func.count(sql_func.distinct(FixtureOdds.fixture_id)))
+            select(func.count(func.distinct(FixtureOdds.fixture_id)))
             .join(Fixture, Fixture.id == FixtureOdds.fixture_id)
             .where(Fixture.status == 'NS')
             .where(Fixture.date >= dt.utcnow())
-        ).scalar() or 0
-        
-        # Odds coverage - only count fixtures with BOTH predictions AND odds
-        fixtures_with_both = s.execute(
-            select(sql_func.count(sql_func.distinct(FixtureOdds.fixture_id)))
-            .join(PredictionRecord, FixtureOdds.fixture_id == PredictionRecord.fixture_id)
         ).scalar() or 0
         
         odds_coverage = {
@@ -3997,8 +4036,8 @@ def api_predictions_recent():
         
         stats = {
             'total_settled': total_settled,
-            'total_wins': all_wins,
-            'win_pct': round(all_wins / total_settled * 100) if total_settled else 0,
+            'total_wins': total_wins,
+            'win_pct': round(total_wins / total_settled * 100) if total_settled else 0,
             'total_unsettled': total_unsettled,
             'by_market': market_stats,
             'calibration': calibration_buckets,
@@ -4006,24 +4045,38 @@ def api_predictions_recent():
             'odds_coverage': odds_coverage,
         }
         
-        # High EV historical stats (settled predictions with EV >= 10%)
-        high_ev_settled = [p for p in all_settled if p.ev and p.ev >= 0.10]
-        high_ev_wins = sum(1 for p in high_ev_settled if p.won)
-        high_ev_total = len(high_ev_settled)
-        high_ev_wins_pct = round(high_ev_wins / high_ev_total * 100) if high_ev_total else 0
-        high_ev_pnl = sum((p.odds_decimal - 1) if p.won else -1 for p in high_ev_settled if p.odds_decimal)
+        # High EV historical stats using SQL aggregation
+        high_ev_result = s.execute(
+            select(
+                func.count(PredictionRecord.id),
+                func.sum(case((PredictionRecord.won == True, 1), else_=0)),
+                func.sum(case(
+                    (PredictionRecord.won == True, PredictionRecord.odds_decimal - 1),
+                    else_=-1
+                ))
+            )
+            .where(PredictionRecord.settled == True)
+            .where(PredictionRecord.ev >= 0.10)
+            .where(PredictionRecord.odds_decimal.isnot(None))
+        ).one()
         
-        # High EV upcoming (unsettled) count
-        all_unsettled = s.execute(
-            select(PredictionRecord).where(PredictionRecord.settled == False)
-        ).scalars().all()
-        high_ev_upcoming = len([p for p in all_unsettled if p.ev and p.ev >= 0.10])
+        high_ev_total = high_ev_result[0] or 0
+        high_ev_wins = high_ev_result[1] or 0
+        high_ev_pnl = high_ev_result[2] or 0
+        high_ev_wins_pct = round(high_ev_wins / high_ev_total * 100) if high_ev_total else 0
+        
+        # High EV upcoming count
+        high_ev_upcoming = s.execute(
+            select(func.count(PredictionRecord.id))
+            .where(PredictionRecord.settled == False)
+            .where(PredictionRecord.ev >= 0.10)
+        ).scalar() or 0
         
         stats['high_ev_history'] = {
             'wins': high_ev_wins,
             'total': high_ev_total,
             'win_pct': high_ev_wins_pct,
-            'pnl': round(high_ev_pnl, 2),
+            'pnl': round(float(high_ev_pnl), 2),
             'upcoming': high_ev_upcoming,
         }
 
