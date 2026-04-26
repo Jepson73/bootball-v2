@@ -18,6 +18,7 @@ from src.agents.predictor.agent import get_predictor_agent
 from src.agents.risk_manager.agent import get_risk_manager_agent
 from src.agents.execution_strategist.agent import get_execution_strategist_agent
 from src.agents.adversary.agent import get_adversary_agent
+from src.betting.portfolio.portfolio_engine import get_portfolio_engine
 from src.learning import get_performance_evaluator, get_weight_optimizer, get_event_replay
 from src.agents.shared.state_store import get_state_store
 from src.notifications.agent_reporter import get_agent_reporter
@@ -48,12 +49,15 @@ class AgentCoordinator:
         self.execution_strategist = get_execution_strategist_agent()
         self.adversary = get_adversary_agent()
         
+        # Get portfolio engine - PRIMARY DECISION CORE
+        self.portfolio_engine = get_portfolio_engine()
+        
         # Get learning components
         self.evaluator = get_performance_evaluator()
         self.weight_optimizer = get_weight_optimizer()
         self.replay = get_event_replay()
         
-        logger.info("[COORDINATOR] Multi-agent system initialized")
+        logger.info("[COORDINATOR] Multi-agent system initialized - PORTFOLIO-FIRST MODE")
     
     def run(self) -> dict:
         """
@@ -92,9 +96,34 @@ class AgentCoordinator:
                 risk_profile["drawdown"]
             )
             
-            # Step 3: Run Execution Strategist (triggered by events, but run manually)
+            # Step 3: Run Execution Strategist (generates candidate portfolio)
             logger.info("[COORDINATOR] Step 3: Running Execution Strategist Agent")
-            portfolio = self.execution_strategist.run()
+            portfolio_candidates = self.execution_strategist.run()
+            
+            # Step 3b: NEW - Portfolio Engine (PRIMARY DECISION CORE)
+            # This replaces per-bet selection with portfolio-first optimization
+            logger.info("[COORDINATOR] Step 3b: Running Portfolio Engine (PRIMARY DECISION)")
+            bankroll = self.state_store.get_current_bankroll()
+            allocation_vectors = self.portfolio_engine.compute_allocation(
+                predictions=portfolio_candidates,
+                bankroll=bankroll,
+                risk_profile=risk_profile
+            )
+            
+            # Convert allocation vectors to portfolio format
+            portfolio = [
+                {
+                    "bet_id": v.bet_id,
+                    "fixture_id": v.fixture_id,
+                    "market": v.market,
+                    "outcome": v.outcome,
+                    "odds": v.odds,
+                    "stake": v.stake,
+                    "expected_return": v.expected_return,
+                    "risk_contribution": v.risk_contribution,
+                }
+                for v in allocation_vectors
+            ]
             
             # Step 4: Run Adversarial Agent (stress test portfolio)
             logger.info("[COORDINATOR] Step 4: Running Adversarial Agent")

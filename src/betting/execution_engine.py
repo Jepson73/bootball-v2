@@ -17,14 +17,16 @@ logger = logging.getLogger(__name__)
 
 class ExecutionEngine:
     """
-    Executes bets from event bus and manages bankroll state.
+    DUMB EXECUTOR - Stateless execution layer.
+    
+    Receives allocation vectors from Portfolio Engine and executes.
+    NO decision logic, NO EV filtering, NO Kelly calculation.
     
     Flow:
-    1. Subscribes to BETS_GENERATED events
-    2. Evaluates each bet with risk guards
-    3. Places approved bets (reserves stake)
-    4. Emits BET_PLACED events
-    5. Handles settlement via BET_SETTLED events
+    1. Receives PORTFOLIO_ALLOCATED event with allocation vector
+    2. Executes each allocation as-is
+    3. Emits BET_PLACED events
+    4. Handles settlement via BET_SETTLED events
     """
     
     def __init__(self, bankroll_manager: BankrollManager = None):
@@ -32,38 +34,39 @@ class ExecutionEngine:
         self.event_bus = event_bus
         self._event_bus = event_bus
         
-        # Subscribe to events
-        self._event_bus.subscribe(Events.BETS_GENERATED, self.handle_bets_generated)
+        # Subscribe to events - PORTFOLIO_ALLOCATED is the primary path
+        self._event_bus.subscribe(Events.PORTFOLIO_ALLOCATED, self.handle_portfolio_allocation)
         self._event_bus.subscribe(Events.BET_SETTLED, self.handle_bet_settled)
         self._event_bus.subscribe(Events.BETS_SETTLED, self.handle_bets_settled)
         
-        logger.info("ExecutionEngine initialized")
-    
-    def handle_bets_generated(self, event) -> None:
-        """Entry point from event bus - handle BETS_GENERATED event."""
-        data = event.data if hasattr(event, 'data') else event
-        bets = data.get("bets", [])
-        run_id = data.get("run_id")
+        # Legacy support - still handle BETS_GENERATED for backwards compatibility
+        self._event_bus.subscribe(Events.BETS_GENERATED, self.handle_bets_generated)
         
-        if not bets:
-            logger.debug("No bets to execute")
+        logger.info("ExecutionEngine initialized - DUMB EXECUTOR MODE")
+    
+    def handle_portfolio_allocation(self, event) -> None:
+        """
+        PRIMARY ENTRY POINT - Execute portfolio allocations.
+        
+        This is the ONLY decision path after refactor.
+        Allocation vector comes pre-computed from Portfolio Engine.
+        """
+        data = event.data if hasattr(event, 'data') else event
+        allocations = data.get("bets", [])
+        run_id = data.get("run_id", "unknown")
+        
+        if not allocations:
+            logger.info("[EXECUTION] No allocations to execute")
             return
         
-        logger.info(f"Evaluating {len(bets)} bets for execution")
+        logger.info(f"[EXECUTION] Received {len(allocations)} allocations from portfolio engine")
         
         executed = []
-        rejected = []
         
-        for bet in bets:
-            decision = self._evaluate_bet(bet)
-            
-            if not decision["approved"]:
-                rejected.append({**bet, "reason": decision["reason"]})
-                logger.debug(f"Bet rejected: {decision['reason']}")
-                continue
-            
-            result = self._place_bet(bet, decision["stake"])
-            executed.append(result)
+        for alloc in allocations:
+            result = self._execute_allocation(alloc)
+            if result:
+                executed.append(result)
         
         # Emit results
         if executed:
@@ -72,79 +75,57 @@ class ExecutionEngine:
                 "run_id": run_id,
                 "bets": executed,
                 "total_stake": total_stake,
+                "source": "portfolio_engine",
                 "timestamp": datetime.utcnow().isoformat()
             })
-            logger.info(f"Executed {len(executed)} bets, total stake: {total_stake:.2f}")
-        
-        if rejected:
-            self._event_bus.emit(Events.BET_REJECTED, {
-                "run_id": run_id,
-                "bets": rejected,
-                "timestamp": datetime.utcnow().isoformat()
-            })
-            logger.info(f"Rejected {len(rejected)} bets")
+            logger.info(f"[EXECUTION] {len(executed)} bets executed from portfolio, total stake: {total_stake:.2f}")
         
         # Emit summary
         self._event_bus.emit(Events.EXECUTION_SUMMARY, {
             "run_id": run_id,
-            "approved": len(executed),
-            "rejected": len(rejected),
+            "executed": len(executed),
             "total_staked": sum(b["stake"] for b in executed),
-            "bankroll_after": self.bankroll.get_balance()
+            "bankroll_after": self.bankroll.get_balance(),
+            "source": "portfolio_engine"
         })
     
-    def _evaluate_bet(self, bet: dict) -> dict:
-        """Evaluate a single bet for execution."""
+    def _execute_allocation(self, allocation: dict) -> Optional[dict]:
+        """
+        Execute a single allocation from portfolio engine.
+        
+        NO DECISION LOGIC - just place the bet as instructed.
+        """
+        stake = allocation.get("stake", 0)
         bankroll = self.bankroll.get_balance()
         
-        kelly = bet.get("kelly_fraction", bet.get("kelly", 0))
-        odds = bet.get("odds", 0)
-        
-        # Basic guards
-        if kelly <= 0:
-            return {"approved": False, "reason": "zero_kelly"}
-        
-        if odds < 1.5:
-            return {"approved": False, "reason": "low_odds"}
-        
-        # Stake calculation (fractional Kelly already applied)
-        stake = bankroll * kelly
-        
-        # Get allocation weight for this market
-        allocation_weights = self._get_allocation_weights()
-        market = bet.get("market", "h2h")
-        market_weight = allocation_weights.get(market, 1.0)
-        
-        # Scale stake by allocation weight
-        stake *= market_weight
-        
-        # Risk cap: max 5% bankroll per bet
-        max_stake = bankroll * 0.05
-        if stake > max_stake:
-            stake = max_stake
-        
-        # Minimum stake threshold
-        if stake < 1:
-            return {"approved": False, "reason": "stake_too_small"}
-        
-        # Check sufficient balance
+        # Simple balance check only
         if stake > bankroll:
-            return {"approved": False, "reason": "insufficient_balance"}
+            logger.warning(f"[EXECUTION] Insufficient balance for {allocation.get('bet_id')}")
+            return None
+        
+        if stake < 1:
+            logger.warning(f"[EXECUTION] Stake too small: {stake}")
+            return None
+        
+        # Reserve stake
+        success = self.bankroll.reserve(stake)
+        
+        if not success:
+            logger.error(f"[EXECUTION] Failed to reserve stake: {stake}")
+            return None
         
         return {
-            "approved": True,
+            "bet_id": allocation.get("bet_id", ""),
+            "fixture_id": allocation.get("fixture_id", 0),
+            "market": allocation.get("market", ""),
+            "outcome": allocation.get("outcome", ""),
+            "odds": allocation.get("odds", 0),
             "stake": stake,
-            "market_weight": market_weight
+            "expected_return": allocation.get("expected_return", 0),
+            "placed_at": datetime.utcnow().isoformat(),
+            "status": "open",
+            "source": "portfolio_engine"
         }
-    
-    def _get_allocation_weights(self) -> dict[str, float]:
-        """Get current allocation weights from adaptive allocator."""
-        try:
-            from src.portfolio.adaptive_allocator import get_adaptive_allocator
-            return get_adaptive_allocator().get_weights()
-        except Exception:
-            # Fallback to equal weights
-            return {"h2h": 1.0, "btts": 1.0, "ou25": 1.0, "ou15": 1.0}
     
     def _place_bet(self, bet: dict, stake: float) -> dict:
         """Place a bet by reserving stake."""

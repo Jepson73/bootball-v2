@@ -1,23 +1,24 @@
 #!/usr/bin/env python3
 """
-scripts/auto_bet.py
+scripts/auto_bet.py - DEPRECATED
 
-Automatic betting bot that places fictional bets based on value detection.
+⚠️  DEPRECATED: This script is no longer the primary execution driver.
 
-Features:
-- Uses same pickle models as daily_run and web_ui
-- Places bets automatically when value detected (EV > threshold)
-- Settles bets automatically when matches complete
-- Tracks historical rounds for comparison
-- Sends Discord alerts for placed bets
+The system now uses portfolio-first architecture:
+- AgentCoordinator → PortfolioEngine → ExecutionEngine
 
-Usage:
-    python scripts/auto_bet.py              # Full run: bet + settle
-    python scripts/auto_bet.py --bet-only   # Only place bets, don't settle
-    python scripts/auto_bet.py --settle-only # Only settle pending bets
+This script is retained for:
+- Debugging and diagnostics
+- Historical analysis
+- Manual settlement only
+
+To run the primary system, use:
+- AgentCoordinator (via backend/app.py scheduler)
+- Or run: from src.agents.coordinator import run_multi_agent_pipeline
+
+Usage (Legacy):
     python scripts/auto_bet.py --status     # Show current bankroll status
-    python scripts/auto_bet.py --new-round  # Force start new round
-    python scripts/auto_bet.py --reset BANKROLL  # Reset bankroll to starting amount
+    python scripts/auto_bet.py --settle-only # Only settle pending bets
     python scripts/auto_bet.py --history   # Show historical rounds
 """
 from __future__ import annotations
