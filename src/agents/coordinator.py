@@ -18,6 +18,7 @@ from src.agents.predictor.agent import get_predictor_agent
 from src.agents.risk_manager.agent import get_risk_manager_agent
 from src.agents.execution_strategist.agent import get_execution_strategist_agent
 from src.agents.adversary.agent import get_adversary_agent
+from src.learning import get_performance_evaluator, get_weight_optimizer, get_event_replay
 from src.agents.shared.state_store import get_state_store
 from src.notifications.agent_reporter import get_agent_reporter
 
@@ -46,6 +47,11 @@ class AgentCoordinator:
         self.risk_manager = get_risk_manager_agent()
         self.execution_strategist = get_execution_strategist_agent()
         self.adversary = get_adversary_agent()
+        
+        # Get learning components
+        self.evaluator = get_performance_evaluator()
+        self.weight_optimizer = get_weight_optimizer()
+        self.replay = get_event_replay()
         
         logger.info("[COORDINATOR] Multi-agent system initialized")
     
@@ -123,6 +129,45 @@ class AgentCoordinator:
                 expected_return,
                 expected_return  # Using as risk proxy
             )
+            
+            # Step 5: Learning - evaluate performance and update weights
+            logger.info("[COORDINATOR] Step 5: Running Learning System")
+            
+            # Evaluate performance
+            performance = self.evaluator.evaluate(
+                bets=portfolio,
+                predictions=predictions,
+                risk_profile=risk_profile,
+                previous_weights=self.weight_optimizer.get_weights()
+            )
+            
+            # Record for replay
+            self.replay.record_run(
+                run_id=run_id,
+                predictions=predictions,
+                risk_profile=risk_profile,
+                portfolio=portfolio,
+                execution_results=portfolio,
+                performance=performance
+            )
+            
+            # Update weights based on performance
+            new_weights = self.weight_optimizer.optimize(performance)
+            
+            # Record learning
+            self.reporter.record_learning(
+                performance=performance,
+                new_weights=new_weights,
+                best_markets=performance.get("best_markets", []),
+                worst_markets=performance.get("worst_markets", [])
+            )
+            
+            # Emit learning events
+            event_bus.emit(AgentEvents.PERFORMANCE_RECORDED, performance)
+            event_bus.emit(AgentEvents.WEIGHTS_UPDATED, {
+                "weights": new_weights,
+                "timestamp": datetime.utcnow().isoformat(),
+            })
             
             # End run
             self.state_store.end_run()

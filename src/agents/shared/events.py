@@ -24,6 +24,11 @@ class AgentEvents(BaseEvents):
     PORTFOLIO_STRESSED = "portfolio_stressed"
     PORTFOLIO_VETOED = "portfolio_vetoed"
     
+    # Learning System
+    PERFORMANCE_RECORDED = "performance_recorded"
+    WEIGHTS_UPDATED = "weights_updated"
+    OPTIMIZATION_CYCLE_COMPLETE = "optimization_cycle_complete"
+    
     # Agent lifecycle
     AGENT_INITIALIZED = "agent_initialized"
     AGENT_ERROR = "agent_error"

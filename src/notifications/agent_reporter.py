@@ -76,12 +76,35 @@ class AgentReporter:
             "vulnerabilities": vulnerabilities,
         }
     
+    def record_learning(
+        self,
+        performance: dict,
+        new_weights: dict,
+        best_markets: list,
+        worst_markets: list
+    ) -> None:
+        """Record learning system results."""
+        self._run_data["learning"] = {
+            "overall_roi": performance.get("overall_roi", 0),
+            "ev_realization": performance.get("ev_realization_ratio", 0),
+            "updated_weights": new_weights,
+            "best_markets": best_markets,
+            "worst_markets": worst_markets,
+        }
+    
     def generate_report(self) -> str:
         """Generate markdown report."""
         preds = self._run_data.get("predictions", {})
         risk = self._run_data.get("risk", {})
         exec_data = self._run_data.get("execution", {})
         adv = self._run_data.get("adversary", {})
+        learn = self._run_data.get("learning", {})
+        
+        # Format weights
+        weights_str = ""
+        for m, w in learn.get("updated_weights", {}).items():
+            arrow = "↑" if self._is_weight_increased(m, learn) else "↓"
+            weights_str += f"- **{m.upper()}**: {w:.1%} {arrow}\n"
         
         report = f"""# Multi-Agent Run Report
 
@@ -110,15 +133,30 @@ class AgentReporter:
 - **Decision**: {adv.get('recommendation', 'N/A')}
 - **Vulnerabilities**: {adv.get('vulnerabilities', 0)}
 
+## Learning System
+- **ROI**: {learn.get('overall_roi', 0):.1%}
+- **EV Accuracy**: {learn.get('ev_realization', 0):.1%}
+
+### Updated Weights
+{weights_str or "- No weight updates"}
+
+### Market Performance
+- **Best**: {', '.join(learn.get('best_markets', [])) or 'N/A'}
+- **Worst**: {', '.join(learn.get('worst_markets', [])) or 'N/A'}
+
 ## Execution Summary
 - **Bankroll**: {self.state_store.get_current_bankroll():.2f} SEK
 - **Bets This Run**: {self.state_store.get_bets_placed()}
 
 ## Events Trace
-- PREDICTIONS_READY → RISK_PROFILE_UPDATED → PORTFOLIO_ALLOCATED → PORTFOLIO_STRESSED → EXECUTION_REQUESTED
+- PREDICTIONS_READY → RISK_PROFILE_UPDATED → PORTFOLIO_ALLOCATED → PORTFOLIO_STRESSED → PERFORMANCE_RECORDED → WEIGHTS_UPDATED
 """
         
         return report
+    
+    def _is_weight_increased(self, market: str, learn: dict) -> bool:
+        """Check if weight increased (simplified)."""
+        return market in learn.get("best_markets", [])
     
     def save_reports(self) -> None:
         """Save reports to files."""
@@ -141,10 +179,17 @@ class AgentReporter:
         risk = self._run_data.get("risk", {})
         exec_data = self._run_data.get("execution", {})
         adv = self._run_data.get("adversary", {})
+        learn = self._run_data.get("learning", {})
         
         # Determine emoji based on recommendation
         rec = adv.get("recommendation", "ACCEPT")
         emoji = "✅" if rec == "ACCEPT" else "⚠️" if rec == "ADJUST" else "🛑"
+        
+        # Format weights
+        weights_lines = ""
+        for m, w in learn.get("updated_weights", {}).items():
+            arrow = "↑" if m in learn.get("best_markets", []) else "↓" if m in learn.get("worst_markets", []) else ""
+            weights_lines += f"- {m.upper()}: {w:.1%} {arrow}\n"
         
         return f"""🤖 **MULTI-AGENT RUN REPORT**
 
@@ -161,6 +206,12 @@ class AgentReporter:
 - risk score: {adv.get('risk_score', 0):.2f}
 - worst-case DD: {adv.get('max_drawdown', 0):.1%}
 - decision: {rec} {emoji}
+
+**📈 LEARNING UPDATE**
+- ROI: {learn.get('overall_roi', 0):.1%}
+- EV accuracy: {learn.get('ev_realization', 0):.1%}
+- Updated Weights:
+{weights_lines or "- No updates"}
 
 **Execution:**
 - bets placed: {exec_data.get('bets_placed', 0)}
