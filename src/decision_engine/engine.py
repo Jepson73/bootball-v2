@@ -9,9 +9,11 @@ import logging
 from typing import Any, Callable, Optional
 
 from src.alerts.event_bus import event_bus, Events
-from src.decision_engine.state import DecisionState
+from src.decision_engine.state import DecisionState, get_decision_state
 from src.decision_engine.rules import load_rules
 from src.decision_engine.actions import Action, SEND_ALERT
+from src.decision_engine.executors import ActionExecutor, get_action_executor
+from src.decision_engine.registry import get_action_registry
 
 logger = logging.getLogger(__name__)
 
@@ -24,21 +26,12 @@ class DecisionEngine:
 
     def __init__(self, event_bus=None):
         self.event_bus = event_bus or event_bus
-        self.state = DecisionState()
+        self.state = get_decision_state()  # Use global state
         self.rules = load_rules()
-        self._action_handlers = {}
-        self._register_default_handlers()
+        self.executor = get_action_executor()  # Use action executor
+        self.registry = get_action_registry()
 
         logger.info("DecisionEngine initialized")
-
-    def _register_default_handlers(self) -> None:
-        """Register default action handlers."""
-        self.register_handler(SEND_ALERT, self._handle_send_alert)
-
-    def register_handler(self, action_type: str, handler: Callable) -> None:
-        """Register a handler for a specific action type."""
-        self._action_handlers[action_type] = handler
-        logger.debug(f"Registered handler for: {action_type}")
 
     def handle_event(self, event_type: str, data: dict) -> None:
         """
@@ -81,24 +74,15 @@ class DecisionEngine:
             self.state.update_run_time()
 
     def _execute(self, action: Action) -> None:
-        """Execute an action via registered handler."""
-        handler = self._action_handlers.get(action.type)
-        if handler:
-            try:
-                handler(action)
-            except Exception as e:
-                logger.error(f"Action {action.type} failed: {e}")
-        else:
-            logger.warning(f"No handler for action: {action.type}")
-
-    def _handle_send_alert(self, action: Action) -> None:
-        """Handle SEND_ALERT action by emitting to EventBus."""
-        payload = action.payload
-        self.event_bus.emit(Events.NOTIFICATION_DISCORD, {
-            "title": payload.get("title", "Alert"),
-            "description": payload.get("message", ""),
-            "severity": payload.get("severity", "warning")
-        })
+        """Execute an action via the action executor."""
+        try:
+            # Record in registry
+            self.registry.record(action.type, action.payload, success=True)
+            # Execute via executor
+            self.executor.execute(action)
+        except Exception as e:
+            logger.error(f"Action {action.type} failed: {e}")
+            self.registry.record(action.type, action.payload, success=False, error=str(e))
 
     def get_state(self) -> DecisionState:
         """Get current decision state."""

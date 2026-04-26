@@ -40,6 +40,34 @@ def bootstrap_consumers() -> None:
     logger.info(f"Bootstrapped {len(consumers)} consumers: {[c.name for c in consumers]}")
 
 
+def bootstrap_system() -> None:
+    """
+    Full system bootstrap - consumers + decision engine + handlers.
+    
+    Call this at application startup.
+    """
+    # Bootstrap consumers
+    bootstrap_consumers()
+    
+    # Setup alert handlers with suppression
+    try:
+        from src.alerts.handlers import setup_alert_handlers
+        setup_alert_handlers()
+        logger.info("Alert handlers initialized")
+    except Exception as e:
+        logger.warning(f"Could not setup alert handlers: {e}")
+    
+    # Start decision engine
+    try:
+        from src.decision_engine import start_decision_engine
+        start_decision_engine()
+        logger.info("Decision engine started")
+    except Exception as e:
+        logger.warning(f"Could not start decision engine: {e}")
+    
+    logger.info("System bootstrap complete")
+
+
 def shutdown_consumers() -> None:
     """Unregister all consumers (for testing/shutdown)."""
     for name in registry.list_consumers():

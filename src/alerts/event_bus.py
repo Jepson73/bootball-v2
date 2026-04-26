@@ -105,3 +105,4 @@ class Events:
     # Notifications
     NOTIFICATION_DISCORD = "notification_discord"
     STATE_CHANGED = "state_changed"
+    ALERT_TRIGGERED = "alert_triggered"

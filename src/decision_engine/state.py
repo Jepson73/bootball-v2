@@ -175,3 +175,32 @@ class DecisionState:
         """Set alert-only mode."""
         self.alert_only_mode = enabled
         logger.info(f"Alert-only mode: {enabled}")
+
+    @property
+    def mode(self) -> str:
+        """Get current system mode."""
+        if self.alert_only_mode:
+            return "alert_only"
+        if self.throttle_active:
+            return "safe"
+        return "normal"
+
+    def is_market_allowed(self, market: str) -> bool:
+        """Check if market is allowed for betting."""
+        if self.alert_only_mode:
+            return False
+        if market in self.disabled_markets:
+            return False
+        return True
+
+
+# Global state instance
+_global_state: DecisionState = None
+
+
+def get_decision_state() -> DecisionState:
+    """Get global decision state."""
+    global _global_state
+    if _global_state is None:
+        _global_state = DecisionState()
+    return _global_state
