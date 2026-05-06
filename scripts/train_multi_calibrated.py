@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Train calibrated ML model on all leagues."""
 import sys
-sys.path.insert(0, '/opt/projects/bootball')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier

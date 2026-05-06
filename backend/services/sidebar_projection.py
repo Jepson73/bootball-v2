@@ -65,7 +65,7 @@ def resolve_lifecycle_state(status: str, kickoff: datetime, now: datetime) -> Tu
     if status in ('1H', '2H', 'HT', 'LIVE'):
         return format_live_state(status), 'live'
     
-    if status in ('FT', 'FTM'):
+    if status == 'FT':
         if now - kickoff <= timedelta(minutes=FT_WINDOW_MINUTES):
             return 'FT', 'finished'
         else:
@@ -84,7 +84,7 @@ def format_live_state(status: str, elapsed: Optional[int] = None) -> str:
     """Format live match state."""
     if status == 'HT':
         return 'HT'
-    if status in ('FT', 'FTM'):
+    if status == 'FT':
         return 'FT'
     if status in ('1H', '2H', 'LIVE', 'ET'):
         if elapsed is not None:
@@ -194,7 +194,7 @@ def project_sidebar_fixtures() -> Dict[str, List[ProjectedFixture]]:
             JOIN teams away ON f.away_team_id = away.id
             LEFT JOIN leagues l ON f.league_id = l.id
             WHERE 
-                f.status IN ('1H', '2H', 'HT', 'LIVE', 'FT', 'FTM', 'NS')
+                f.status IN ('1H', '2H', 'HT', 'LIVE', 'FT', 'NS')
             ORDER BY f.date ASC
         """)).fetchall()
         

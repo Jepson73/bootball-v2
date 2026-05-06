@@ -61,6 +61,15 @@ class AgentReporter:
             "risk": risk,
         }
     
+    def record_simulation(self, sim_data: dict) -> None:
+        """Record Monte Carlo simulation data."""
+        self._run_data["simulation"] = {
+            "expected_return": sim_data.get("expected_return", 0),
+            "volatility": sim_data.get("volatility", 0),
+            "max_drawdown": sim_data.get("max_drawdown", 0),
+            "ruin_probability": sim_data.get("ruin_probability", 0),
+        }
+    
     def record_adversarial(
         self,
         risk_score: float,

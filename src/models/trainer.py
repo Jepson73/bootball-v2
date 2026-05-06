@@ -6,11 +6,12 @@ Provides market-specific model training and caching.
 from __future__ import annotations
 import os
 import sys
+from pathlib import Path
 import pickle
 import logging
 from dataclasses import dataclass
 
-sys.path.insert(0, '/opt/projects/bootball')
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 import numpy as np
 from sklearn.ensemble import GradientBoostingClassifier
@@ -87,12 +88,11 @@ def _get_team_stats(s, team_id: int, league_id: int) -> dict:
 
 def _build_features_h2h(home_stats: dict, away_stats: dict, league_id: int) -> list:
     """Build features for 1X2 prediction."""
-    league_tier = 3  # Default
     return [
         float(home_stats.get('rank', 15)),
         float(away_stats.get('rank', 15)),
         float(away_stats.get('rank', 15) - home_stats.get('rank', 15)),
-        float((home_stats.get('goals_for', 1) - home_stats.get('goals_against', 1)) - 
+        float((home_stats.get('goals_for', 1) - home_stats.get('goals_against', 1)) -
               (away_stats.get('goals_for', 1) - away_stats.get('goals_against', 1))),
         float(home_stats.get('goals_for', 1) + away_stats.get('goals_against', 1)),
         float(away_stats.get('goals_for', 1) + home_stats.get('goals_against', 1)),
@@ -100,7 +100,6 @@ def _build_features_h2h(home_stats: dict, away_stats: dict, league_id: int) -> l
         float(away_stats.get('goals_for', 1)),
         float(home_stats.get('goals_against', 1)),
         float(away_stats.get('goals_against', 1)),
-        float(league_tier),
     ]
 
 
@@ -213,8 +212,8 @@ def train_market(market: str, max_samples: int = 5000) -> tuple[GradientBoosting
     
     cache_path = get_cache_path(market)
     try:
-        with open(cache_path, 'wb') as f:
-            pickle.dump(model, f)
+        from src.security import safe_model_save
+        safe_model_save(model, cache_path)
         logger.info(f"Saved {market} model to {cache_path}")
     except Exception as e:
         logger.warning(f"Failed to cache {market} model: {e}")

@@ -13,10 +13,11 @@ import argparse
 import csv
 import json
 import sys
+from pathlib import Path
 from datetime import datetime, timedelta
 from typing import Optional
 
-sys.path.insert(0, "/opt/projects/bootball")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from src.backtesting.backtest_engine import BacktestEngine, run_scenario
 from src.backtesting.scenarios import SCENARIOS, get_scenario, list_scenarios, compare_scenarios as run_compare

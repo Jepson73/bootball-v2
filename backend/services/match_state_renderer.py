@@ -26,7 +26,7 @@ def render_match_state(
     if raw == 'HT':
         return 'HT'
     
-    if raw == 'FT' or raw == 'FTM':
+    if raw == 'FT':
         return 'FT'
     
     if raw in ('1H', 'LIVE'):

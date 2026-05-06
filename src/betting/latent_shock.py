@@ -5,6 +5,7 @@ from enum import Enum
 import json
 from datetime import datetime
 import os
+from config.leagues import ALL_LEAGUE_IDS, PRIORITY_LEAGUE_IDS
 
 
 class ShockType(Enum):
@@ -111,7 +112,7 @@ class LatentShockGenerator:
             severity=severity * direction_multiplier,
             duration=np.random.randint(14, 42),
             affected_markets=["h2h", "btts", "ou25", "ou15"],
-            affected_leagues=list(range(1, 100)),
+            affected_leagues=list(ALL_LEAGUE_IDS),
             propagation_factor=0.8,
             description=f"Global scoring {direction} shift: {severity:.0%} goals change"
         )
@@ -126,7 +127,7 @@ class LatentShockGenerator:
             severity=severity if meta == "defensive" else -severity,
             duration=np.random.randint(21, 56),
             affected_markets=["h2h", "btts", "ou25"],
-            affected_leagues=list(range(1, 100)),
+            affected_leagues=list(ALL_LEAGUE_IDS),
             propagation_factor=0.7,
             description=f"Tactical {meta} era shift"
         )
@@ -141,7 +142,7 @@ class LatentShockGenerator:
             severity=severity if strictness == "strict" else -severity,
             duration=np.random.randint(14, 35),
             affected_markets=["h2h", "btts"],
-            affected_leagues=list(range(1, 100)),
+            affected_leagues=list(ALL_LEAGUE_IDS),
             propagation_factor=0.5,
             description=f"Referee strictness shift: {strictness}"
         )
@@ -154,7 +155,7 @@ class LatentShockGenerator:
             severity=severity,
             duration=np.random.randint(7, 21),
             affected_markets=["h2h", "btts", "ou25", "ou15"],
-            affected_leagues=list(range(1, 100)),
+            affected_leagues=list(ALL_LEAGUE_IDS),
             propagation_factor=0.9,
             description="Bookmaker odds drift phase"
         )
@@ -173,7 +174,7 @@ class LatentShockGenerator:
             severity=severity * direction,
             duration=14,
             affected_markets=["h2h", "btts", "ou25"],
-            affected_leagues=[88, 94, 103, 157],
+            affected_leagues=list(PRIORITY_LEAGUE_IDS),
             propagation_factor=0.4,
             description="Seasonal fatigue factor"
         )

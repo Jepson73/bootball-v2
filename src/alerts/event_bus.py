@@ -94,6 +94,7 @@ class Events:
     # Run system
     RUN_STARTED = "run_started"
     RUN_FINISHED = "run_finished"
+    RUN_COMPLETED = "run_completed"
     PREDICTIONS_GENERATED = "predictions_generated"
     
     # Health system
@@ -121,3 +122,53 @@ class Events:
     ALLOCATION_UPDATED = "allocation_updated"
     CORRELATION_ANALYZED = "correlation_analyzed"
     PORTFOLIO_OPTIMIZED = "portfolio_optimized"
+    
+    # Portfolio State (stateful system)
+    PORTFOLIO_STATE_LOADED = "portfolio_state_loaded"
+    PORTFOLIO_STATE_UPDATED = "portfolio_state_updated"
+    
+    # Policy Engine (governance)
+    POLICY_APPROVED = "policy_approved"
+    POLICY_THROTTLED = "policy_throttled"
+    POLICY_REJECTED = "policy_rejected"
+    RISK_LIMIT_BREACHED = "risk_limit_breached"
+    KILL_SWITCH_TRIGGERED = "kill_switch_triggered"
+    
+    # Execution Spine Guard (governance)
+    EXECUTION_SOURCED_FROM_ILLEGAL_PATH = "execution_sourced_from_illegal_path"
+    EXECUTION_VALIDATED = "execution_validated"
+    EXECUTION_REJECTED = "execution_rejected"
+    
+    # Calibration (state convergence)
+    CALIBRATION_DRIFT_DETECTED = "calibration_drift_detected"
+    MODEL_BIAS_ADJUSTED = "model_bias_adjusted"
+    RISK_MODEL_CORRECTED = "risk_model_corrected"
+    PORTFOLIO_REWEIGHTING_SUGGESTED = "portfolio_reweighting_suggested"
+    CALIBRATION_REPORT_READY = "calibration_report_ready"
+    
+    # Meta-Policy Learning (policy self-tuning)
+    META_POLICY_ADJUSTED = "meta_policy_adjusted"
+    POLICY_OVERFITTING_DETECTED = "policy_overfitting_detected"
+    RISK_APPETITE_INCREASED = "risk_appetite_increased"
+    RISK_APPETITE_REDUCED = "risk_appetite_reduced"
+    CONSTRAINT_STABILIZED = "constraint_stabilized"
+    
+    # Simulation (Monte Carlo)
+    MONTE_CARLO_COMPLETED = "monte_carlo_completed"
+    
+    # Feedback Loop (closed-loop)
+    PERFORMANCE_COMPUTED = "performance_computed"
+    CALIBRATION_UPDATED = "calibration_updated"
+    POLICY_ADAPTED = "policy_adapted"
+    RUN_FEEDBACK_COMPLETED = "run_feedback_completed"
+    
+    # Closed Loop Validation (self-adaptation verification)
+    CLOSED_LOOP_VALIDATION_COMPLETED = "closed_loop_validation_completed"
+    SYSTEM_ADAPTIVE_CONFIRMED = "system_adaptive_confirmed"
+    SYSTEM_STATIC_DETECTED = "system_static_detected"
+    ADAPTATION_SCORE_UPDATED = "adaptation_score_updated"
+
+    # Model lifecycle (auto training / recalibration)
+    MODEL_RETRAIN_STARTED = "model_retrain_started"
+    MODEL_RETRAIN_COMPLETED = "model_retrain_completed"
+    MODEL_RECALIBRATION_COMPLETED = "model_recalibration_completed"

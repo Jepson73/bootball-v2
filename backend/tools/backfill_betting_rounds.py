@@ -7,7 +7,8 @@ Updates all placed_bets with proper round_id.
 """
 
 import sys
-sys.path.insert(0, '/opt/projects/bootball')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from datetime import datetime, timedelta
 from src.storage.db import get_session

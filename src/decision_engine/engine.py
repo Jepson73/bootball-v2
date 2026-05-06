@@ -120,7 +120,13 @@ def start_decision_engine() -> DecisionEngine:
     """Start the decision engine and subscribe to events."""
     engine = get_decision_engine()
 
-    # Subscribe to all relevant events
+    # Subscribe to all relevant events.
+    # event_bus calls handlers with a single event dict; unwrap before passing to handle_event.
+    def _make_handler(et: str):
+        def _handler(event: dict) -> None:
+            engine.handle_event(et, event)
+        return _handler
+
     for event_type in [
         Events.BETS_GENERATED,
         Events.BET_SETTLED,
@@ -130,7 +136,7 @@ def start_decision_engine() -> DecisionEngine:
         Events.HEALTH_UPDATE,
         Events.MODEL_TREND,
     ]:
-        event_bus.subscribe(event_type, engine.handle_event)
+        event_bus.subscribe(event_type, _make_handler(event_type))
 
     logger.info("DecisionEngine started and subscribed to events")
     return engine

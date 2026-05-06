@@ -44,6 +44,7 @@ class BetCandidate:
 class OptimizedBet:
     """Optimized bet result."""
     bet_id: str
+    fixture_id: int
     market: str
     outcome: str
     odds: float
@@ -51,6 +52,8 @@ class OptimizedBet:
     weight: float
     expected_return: float
     risk_contribution: float
+    ev: float = 0.0
+    our_prob: float = 0.5
 
 
 @dataclass
@@ -72,7 +75,8 @@ class MarkowitzConfig:
     risk_aversion: float = 0.8
     max_bet_pct: float = 0.05
     min_bet: float = 10.0
-    max_total_exposure: float = 0.40
+    max_total_exposure: float = 0.25
+    max_market_exposure_pct: float = 0.08
     use_correlation_engine: bool = True
 
 
@@ -144,9 +148,9 @@ class MarkowitzOptimizer:
                     fixture_id=c.get("fixture_id", 0),
                     market=c.get("market", "h2h"),
                     outcome=c.get("outcome", ""),
-                    odds=c.get("odds", 0),
+                    odds=c.get("odds") or 0.0,
                     prob=c.get("prob", c.get("our_prob", 0.5)),
-                    ev=c.get("ev", 0),
+                    ev=c.get("ev") or 0.0,
                     kelly_fraction=c.get("kelly_fraction", c.get("kelly", 0)),
                     correlation_key=c.get("correlation_key", f"fixture_{c.get('fixture_id', 0)}")
                 ))
@@ -174,9 +178,26 @@ class MarkowitzOptimizer:
                 if i == j:
                     sigma[i, j] = vol_i ** 2
                 else:
-                    # Get correlation from correlation engine
                     corr = self._get_correlation(bets[i], bets[j])
                     sigma[i, j] = corr * vol_i * vol_j
+        
+        # PRODUCTION-GRADE: Ensure PSD (Positive Semi-Definite)
+        # 1. Symmetrize
+        sigma = (sigma + sigma.T) / 2
+        
+        # 2. Eigenvalue decomposition for PSD projection
+        try:
+            eigenvalues, eigenvectors = np.linalg.eigh(sigma)
+            # Clip negative eigenvalues to 0
+            eigenvalues = np.maximum(eigenvalues, 1e-10)
+            # Reconstruct
+            sigma = eigenvectors @ np.diag(eigenvalues) @ eigenvectors.T
+        except Exception:
+            # Fallback: add regularization
+            sigma = sigma + 1e-6 * np.eye(n)
+        
+        # 3. Ensure still symmetric
+        sigma = (sigma + sigma.T) / 2
         
         return sigma
     
@@ -227,7 +248,17 @@ class MarkowitzOptimizer:
                 w >= 0,
                 w <= max_bet
             ]
-            
+
+            # Per-market cap: no single market can absorb more than max_market_exposure_pct
+            from collections import defaultdict
+            market_groups: dict[str, list[int]] = defaultdict(list)
+            for i, bet in enumerate(bets):
+                market_groups[bet.market].append(i)
+            max_market = self.config.max_market_exposure_pct
+            for indices in market_groups.values():
+                if len(indices) > 1:
+                    constraints.append(cp.sum(w[np.array(indices)]) <= max_market)
+
             # Solve
             problem = cp.Problem(objective, constraints)
             result = problem.solve(solver=cp.SCS)
@@ -251,18 +282,39 @@ class MarkowitzOptimizer:
         mu: np.ndarray,
         bankroll: float
     ) -> OptimizationResult:
-        """Fallback: proportional to EV."""
+        """Fallback: proportional to EV. PRODUCTION-GRADE: computes proper covariance."""
         n = len(bets)
         weights = np.zeros(n)
         
-        # Simple proportional allocation
         ev_sum = max(sum(mu), 0.01)
         for i, bet in enumerate(bets):
-            if bet.ev > 0.02:  # Minimum EV threshold
-                weights[i] = (bet.ev / ev_sum) * bankroll * self.config.max_total_exposure
-                weights[i] = min(weights[i], bankroll * self.config.max_bet_pct)
+            if bet.ev > 0.02:
+                weights[i] = (bet.ev / ev_sum) * self.config.max_total_exposure
+                weights[i] = min(weights[i], self.config.max_bet_pct)
         
-        return self._build_result(bets, mu, np.zeros((n, n)), weights, bankroll)
+        weight_sum = weights.sum()
+        if weight_sum > self.config.max_total_exposure and weight_sum > 0:
+            weights = weights * (self.config.max_total_exposure / weight_sum)
+
+        # Per-market cap: mirror the QP constraint in the fallback path
+        from collections import defaultdict
+        market_groups: dict[str, list[int]] = defaultdict(list)
+        for i, bet in enumerate(bets):
+            market_groups[bet.market].append(i)
+        max_market = self.config.max_market_exposure_pct
+        for indices in market_groups.values():
+            market_total = sum(weights[i] for i in indices)
+            if market_total > max_market:
+                scale = max_market / market_total
+                for i in indices:
+                    weights[i] *= scale
+
+        # PRODUCTION-GRADE: Build covariance matrix even in fallback for correct risk
+        sigma = self._build_covariance_matrix(bets)
+        
+        logger.info(f"[MARKOWITZ] Fallback: {n} candidates, weights_sum={weights.sum():.4f}, sigma_diag_mean={np.diag(sigma).mean():.4f}")
+        
+        return self._build_result(bets, mu, sigma, weights, bankroll)
     
     def _build_result(
         self,
@@ -299,13 +351,16 @@ class MarkowitzOptimizer:
             
             optimized_bets.append(OptimizedBet(
                 bet_id=bet.id,
+                fixture_id=bet.fixture_id,
                 market=bet.market,
                 outcome=bet.outcome,
                 odds=bet.odds,
                 stake=stake,
                 weight=stake / bankroll if bankroll > 0 else 0,
                 expected_return=bet.ev * weight,
-                risk_contribution=risk_contrib
+                risk_contribution=risk_contrib,
+                ev=bet.ev,
+                our_prob=bet.prob,
             ))
         
         # Calculate portfolio metrics

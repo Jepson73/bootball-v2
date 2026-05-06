@@ -80,16 +80,15 @@ def build_sidebar_fixtures() -> Dict[str, List[SidebarItem]]:
                 f.elapsed,
                 l.name as league_name,
                 l.country as league_country,
-                l.flag as league_flag,
-                COALESCE(l.tier, 99) as league_tier
+                l.flag as league_flag
             FROM fixtures f
             JOIN teams home ON f.home_team_id = home.id
             JOIN teams away ON f.away_team_id = away.id
             LEFT JOIN leagues l ON f.league_id = l.id
-            WHERE 
+            WHERE
                 (f.status IN ('1H', '2H', 'HT', 'LIVE'))
                 OR (f.status = 'NS' AND f.date >= :now AND f.date < :cutoff_24h)
-            ORDER BY league_tier ASC, l.name ASC, f.date ASC
+            ORDER BY l.name ASC, f.date ASC
         """), {
             'now': now.isoformat(),
             'cutoff_24h': cutoff_24h.isoformat()
@@ -115,7 +114,6 @@ def build_sidebar_fixtures() -> Dict[str, List[SidebarItem]]:
                 'league_name': row[10] or '',
                 'league_country': row[11] or '',
                 'league_flag': row[12] or '',
-                'league_tier': row[13] if len(row) > 13 else 99,
                 'markets': []
             }
     

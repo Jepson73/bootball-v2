@@ -33,8 +33,8 @@ class League(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)  # API-Football league ID
     name: Mapped[str] = mapped_column(String(100))
     country: Mapped[str] = mapped_column(String(100))
+    tier: Mapped[int] = mapped_column(Integer, default=1)
     flag: Mapped[str | None] = mapped_column(String(500))  # URL to country flag
-    tier: Mapped[int] = mapped_column(Integer, default=3)       # 1/2/3 from config
 
     fixtures: Mapped[list["Fixture"]] = relationship(back_populates="league")
     standings: Mapped[list["Standing"]] = relationship(back_populates="league")
@@ -277,6 +277,7 @@ class PredictionRecord(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    prediction_id: Mapped[str | None] = mapped_column(String(36), nullable=True, unique=True)
     fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id"))
     market: Mapped[str] = mapped_column(String(20))   # h2h, btts, ou25, ou15
     model_version_id: Mapped[int | None] = mapped_column(ForeignKey("model_versions.id"), nullable=True)
@@ -287,6 +288,7 @@ class PredictionRecord(Base):
     feature_pipeline_version: Mapped[str] = mapped_column(String(20), default="v1.0.0")
 
     predicted_outcome: Mapped[str] = mapped_column(String(10))   # H/D/A, Yes/No, Over/Under
+    raw_outcome: Mapped[str | None] = mapped_column(String(10), nullable=True)
     our_prob: Mapped[float] = mapped_column(Float)
     calibrated_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
     implied_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -294,7 +296,7 @@ class PredictionRecord(Base):
     edge: Mapped[float | None] = mapped_column(Float, nullable=True)
     odds_decimal: Mapped[float | None] = mapped_column(Float, nullable=True)
     bookmaker: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    odds_snapshot: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    odds_snapshot: Mapped[str | None] = mapped_column(String(200), nullable=True)
 
     sweet_spot: Mapped[bool] = mapped_column(Boolean, default=False)
 
@@ -304,6 +306,8 @@ class PredictionRecord(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    timestamp: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    is_legacy: Mapped[bool] = mapped_column(Boolean, default=False)
 
     model_version: Mapped["ModelVersion | None"] = relationship("ModelVersion", foreign_keys=[model_version_id])
 
@@ -386,8 +390,17 @@ class ModelVersion(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     market: Mapped[str] = mapped_column(String(20))
 
+    # Sequential row counter — always increments (satisfies unique constraint).
     version_number: Mapped[int] = mapped_column(Integer)
     version_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # vXX_cYY label parts.
+    # model_number (vXX): increments on every retrain, constant across recalibrations.
+    # calibration_number (cYY): resets to 0 on retrain, increments on recalibrate.
+    # version_label: "v{model_number:02d}_c{calibration_number:02d}" — human-readable key.
+    model_number: Mapped[int] = mapped_column(Integer, default=1)
+    calibration_number: Mapped[int] = mapped_column(Integer, default=0)
+    version_label: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     # Metrics at time of training
     brier_score: Mapped[float] = mapped_column(Float, default=0)
@@ -402,7 +415,7 @@ class ModelVersion(Base):
     model_type: Mapped[str] = mapped_column(String(50), default="ensemble")
     features_used: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
-    # Status
+    # Status — only one is_active=True per market at any time.
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     replaced_by_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -437,6 +450,48 @@ class RetrainEvent(Base):
     drift_score: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+# ── League-level calibration ──────────────────────────────────────────────────
+
+class LeagueCalibration(Base):
+    """Platt-scaling calibration fitted per (market, league_id).
+
+    Stores the logistic regression slope/intercept that maps raw model logit
+    to a calibrated probability for a specific league.  The comparison fields
+    (brier_score_global vs brier_score) let us decide whether to activate the
+    league-specific calibration or fall back to the global one.
+    """
+    __tablename__ = "league_calibrations"
+    __table_args__ = (
+        UniqueConstraint("market", "league_id", "version_label", name="uq_league_cal_version"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    market: Mapped[str] = mapped_column(String(20))
+    league_id: Mapped[int] = mapped_column(Integer, ForeignKey("leagues.id"))
+
+    # Full version label e.g. "v01_c02_l0188"
+    version_label: Mapped[str] = mapped_column(String(30))
+
+    # Platt-scaling parameters: p_cal = sigmoid(slope * logit(p_raw) + intercept)
+    slope: Mapped[float] = mapped_column(Float, default=1.0)
+    intercept: Mapped[float] = mapped_column(Float, default=0.0)
+
+    # Hold-out Brier scores for the league (lower = better calibration)
+    brier_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    brier_score_global: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Positive = league cal improves on global, negative = global is better
+    brier_improvement: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    sample_size: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Only one is_active=True per (market, league_id) at any time
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    league: Mapped["League"] = relationship("League", foreign_keys=[league_id])
 
 
 # ── Bankroll tracking ─────────────────────────────────────────────────────────
@@ -651,6 +706,69 @@ class LayerAblationResults(Base):
     recommendation: Mapped[str] = mapped_column(String(20), default="keep")
 
     recorded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class PredictionAttribution(Base):
+    """
+    Per-prediction causal decomposition by system layer.
+    Populated by AttributionEngine after each prediction commit.
+    Required by GovernanceEngine for ablation analysis and architecture evolution.
+    """
+    __tablename__ = "prediction_attribution"
+    __table_args__ = (UniqueConstraint("prediction_id", name="uq_attribution_prediction"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    prediction_id: Mapped[int] = mapped_column(Integer, ForeignKey("prediction_records.id"), nullable=False)
+    run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
+    fixture_id: Mapped[int] = mapped_column(Integer, ForeignKey("fixtures.id"), nullable=False)
+    market: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    # Model layer
+    model_prob_raw: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Calibration layer
+    calibration_delta: Mapped[float] = mapped_column(Float, default=0.0)
+    calibration_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # League/feature layer
+    league_delta: Mapped[float] = mapped_column(Float, default=0.0)
+    league_adjusted_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Latent state layer
+    latent_delta: Mapped[float] = mapped_column(Float, default=0.0)
+    latent_adjusted_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Drift layer
+    drift_delta: Mapped[float] = mapped_column(Float, default=0.0)
+    drift_adjusted_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Risk layer
+    risk_delta: Mapped[float] = mapped_column(Float, default=0.0)
+    risk_filtered: Mapped[int] = mapped_column(Integer, default=0)
+    final_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Per-layer EV contributions
+    model_ev_contribution: Mapped[float] = mapped_column(Float, default=0.0)
+    calibration_ev_contribution: Mapped[float] = mapped_column(Float, default=0.0)
+    league_ev_contribution: Mapped[float] = mapped_column(Float, default=0.0)
+    latent_ev_contribution: Mapped[float] = mapped_column(Float, default=0.0)
+    drift_ev_contribution: Mapped[float] = mapped_column(Float, default=0.0)
+    risk_ev_contribution: Mapped[float] = mapped_column(Float, default=0.0)
+
+    # Per-layer decisions
+    model_decision: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    calibration_decision: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    league_decision: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    latent_decision: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    drift_decision: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    final_decision: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
+    # Outcome
+    actual_outcome: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    settled: Mapped[int] = mapped_column(Integer, default=0)
+    won: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 # ── Architecture Evolution Tables ─────────────────────────────────────────────

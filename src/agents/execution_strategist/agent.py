@@ -47,6 +47,7 @@ class ExecutionStrategistAgent:
         
         self._last_predictions: list[dict] = []
         self._last_risk_profile: Optional[dict] = None
+        self._candidate_lookup: dict[tuple, dict] = {}  # (fixture_id, market, outcome) → candidate
         
         # Subscribe to events
         self._event_bus.subscribe(AgentEvents.PREDICTIONS_READY, self.handle_predictions_ready)
@@ -71,6 +72,16 @@ class ExecutionStrategistAgent:
         # If we have predictions, run optimization now
         if self._last_predictions:
             self.run()
+    
+    def set_predictions(self, predictions: list[dict]) -> None:
+        """Manually set predictions (used by coordinator)."""
+        self._last_predictions = predictions
+        logger.info(f"[EXECUTION] Set {len(self._last_predictions)} predictions manually")
+    
+    def set_risk_profile(self, risk_profile: dict) -> None:
+        """Manually set risk profile (used by coordinator)."""
+        self._last_risk_profile = risk_profile
+        logger.info(f"[EXECUTION] Set risk profile manually: regime={risk_profile.get('regime')}")
     
     def run(self) -> list[dict]:
         """
@@ -120,48 +131,86 @@ class ExecutionStrategistAgent:
         profile = self._last_risk_profile
         
         # Update Markowitz config
-        self._markowitz.config.risk_aversion = profile["lambda"]
-        self._markowitz.config.max_bet_pct = profile["max_exposure_per_fixture"]
-        self._markowitz.config.max_total_exposure = profile["max_total_risk"]
+        self._markowitz.config.risk_aversion = profile.get("lambda", 1.0)
+        self._markowitz.config.max_bet_pct = profile.get("max_exposure_per_fixture", 0.05)
+        self._markowitz.config.max_total_exposure = profile.get("max_total_risk", 0.25)
         
         # Update correlation penalties
         penalties = profile.get("correlation_penalties", {})
-        for (market_a, market_b), corr in penalties.items():
-            self._correlation.correlation_matrix[(market_a, market_b)] = corr
-            self._correlation.correlation_matrix[(market_b, market_a)] = corr
+        if penalties:
+            for key, corr in penalties.items():
+                if isinstance(key, tuple) and len(key) == 2:
+                    market_a, market_b = key
+                    self._correlation.correlation_matrix[(market_a, market_b)] = corr
+                    self._correlation.correlation_matrix[(market_b, market_a)] = corr
+                else:
+                    logger.warning(f"[EXECUTION] Skipping invalid correlation penalty key: {key}")
     
     def _prepare_candidates(self) -> list[dict]:
         """Prepare candidates for optimization."""
         candidates = []
         
         for pred in self._last_predictions:
-            candidates.append({
-                "id": f"{pred['fixture_id']}_{pred['market']}_{pred['outcome']}",
+            # Handle both dict and object formats
+            if hasattr(pred, '__dict__'):
+                pred = pred.__dict__
+            
+            # Get probability from predicted_probs or our_prob
+            predicted_probs = pred.get("predicted_probs", {})
+            our_prob = pred.get("our_prob", 0.5)
+            if predicted_probs:
+                our_prob = list(predicted_probs.values())[0] if predicted_probs else 0.5
+            
+            # Extract correct fields
+            outcome = pred.get("outcome") or pred.get("predicted_outcome", "")
+            ev = pred.get("ev") or 0.0
+            odds = pred.get("odds_decimal") or pred.get("odds") or 0.0
+
+            # Preliminary predictions (no odds yet), below minimum odds, or negative/zero EV — skip.
+            if not odds or odds < 1.6 or ev <= 0:
+                continue
+            
+            candidate = {
+                "id": f"{pred['fixture_id']}_{pred['market']}_{outcome}",
                 "fixture_id": pred["fixture_id"],
                 "market": pred["market"],
-                "outcome": pred["outcome"],
-                "odds": pred["odds"],
-                "our_prob": pred["probabilities"].get("home", 0.5),
-                "ev": pred["ev"],
-                "kelly": pred["kelly"],
-            })
-        
+                "outcome": outcome,
+                "odds": odds,
+                "our_prob": our_prob,
+                "ev": ev,
+                "kelly": pred.get("kelly", 0),
+            }
+            candidates.append(candidate)
+            self._candidate_lookup[(pred["fixture_id"], pred["market"], outcome)] = candidate
+
+        logger.info(f"[EXECUTION] Prepared {len(candidates)} candidates from {len(self._last_predictions)} predictions")
         return candidates
     
     def _build_portfolio(self, result) -> list[dict]:
         """Build portfolio from optimization result."""
         portfolio = []
         
+        logger.info(f"[EXECUTION] Building portfolio from {len(result.bets)} optimization results")
+        
         for bet in result.bets:
+            logger.debug(f"[EXECUTION] Bet: {bet.fixture_id}/{bet.market} stake={bet.stake:.2f}")
+            candidate = self._candidate_lookup.get((bet.fixture_id, bet.market, bet.outcome), {})
             portfolio.append({
                 "bet_id": bet.bet_id,
-                "fixture_id": 0,  # Would need to parse from bet_id
+                "fixture_id": bet.fixture_id,
                 "market": bet.market,
                 "outcome": bet.outcome,
+                "odds": bet.odds,
                 "stake": bet.stake,
                 "expected_return": bet.expected_return,
                 "risk_contribution": bet.risk_contribution,
+                "our_prob": candidate.get("our_prob", 0.5),
+                "ev": candidate.get("ev", 0.0),
+                "kelly": candidate.get("kelly", 0.0),
             })
+        
+        total = sum(b["stake"] for b in portfolio)
+        logger.info(f"[EXECUTION] Portfolio built: {len(portfolio)} bets, total stake={total:.2f}")
         
         return portfolio
     

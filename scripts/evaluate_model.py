@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Evaluate Dixon-Coles model performance."""
 import sys
-sys.path.insert(0, '/opt/projects/bootball')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.models.dixon_coles import DixonColesModel
 from src.storage.db import get_session

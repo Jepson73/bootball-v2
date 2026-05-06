@@ -8,13 +8,24 @@ logger = logging.getLogger(__name__)
 
 
 class RuntimeMode(Enum):
+    """Unified runtime mode system.
+    
+    Modes:
+    - DEV: Development mode, full flexibility
+    - LIVE: Production mode, all constraints enforced
+    - BACKTEST: Backtesting mode, historical simulation
+    - LIVE_EVAL: Legacy mode, frozen for evaluation (deprecated, use LIVE)
+    - TRAINING: Training mode, model updates allowed
+    """
+    DEV = "dev"
+    LIVE = "live"
+    BACKTEST = "backtest"
     LIVE_EVAL = "live_eval"
     TRAINING = "training"
-    DEV = "dev"
 
 
 class RuntimeModeManager:
-    """Central manager for runtime mode enforcement."""
+    """Central manager for runtime mode enforcement - SINGLE SOURCE OF TRUTH."""
     
     _instance = None
     _mode: RuntimeMode = RuntimeMode.DEV
@@ -33,11 +44,15 @@ class RuntimeModeManager:
     def _load_mode(self):
         mode_str = os.getenv("RUNTIME_MODE", "dev").lower()
         
-        try:
-            self._mode = RuntimeMode(mode_str)
-        except ValueError:
-            logger.warning(f"Unknown RUNTIME_MODE '{mode_str}', defaulting to DEV")
-            self._mode = RuntimeMode.DEV
+        mode_map = {
+            "dev": RuntimeMode.DEV,
+            "live": RuntimeMode.LIVE,
+            "backtest": RuntimeMode.BACKTEST,
+            "live_eval": RuntimeMode.LIVE_EVAL,
+            "training": RuntimeMode.TRAINING,
+        }
+        
+        self._mode = mode_map.get(mode_str, RuntimeMode.DEV)
         
         logger.info(f"=" * 50)
         logger.info(f"RUNTIME MODE: {self._mode.value.upper()}")
@@ -49,10 +64,17 @@ class RuntimeModeManager:
             logger.info("   - Calibration retraining disabled")
             logger.info("   - Model mutations blocked")
             logger.info("   - Only prediction + logging allowed")
+        elif self._mode == RuntimeMode.LIVE:
+            logger.info("🔒 LIVE MODE: Production constraints enforced")
+            logger.info("   - Single execution spine (AgentCoordinator only)")
+            logger.info("   - Stricter policy constraints")
+            logger.info("   - No experimental features")
         elif self._mode == RuntimeMode.TRAINING:
             logger.info("🔧 TRAINING MODE: Model updates allowed")
         elif self._mode == RuntimeMode.DEV:
             logger.info("🛠️  DEV MODE: Full flexibility enabled")
+        elif self._mode == RuntimeMode.BACKTEST:
+            logger.info("📊 BACKTEST MODE: Historical simulation mode")
     
     @property
     def mode(self) -> RuntimeMode:
@@ -61,6 +83,14 @@ class RuntimeModeManager:
     @property
     def is_live_eval(self) -> bool:
         return self._mode == RuntimeMode.LIVE_EVAL
+    
+    @property
+    def is_live(self) -> bool:
+        return self._mode == RuntimeMode.LIVE
+    
+    @property
+    def is_backtest(self) -> bool:
+        return self._mode == RuntimeMode.BACKTEST
     
     @property
     def is_training(self) -> bool:
@@ -72,6 +102,30 @@ class RuntimeModeManager:
     
     def get_mode_name(self) -> str:
         return self._mode.value
+    
+    def set_mode(self, mode: RuntimeMode) -> None:
+        """Set runtime mode (for testing or manual override)."""
+        old_mode = self._mode
+        self._mode = mode
+        logger.info(f"RUNTIME MODE changed: {old_mode.value} -> {mode.value}")
+    
+    @staticmethod
+    def get_strict_policy() -> bool:
+        """Get whether strict policy constraints should be enforced."""
+        mgr = RuntimeModeManager()
+        return mgr.is_live or mgr.is_live_eval
+    
+    @staticmethod
+    def allow_mutations() -> bool:
+        """Get whether model/policy mutations are allowed."""
+        mgr = RuntimeModeManager()
+        return mgr.is_dev or mgr.is_training
+    
+    @staticmethod
+    def allow_execution() -> bool:
+        """Get whether bet execution is allowed."""
+        mgr = RuntimeModeManager()
+        return mgr.is_dev or mgr.is_live or mgr.is_training
 
 
 def get_runtime_mode() -> RuntimeMode:
@@ -92,6 +146,31 @@ def is_live_eval_mode() -> bool:
 def is_training_mode() -> bool:
     """Check if running in TRAINING mode."""
     return RuntimeModeManager().is_training
+
+
+def is_live_mode() -> bool:
+    """Check if running in LIVE mode."""
+    return RuntimeModeManager().is_live
+
+
+def is_backtest_mode() -> bool:
+    """Check if running in BACKTEST mode."""
+    return RuntimeModeManager().is_backtest
+
+
+def get_strict_policy() -> bool:
+    """Check if strict policy constraints should be enforced."""
+    return RuntimeModeManager.get_strict_policy()
+
+
+def allow_mutations() -> bool:
+    """Check if model/policy mutations are allowed."""
+    return RuntimeModeManager.allow_mutations()
+
+
+def allow_execution() -> bool:
+    """Check if bet execution is allowed."""
+    return RuntimeModeManager.allow_execution()
 
 
 def is_dev_mode() -> bool:

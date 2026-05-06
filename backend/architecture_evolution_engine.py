@@ -476,6 +476,29 @@ class ArchitectureEvolutionEngine:
         
         return True
 
+    def update_active_architecture_scores(
+        self,
+        governance_score: float,
+        ev_score: float,
+        risk_score: float,
+    ) -> None:
+        """Update governance/EV/risk scores on the currently active architecture."""
+        from src.storage.db import get_session
+        from sqlalchemy import text
+
+        with get_session() as sess:
+            sess.execute(text("""
+                UPDATE architecture_versions
+                SET governance_score = :gov, ev_score = :ev, risk_score = :risk
+                WHERE is_active = 1
+            """), {'gov': governance_score, 'ev': ev_score, 'risk': risk_score})
+            sess.commit()
+
+        logger.info(
+            f"[ARCH] Active architecture scores updated: "
+            f"governance={governance_score:.4f} ev={ev_score:.4f} risk={risk_score:.4f}"
+        )
+
     def _update_architecture_validation(
         self,
         architecture_id: str,

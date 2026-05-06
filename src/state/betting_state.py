@@ -52,7 +52,8 @@ def build_betting_state(active_round_id: int | None = None) -> BettingState:
         # -------------------------
         if active_round_id:
             round_obj = s.execute(
-                select(text("bankroll_rounds")).where(text(f"id = {active_round_id}"))
+                text("SELECT * FROM bankroll_rounds WHERE id = :rid"),
+                {"rid": active_round_id}
             ).fetchone()
         else:
             round_obj = s.execute(text("""
@@ -63,7 +64,7 @@ def build_betting_state(active_round_id: int | None = None) -> BettingState:
         if round_obj:
             active_round_id = round_obj[0]
             active_round_number = round_obj[1]
-            initial_bankroll = round_obj[3] if len(round_obj) > 3 else 1000
+            initial_bankroll = round_obj[4] if len(round_obj) > 4 else 1000
         else:
             active_round_id = None
             active_round_number = None
@@ -78,7 +79,7 @@ def build_betting_state(active_round_id: int | None = None) -> BettingState:
                        pb.stake, pb.odds, pb.our_prob, pb.ev, pb.kelly_fraction,
                        pb.settled, pb.actual_result, pb.won, pb.pnl, pb.placed_at,
                        pb.settled_at, pb.model_version_id, pb.run_id, pb.feature_pipeline_version,
-                       mv.version_name,
+                       COALESCE(mv.version_name, mv.version_label) as version_name,
                        f.date as fixture_date, f.goals_home, f.goals_away,
                        ht.name as home_team, aw.name as away_team,
                        l.name as league_name

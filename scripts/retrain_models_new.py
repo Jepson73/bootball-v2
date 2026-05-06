@@ -6,7 +6,7 @@ Retrain all market models using market-type specific feature pipelines.
 Each market gets a dedicated model aligned with its model family.
 """
 import sys
-sys.path.insert(0, '/opt/projects/bootball')
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import logging
 import pickle

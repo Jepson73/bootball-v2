@@ -20,6 +20,8 @@ Color System:
 """
 import os
 import sys
+from pathlib import Path
+import json
 import secrets
 import logging
 import pickle
@@ -29,7 +31,7 @@ from functools import wraps
 
 RUN_SYSTEM_ACTIVATION_TIMESTAMP = "2026-04-25 06:30:00"
 
-sys.path.insert(0, '/opt/projects/bootball')
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 # ── .env Safety Check ─────────────────────────────────────
 _env_path = os.path.join(os.path.dirname(__file__), '.env')
@@ -46,7 +48,7 @@ from flask import Flask, jsonify, request, make_response, render_template_string
 from sqlalchemy import select, func
 
 from config.settings import settings
-from config.leagues import LEAGUES, TIER1_LEAGUE_IDS
+from config.leagues import LEAGUES
 from src.cache.prediction_cache import get_prediction_cache, cache_prediction, get_cached_prediction
 from src.models.calibrator import get_calibration_cache, calibrate_prediction
 from src.models.model_tracker import get_model_tracker, ModelTracker
@@ -63,6 +65,57 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
+
+@app.errorhandler(Exception)
+def handle_error(e):
+    """Global error handler - ensures all errors return JSON."""
+    logger.error(f"Global error handler caught: {e}")
+    return jsonify({
+        "success": False,
+        "data": {},
+        "error": str(e)
+    }), 500
+
+
+_APP_START_TIME = datetime.utcnow()
+
+
+@app.route('/health')
+def health():
+    """Liveness + readiness probe. No auth required."""
+    from sqlalchemy import text as sa_text
+    from backend.runtime_mode import get_mode_name
+
+    scheduler = getattr(app, 'scheduler', None)
+    scheduler_running = scheduler is not None and getattr(scheduler, 'running', False)
+    active_jobs = [j.id for j in scheduler.get_jobs()] if scheduler_running else []
+
+    db_ok = False
+    try:
+        with get_session() as s:
+            s.execute(sa_text("SELECT 1"))
+            db_ok = True
+    except Exception:
+        logger.exception("Health check: DB unreachable")
+
+    try:
+        mode = get_mode_name()
+    except Exception:
+        mode = "unknown"
+
+    uptime = int((datetime.utcnow() - _APP_START_TIME).total_seconds())
+    status = "ok" if db_ok else "degraded"
+
+    return jsonify({
+        "status": status,
+        "mode": mode,
+        "scheduler_running": scheduler_running,
+        "active_jobs": active_jobs,
+        "db_reachable": db_ok,
+        "uptime_seconds": uptime,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }), 200 if status == "ok" else 503
+
 
 # In-memory caches
 TEAM_NAMES = {}
@@ -95,7 +148,10 @@ def ensure_caches():
 
 
 def get_password():
-    return os.environ.get('BOOTBALL_PASSWORD') or getattr(settings, 'bootball_password', 'changeme')
+    pw = os.environ.get('BOOTBALL_PASSWORD') or getattr(settings, 'bootball_password', None)
+    if not pw:
+        logger.critical("BOOTBALL_PASSWORD is not configured — all dashboard authentication will be denied")
+    return pw
 
 
 def require_auth(f):
@@ -266,6 +322,7 @@ tr:hover { background: #21262d; }
 .badge-info { background: #58a6ff; color: #fff; }
 .badge-sweet { background: linear-gradient(135deg, #f0b429 0%, #d17a07 100%); color: #000; text-shadow: 0 1px 0 rgba(255,255,255,0.3); }
 .badge-live_eval { background: #f85149; color: #fff; }
+.badge-live { background: #3fb950; color: #000; }
 .badge-training { background: #1f6feb; color: #fff; }
 .badge-dev { background: #8b949e; color: #000; }
 .badge-market { background: #30363d; color: #c9d1d9; }
@@ -405,6 +462,125 @@ input:focus, select:focus {
     font-size: 12px;
     border-top: 1px solid #30363d;
 }
+#fixtureFocusPanel {
+    display: none;
+    position: fixed;
+    left: 260px;
+    top: 49px;
+    right: 0;
+    bottom: 0;
+    background: #0d1117;
+    z-index: 150;
+    overflow-y: auto;
+    flex-direction: column;
+}
+#fixtureFocusPanel.open { display: flex; }
+.ffp-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 20px 12px;
+    border-bottom: 1px solid #30363d;
+    background: #161b22;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+.ffp-score {
+    font-size: 28px;
+    font-weight: 700;
+    color: #58a6ff;
+    min-width: 60px;
+    text-align: center;
+}
+.ffp-team { font-size: 16px; font-weight: 600; color: #e6edf3; }
+.ffp-team-logo { width: 28px; height: 28px; vertical-align: middle; }
+.ffp-badge {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 10px;
+    background: #d29922;
+    color: #0d1117;
+    font-weight: 700;
+}
+.ffp-tabs {
+    display: flex;
+    gap: 0;
+    border-bottom: 1px solid #30363d;
+    background: #161b22;
+}
+.ffp-tab {
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    color: #8b949e;
+    cursor: pointer;
+    font-size: 13px;
+    font-weight: 500;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+}
+.ffp-tab:hover { color: #c9d1d9; }
+.ffp-tab.active { color: #58a6ff; border-bottom-color: #58a6ff; }
+.ffp-body { padding: 20px; flex: 1; }
+.ffp-close {
+    margin-left: auto;
+    background: none;
+    border: 1px solid #30363d;
+    color: #8b949e;
+    border-radius: 6px;
+    padding: 4px 10px;
+    cursor: pointer;
+    font-size: 16px;
+}
+.ffp-close:hover { color: #f85149; border-color: #f85149; }
+.stat-bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.stat-bar-label { font-size: 12px; color: #8b949e; width: 140px; text-align: right; }
+.stat-bar-label.right { text-align: left; }
+.stat-bar-wrap { flex: 1; height: 8px; background: #21262d; border-radius: 4px; overflow: hidden; }
+.stat-bar-fill-home { height: 100%; background: #58a6ff; border-radius: 4px; transition: width 0.4s; float: right; }
+.stat-bar-fill-away { height: 100%; background: #f85149; border-radius: 4px; transition: width 0.4s; }
+.event-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid #21262d;
+    font-size: 13px;
+}
+.event-time { color: #8b949e; width: 36px; font-size: 12px; font-weight: 600; }
+.event-icon { width: 20px; text-align: center; }
+.event-detail { color: #c9d1d9; flex: 1; }
+.event-team-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 8px;
+    background: #21262d;
+    color: #8b949e;
+}
+.lineup-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.lineup-col h4 { font-size: 13px; color: #8b949e; margin: 0 0 10px; font-weight: 500; }
+.lineup-player { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 5px 0; border-bottom: 1px solid #21262d; color: #c9d1d9; }
+.lineup-player span { color: #8b949e; font-size: 11px; min-width: 18px; text-align: right; flex-shrink: 0; }
+.lineup-player img { width: 28px; height: 28px; border-radius: 50%; object-fit: cover; background: #21262d; flex-shrink: 0; }
+.lineup-player img.no-photo { filter: opacity(0.3); }
+.h2h-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid #21262d; font-size: 13px; }
+[data-fixture-id] { cursor: pointer; }
+tr[data-fixture-id]:hover td { background: #161b22; }
+.prediction-card[data-fixture-id]:hover { filter: brightness(1.08); }
+.h2h-result { font-weight: 700; width: 40px; text-align: center; border-radius: 4px; padding: 2px 4px; }
+.h2h-w { background: #23863640; color: #3fb950; }
+.h2h-d { background: #d2992240; color: #d29922; }
+.h2h-l { background: #f8514940; color: #f85149; }
+.sidebar-game-item {
+    cursor: pointer;
+    transition: background 0.1s;
+    border-radius: 6px;
+    padding: 4px 6px;
+    margin: -4px -6px 4px;
+}
+.sidebar-game-item:hover { background: #21262d; }
+.sidebar-game-item.focused { background: #1f2937; border-left: 2px solid #58a6ff; padding-left: 4px; }
 </style>
 </head>
 <body>
@@ -414,6 +590,7 @@ input:focus, select:focus {
     <a href="/betting">Betting</a>
     <a href="/tracking">Tracking</a>
     <a href="/admin">Admin</a>
+    <a href="/processes">Processes</a>
     <a href="/debug">Debug</a>
 </div>
 <div class="sidebar">
@@ -422,7 +599,310 @@ input:focus, select:focus {
         <div id="liveGamesList" style="color: #c9d1d9; font-size: 13px;">Loading...</div>
     </div>
 </div>
+
+<!-- Fixture Focus Panel -->
+<div id="fixtureFocusPanel">
+    <div class="ffp-header">
+        <div id="ffpHomeLogoWrap"></div>
+        <div class="ffp-team" id="ffpHome"></div>
+        <div class="ffp-score" id="ffpScore">-</div>
+        <div class="ffp-team" id="ffpAway"></div>
+        <div id="ffpAwayLogoWrap"></div>
+        <span class="ffp-badge" id="ffpBadge" style="margin-left:8px;"></span>
+        <div style="margin-left:12px;font-size:12px;color:#8b949e;" id="ffpLeague"></div>
+        <div style="margin-left:auto;display:flex;align-items:center;gap:10px;">
+            <span style="font-size:11px;color:#484f58;" id="ffpRefreshLabel">Refreshing every 30s</span>
+            <button class="ffp-close" onclick="closeFocus()">✕</button>
+        </div>
+    </div>
+    <div class="ffp-tabs">
+        <button class="ffp-tab active" onclick="ffpTab(this,'overview')">Overview</button>
+        <button class="ffp-tab" onclick="ffpTab(this,'statistics')">Statistics</button>
+        <button class="ffp-tab" onclick="ffpTab(this,'lineups')">Lineups</button>
+        <button class="ffp-tab" onclick="ffpTab(this,'h2h')">H2H</button>
+    </div>
+    <div class="ffp-body">
+        <div id="ffpOverview"></div>
+        <div id="ffpStatistics" style="display:none;"></div>
+        <div id="ffpLineups" style="display:none;"></div>
+        <div id="ffpH2h" style="display:none;"></div>
+    </div>
+</div>
+
 <script>
+// ── Fixture Focus ────────────────────────────────────────────────────────────
+var _focusId = null;
+var _focusTimer = null;
+var _focusData = {};
+
+function focusFixture(id, home, away) {
+    if (_focusId === id) { closeFocus(); return; }
+    _focusId = id;
+    document.querySelectorAll('.sidebar-game-item').forEach(function(el) {
+        el.classList.toggle('focused', el.dataset.fid == id);
+    });
+    document.getElementById('ffpHome').textContent = home;
+    document.getElementById('ffpAway').textContent = away;
+    document.getElementById('ffpScore').textContent = '…';
+    document.getElementById('ffpBadge').textContent = '';
+    document.getElementById('ffpLeague').textContent = '';
+    document.getElementById('ffpOverview').innerHTML = '<div style="padding:40px;text-align:center;color:#8b949e;">Loading…</div>';
+    document.getElementById('ffpStatistics').innerHTML = '';
+    document.getElementById('ffpLineups').innerHTML = '';
+    document.getElementById('ffpH2h').innerHTML = '';
+    document.getElementById('fixtureFocusPanel').classList.add('open');
+    ffpTab(document.querySelector('.ffp-tab'), 'overview');
+    _loadFocus();
+    clearInterval(_focusTimer);
+    _focusTimer = setInterval(_loadFocus, 30000);
+}
+
+function closeFocus() {
+    clearInterval(_focusTimer);
+    _focusId = null;
+    document.getElementById('fixtureFocusPanel').classList.remove('open');
+    document.querySelectorAll('.sidebar-game-item,.fx-focusable').forEach(function(el) { el.classList.remove('focused'); });
+}
+
+// Global delegated handler — any element with data-fixture-id opens the focus panel
+document.addEventListener('click', function(e) {
+    var el = e.target.closest('[data-fixture-id]');
+    if (!el) return;
+    var fid = parseInt(el.dataset.fixtureId);
+    var home = el.dataset.home || '';
+    var away = el.dataset.away || '';
+    if (fid) focusFixture(fid, home, away);
+});
+
+var _playerPhotoFallback = 'data:image/svg+xml,%3Csvg xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22 width%3D%2228%22 height%3D%2228%22%3E%3Ccircle cx%3D%2214%22 cy%3D%2214%22 r%3D%2214%22 fill%3D%22%2321262d%22%2F%3E%3Ccircle cx%3D%2214%22 cy%3D%2211%22 r%3D%225%22 fill%3D%22%2330363d%22%2F%3E%3Cellipse cx%3D%2214%22 cy%3D%2224%22 rx%3D%228%22 ry%3D%225%22 fill%3D%22%2330363d%22%2F%3E%3C%2Fsvg%3E';
+function _playerImgError(img) { img.src = _playerPhotoFallback; img.classList.add('no-photo'); }
+
+function ffpTab(btn, tab) {
+    document.querySelectorAll('.ffp-tab').forEach(function(b) { b.classList.remove('active'); });
+    btn.classList.add('active');
+    ['overview','statistics','lineups','h2h'].forEach(function(t) {
+        document.getElementById('ffp' + t.charAt(0).toUpperCase() + t.slice(1)).style.display = t === tab ? '' : 'none';
+    });
+}
+
+function _loadFocus() {
+    if (!_focusId) return;
+    fetch('/api/fixture/' + _focusId + '/focus', {credentials: 'include', cache: 'no-store'})
+        .then(function(r) { return r.json(); })
+        .then(function(d) { _renderFocus(d); })
+        .catch(function(e) {
+            document.getElementById('ffpOverview').innerHTML = '<div style="color:#f85149;padding:20px;">Failed to load: ' + e + '</div>';
+        });
+}
+
+function _renderFocus(d) {
+    _focusData = d;
+    var homeTeam = d.home_team || '';
+    var awayTeam = d.away_team || '';
+
+    // ── Header ──────────────────────────────────────────────────────────────
+    var hg = (d.score && d.score.home !== null) ? d.score.home : '–';
+    var ag = (d.score && d.score.away !== null) ? d.score.away : '–';
+    document.getElementById('ffpScore').textContent = hg + ' – ' + ag;
+    document.getElementById('ffpBadge').textContent = d.match_state || '';
+    document.getElementById('ffpLeague').textContent = d.league || '';
+    if (d.home_logo) document.getElementById('ffpHomeLogoWrap').innerHTML = '<img src="' + d.home_logo + '" class="ffp-team-logo" style="margin-right:8px;">';
+    if (d.away_logo) document.getElementById('ffpAwayLogoWrap').innerHTML = '<img src="' + d.away_logo + '" class="ffp-team-logo" style="margin-left:8px;">';
+
+    // ── Overview: events timeline with home/away columns ─────────────────────
+    var html = '';
+    // Column headers
+    html += '<div style="display:grid;grid-template-columns:1fr 52px 1fr;gap:0;margin-bottom:6px;">';
+    html += '<div style="font-size:11px;font-weight:700;color:#58a6ff;text-transform:uppercase;padding:4px 8px 4px 0;">' + homeTeam + '</div>';
+    html += '<div></div>';
+    html += '<div style="font-size:11px;font-weight:700;color:#f85149;text-transform:uppercase;padding:4px 0 4px 8px;text-align:right;">' + awayTeam + '</div>';
+    html += '</div>';
+
+    var events = d.events || [];
+    if (events.length === 0) {
+        html += '<div style="color:#484f58;font-size:13px;padding:20px 0;">No events yet</div>';
+    } else {
+        events.forEach(function(ev) {
+            var icon = _evIcon(ev.type, ev.detail);
+            var isHome = ev.team_id != null ? (ev.team_id == d.home_team_id) : (ev.team === homeTeam);
+            var player = ev.player || '';
+            var assist = ev.assist ? '<span style="color:#8b949e;font-size:11px;"> +' + ev.assist + '</span>' : '';
+            var time = (ev.time || '') + "'";
+            html += '<div style="display:grid;grid-template-columns:1fr 52px 1fr;align-items:center;padding:5px 0;border-bottom:1px solid #21262d;">';
+            if (isHome) {
+                // Home event: player name left-aligned in left col, icon+time in centre
+                html += '<div style="text-align:left;padding-left:0;font-size:13px;color:#c9d1d9;">' + player + assist + '</div>';
+                html += '<div style="text-align:center;font-size:12px;color:#8b949e;white-space:nowrap;">' + icon + '<br><span style="font-size:11px;">' + time + '</span></div>';
+                html += '<div></div>';
+            } else {
+                // Away event: icon+time in centre, player name right-aligned in right col
+                html += '<div></div>';
+                html += '<div style="text-align:center;font-size:12px;color:#8b949e;white-space:nowrap;">' + icon + '<br><span style="font-size:11px;">' + time + '</span></div>';
+                html += '<div style="text-align:right;padding-right:0;font-size:13px;color:#c9d1d9;">' + player + assist + '</div>';
+            }
+            html += '</div>';
+        });
+    }
+
+    // Our predictions
+    if (d.our_predictions && d.our_predictions.length > 0) {
+        html += '<div style="margin-top:28px;">';
+        html += '<div style="font-size:11px;color:#8b949e;text-transform:uppercase;font-weight:600;margin-bottom:10px;">Our Predictions</div>';
+        html += '<div style="display:flex;flex-wrap:wrap;gap:8px;">';
+        d.our_predictions.forEach(function(p) {
+            var evColor = (p.ev != null && p.ev > 0) ? '#3fb950' : '#8b949e';
+            html += '<div style="background:#161b22;border:1px solid #30363d;border-radius:6px;padding:8px 12px;min-width:110px;">';
+            html += '<div style="font-size:11px;color:#8b949e;">' + p.market.toUpperCase() + '</div>';
+            html += '<div style="font-weight:600;color:#e6edf3;">' + p.outcome + ' @ ' + (p.odds != null ? p.odds : '–') + '</div>';
+            html += '<div style="font-size:12px;color:' + evColor + ';">EV ' + (p.ev != null ? (p.ev * 100).toFixed(1) + '%' : '–') + '</div>';
+            html += '<div style="font-size:11px;color:#8b949e;">' + (p.prob != null ? (p.prob * 100).toFixed(0) + '% prob' : '') + '</div>';
+            html += '</div>';
+        });
+        html += '</div></div>';
+    }
+
+    document.getElementById('ffpOverview').innerHTML = html;
+
+    // ── Statistics: centre-out bars ──────────────────────────────────────────
+    var shtml = '';
+    // Team colour legend
+    shtml += '<div style="display:flex;justify-content:space-between;margin-bottom:20px;">';
+    shtml += '<div style="font-size:13px;font-weight:700;color:#58a6ff;">' + homeTeam + '</div>';
+    shtml += '<div style="font-size:13px;font-weight:700;color:#f85149;">' + awayTeam + '</div>';
+    shtml += '</div>';
+
+    var stats = d.statistics || [];
+    if (stats.length === 0) {
+        shtml += '<div style="color:#484f58;font-size:13px;">No statistics available yet</div>';
+    } else {
+        // Stats where a lower value is better (fewer = winning)
+        var lowerIsBetter = {'Fouls':1,'Yellow Cards':1,'Red Cards':1,'Offsides':1};
+        stats.forEach(function(st) {
+            var rawHome = st.home != null ? String(st.home) : '0';
+            var rawAway = st.away != null ? String(st.away) : '0';
+            var isPct = rawHome.endsWith('%') || rawAway.endsWith('%');
+            var hv = parseFloat(rawHome) || 0;
+            var av = parseFloat(rawAway) || 0;
+            var hpct, apct;
+            if (isPct) {
+                hpct = Math.min(hv, 100);
+                apct = Math.min(av, 100);
+            } else {
+                var total = hv + av;
+                hpct = total > 0 ? (hv / total * 100) : 50;
+                apct = total > 0 ? (av / total * 100) : 50;
+            }
+            // Determine winner for highlight
+            var homeWins, awayWins;
+            if (lowerIsBetter[st.label]) {
+                homeWins = hv < av;
+                awayWins = av < hv;
+            } else {
+                homeWins = hv > av;
+                awayWins = av > hv;
+            }
+            var homeNumColor = homeWins ? '#58a6ff' : (awayWins ? '#484f58' : '#58a6ff');
+            var awayNumColor = awayWins ? '#f85149' : (homeWins ? '#484f58' : '#f85149');
+            var homeNumWeight = homeWins ? '800' : '500';
+            var awayNumWeight = awayWins ? '800' : '500';
+
+            shtml += '<div style="margin-bottom:14px;">';
+            // Values + label row
+            shtml += '<div style="display:grid;grid-template-columns:60px 1fr 60px;align-items:center;margin-bottom:5px;gap:8px;">';
+            shtml += '<div style="font-size:14px;font-weight:' + homeNumWeight + ';color:' + homeNumColor + ';text-align:right;">' + rawHome + '</div>';
+            shtml += '<div style="font-size:11px;color:#8b949e;text-align:center;">' + st.label + '</div>';
+            shtml += '<div style="font-size:14px;font-weight:' + awayNumWeight + ';color:' + awayNumColor + ';">' + rawAway + '</div>';
+            shtml += '</div>';
+            // Dual bar: home fills from centre leftward, away fills from centre rightward
+            shtml += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:2px;">';
+            // Home bar (right-aligned, fills from centre leftward)
+            shtml += '<div style="height:6px;background:#21262d;border-radius:3px 0 0 3px;overflow:hidden;display:flex;justify-content:flex-end;">';
+            shtml += '<div style="width:' + hpct.toFixed(0) + '%;height:100%;background:#58a6ff;border-radius:3px 0 0 3px;"></div>';
+            shtml += '</div>';
+            // Away bar (left-aligned, fills from centre rightward)
+            shtml += '<div style="height:6px;background:#21262d;border-radius:0 3px 3px 0;overflow:hidden;display:flex;">';
+            shtml += '<div style="width:' + apct.toFixed(0) + '%;height:100%;background:#f85149;border-radius:0 3px 3px 0;"></div>';
+            shtml += '</div>';
+            shtml += '</div>';
+            shtml += '</div>';
+        });
+    }
+    document.getElementById('ffpStatistics').innerHTML = shtml;
+
+    // ── Lineups ──────────────────────────────────────────────────────────────
+    var lhtml = '';
+    var lineups = d.lineups || [];
+    if (lineups.length === 0) {
+        lhtml = '<div style="color:#484f58;padding:20px 0;">Lineups not yet available</div>';
+    } else {
+        lhtml = '<div class="lineup-grid">';
+        lineups.forEach(function(team) {
+            var isHomeTeam = team.team === homeTeam;
+            var teamColor = isHomeTeam ? '#58a6ff' : '#f85149';
+            lhtml += '<div>';
+            lhtml += '<h4 style="color:' + teamColor + ';margin-bottom:4px;">' + team.team + '</h4>';
+            lhtml += '<div style="font-size:11px;color:#8b949e;margin-bottom:10px;">Formation: ' + (team.formation || '–') + '</div>';
+            lhtml += '<div style="font-size:11px;color:#8b949e;margin-bottom:6px;text-transform:uppercase;">Starting XI</div>';
+            function playerRow(p, dimmed) {
+                var src = p.photo || _playerPhotoFallback;
+                var imgHtml = '<img src="' + src + '" alt="" onerror="_playerImgError(this)" loading="lazy"' + (!p.photo ? ' class="no-photo"' : '') + '>';
+                var style = dimmed ? ' style="color:#484f58;"' : '';
+                return '<div class="lineup-player"' + style + '><span>' + (p.number || '') + '</span>' + imgHtml + (p.name || '') + '</div>';
+            }
+            (team.startXI || []).forEach(function(p) {
+                lhtml += playerRow(p, false);
+            });
+            if (team.substitutes && team.substitutes.length > 0) {
+                lhtml += '<div style="margin-top:14px;margin-bottom:6px;font-size:11px;color:#8b949e;text-transform:uppercase;">Substitutes</div>';
+                team.substitutes.forEach(function(p) {
+                    lhtml += playerRow(p, true);
+                });
+            }
+            lhtml += '</div>';
+        });
+        lhtml += '</div>';
+    }
+    document.getElementById('ffpLineups').innerHTML = lhtml;
+
+    // ── H2H ─────────────────────────────────────────────────────────────────
+    var h2hData = d.h2h || [];
+    var h2html = '';
+    if (h2hData.length === 0) {
+        h2html = '<div style="color:#484f58;padding:20px 0;">No H2H data available</div>';
+    } else {
+        h2html = '<div style="font-size:12px;color:#8b949e;margin-bottom:14px;">Last ' + h2hData.length + ' meetings — ';
+        var hw = h2hData.filter(function(m){return m.result==='H';}).length;
+        var dr = h2hData.filter(function(m){return m.result==='D';}).length;
+        var aw = h2hData.filter(function(m){return m.result==='A';}).length;
+        h2html += '<span style="color:#58a6ff;">' + homeTeam + ' ' + hw + 'W</span> · ';
+        h2html += '<span style="color:#8b949e;">' + dr + 'D</span> · ';
+        h2html += '<span style="color:#f85149;">' + awayTeam + ' ' + aw + 'W</span></div>';
+        h2hData.forEach(function(m) {
+            var res = m.result || '';
+            var resClass = res === 'H' ? 'h2h-w' : res === 'A' ? 'h2h-l' : 'h2h-d';
+            var resLabel = res === 'H' ? 'H' : res === 'A' ? 'A' : 'D';
+            h2html += '<div class="h2h-row">';
+            h2html += '<span style="color:#484f58;font-size:11px;min-width:75px;">' + (m.date || '').slice(0,10) + '</span>';
+            h2html += '<span style="flex:1;color:#c9d1d9;">' + m.home + ' vs ' + m.away + '</span>';
+            h2html += '<span style="font-weight:700;color:#e6edf3;min-width:40px;text-align:center;">' + m.score + '</span>';
+            h2html += '<span class="h2h-result ' + resClass + '">' + resLabel + '</span>';
+            h2html += '</div>';
+        });
+    }
+    document.getElementById('ffpH2h').innerHTML = h2html;
+}
+
+function _evIcon(type, detail) {
+    if (!type) return '•';
+    var t = type.toLowerCase();
+    if (t === 'goal') return detail && detail.toLowerCase().includes('own') ? '⚽🔴' : '⚽';
+    if (t === 'card') return detail && detail.toLowerCase().includes('yellow') ? '🟨' : '🟥';
+    if (t === 'subst') return '🔄';
+    if (t === 'var') return '📺';
+    return '•';
+}
+
+// ── Live games sidebar ───────────────────────────────────────────────────────
 function loadLiveGames() {
     const nocache = '_=' + Date.now();
     fetch('/api/live-games?' + nocache, {credentials: 'include', cache: 'no-store'})
@@ -438,28 +918,23 @@ function loadLiveGames() {
                 header.textContent = 'Coming Up';
                 return;
             }
-            
+
             const liveGames = games.filter(g => g.status && !['upcoming', 'finished'].includes(g.status));
             const upcomingGames = games.filter(g => g.status === 'upcoming');
-            
+
             header.textContent = liveGames.length > 0 ? 'Live Now' : 'Coming Up';
-            
+
             const displayGames = liveGames.length > 0 ? liveGames : upcomingGames;
-            
+
             const gamesByLeague = {};
             for (const g of displayGames) {
                 const league = g.league_display || g.league_name || 'Other';
                 if (!gamesByLeague[league]) gamesByLeague[league] = [];
                 gamesByLeague[league].push(g);
             }
-            
-            const sortedLeagues = Object.keys(gamesByLeague).sort((a, b) => {
-                const tierA = gamesByLeague[a][0]?.league_tier || 99;
-                const tierB = gamesByLeague[b][0]?.league_tier || 99;
-                if (tierA !== tierB) return tierA - tierB;
-                return a.localeCompare(b);
-            });
-            
+
+            const sortedLeagues = Object.keys(gamesByLeague).sort((a, b) => a.localeCompare(b));
+
             for (const league in gamesByLeague) {
                 gamesByLeague[league].sort((a, b) => {
                     const timeA = a.kickoff || '';
@@ -467,16 +942,20 @@ function loadLiveGames() {
                     return timeA.localeCompare(timeB);
                 });
             }
-            
+
             let html = '';
             for (const league of sortedLeagues) {
                 html += '<div style="font-size:11px;font-weight:600;color:#8b949e;margin:12px 0 6px 0;text-transform:uppercase;">' + league + '</div>';
                 for (const g of gamesByLeague[league]) {
+                    const fid = g.id || '';
+                    const safeHome = (g.home || '').replace(/"/g, '&quot;');
+                    const safeAway = (g.away || '').replace(/"/g, '&quot;');
+                    const clickable = fid ? 'class="sidebar-game-item' + (fid == _focusId ? ' focused' : '') + '" data-fid="' + fid + '" data-home="' + safeHome + '" data-away="' + safeAway + '" ' : '';
                     if (g.status === 'upcoming') {
                         const evBadge = g.ev_badge || '';
                         const homeLogo = g.home_logo ? '<img src="' + g.home_logo + '" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;">' : '';
                         const awayLogo = g.away_logo ? '<img src="' + g.away_logo + '" style="width:16px;height:16px;vertical-align:middle;margin-left:4px;">' : '';
-                        html += '<div style="margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #21262d;">' +
+                        html += '<div ' + clickable + 'style="margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #21262d;">' +
                                 '<div style="font-weight: 600; font-size: 12px;">' + homeLogo + g.home + ' vs ' + g.away + awayLogo + '</div>' +
                                 '<div style="font-size: 11px; color: #8b949e; margin: 2px 0;">' + (g.kickoff || '') + '</div>' +
                                 evBadge +
@@ -488,15 +967,24 @@ function loadLiveGames() {
                             : 'vs';
                         const homeLogo = g.home_logo ? '<img src="' + g.home_logo + '" style="width:16px;height:16px;vertical-align:middle;margin-right:4px;">' : '';
                         const awayLogo = g.away_logo ? '<img src="' + g.away_logo + '" style="width:16px;height:16px;vertical-align:middle;margin-left:4px;">' : '';
-                        html += '<div style="margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #21262d;">' +
+                        html += '<div ' + clickable + 'style="margin-bottom: 8px; padding-bottom: 4px; border-bottom: 1px solid #21262d;">' +
                             '<div style="font-weight: 600;">' + homeLogo + g.home + ' <span style="color: #58a6ff;">' + score + '</span> ' + g.away + awayLogo + '</div>' +
                             '<div style="font-size: 11px; color: #d29922; margin: 2px 0;">' + matchState + '</div>' +
                             '</div>';
                     }
                 }
             }
-            
+
             list.innerHTML = html;
+            // Attach click handlers via data attributes (avoids inline quote escaping)
+            list.querySelectorAll('.sidebar-game-item').forEach(function(el) {
+                el.addEventListener('click', function() {
+                    var fid = parseInt(el.dataset.fid);
+                    var home = el.dataset.home || '';
+                    var away = el.dataset.away || '';
+                    if (fid) focusFixture(fid, home, away);
+                });
+            });
         })
         .catch(() => {
             document.getElementById('liveGamesList').innerHTML = '<span style="color: #484f58;">Error loading</span>';
@@ -607,7 +1095,7 @@ def runs_page():
     runs_html = ''
     for run in runs:
         mode_badge = run.get('mode', 'dev').upper()
-        mode_class = 'live_eval' if mode_badge == 'LIVE_EVAL' else 'training' if mode_badge == 'TRAINING' else 'dev'
+        mode_class = 'live_eval' if mode_badge == 'LIVE_EVAL' else 'live' if mode_badge == 'LIVE' else 'training' if mode_badge == 'TRAINING' else 'dev'
         
         start_ts = run.get('start_timestamp', '')
         end_ts = run.get('end_timestamp', 'ongoing')
@@ -1603,8 +2091,8 @@ def api_system_mode_set():
     data = request.get_json() or {}
     new_mode = data.get('mode', '').lower()
     
-    if new_mode not in ['dev', 'training', 'live_eval']:
-        return jsonify({"error": "Invalid mode. Must be: dev, training, or live_eval"}), 400
+    if new_mode not in ['dev', 'training', 'live', 'live_eval']:
+        return jsonify({"error": "Invalid mode. Must be: dev, training, live, or live_eval"}), 400
     
     mgr = RuntimeModeManager()
     current_mode = mgr.get_mode_name()
@@ -1811,11 +2299,51 @@ def api_architecture_rollback():
 def api_architecture_transitions():
     """Get architecture transition history."""
     from backend.architecture_evolution_engine import get_evolution_engine
-    
+
     engine = get_evolution_engine()
     history = engine.get_transition_history()
-    
+
     return jsonify(history)
+
+
+@app.route('/api/architecture/candidates', methods=['POST'])
+def api_architecture_candidates_create():
+    """Persist a proposal as a candidate architecture DB record."""
+    from backend.architecture_evolution_engine import get_evolution_engine
+
+    data = request.get_json() or {}
+    engine = get_evolution_engine()
+
+    current = engine.get_active_architecture()
+    if not current:
+        return jsonify({'error': 'No active architecture found'}), 400
+
+    changes = data.get('changes', {})
+    remove_layers = changes.get('remove_layers', [])
+    reweight_layers = changes.get('reweight_layers', {})
+
+    new_layers = [l for l in current['active_layers'] if l not in remove_layers]
+    new_weights = dict(current['layer_weights'])
+    for layer, factor in reweight_layers.items():
+        if layer in new_weights:
+            new_weights[layer] = round(new_weights[layer] * factor, 4)
+
+    ev_score = float(data.get('expected_ev_delta', 0.0))
+    risk_score = float(data.get('expected_risk_delta', 0.0))
+    rollback_safety = float(data.get('rollback_safety_score', 0.85))
+
+    architecture_id = engine.create_candidate_architecture(
+        parent_id=current['architecture_id'],
+        active_layers=new_layers,
+        layer_weights=new_weights,
+        feature_set={},
+        governance_score=rollback_safety,
+        ev_score=ev_score,
+        risk_score=risk_score,
+        description=f"Proposed from {current['architecture_id']}: remove={remove_layers} reweight={list(reweight_layers.keys())}",
+    )
+
+    return jsonify({'architecture_id': architecture_id, 'success': True})
 
 
 # =============================================================================
@@ -1827,12 +2355,13 @@ def system_control_page():
     from backend.runtime_mode import get_mode_name
     
     mode = get_mode_name()
-    mode_class = 'live_eval' if mode == 'live_eval' else 'training' if mode == 'training' else 'dev'
-    
+    mode_class = 'live_eval' if mode == 'live_eval' else 'live' if mode == 'live' else 'training' if mode == 'training' else 'dev'
+
     mode_description = {
-        'dev': 'Full flexibility - all operations allowed',
-        'training': 'Model updates allowed, betting disabled',
-        'live_eval': 'Frozen evaluation mode - no mutations allowed'
+        'dev': 'Full flexibility - data collection, training, betting all allowed',
+        'training': 'Model retraining allowed, betting disabled',
+        'live': 'Production - betting on, models frozen, strict policies enforced',
+        'live_eval': 'Evaluation snapshot - predictions tracked, no retraining, no betting',
     }
     
     content = f'''
@@ -1860,6 +2389,7 @@ def system_control_page():
         <div style="display: flex; gap: 12px; flex-wrap: wrap;">
             <button class="btn btn-{'primary' if mode != 'dev' else 'secondary'}" onclick="switchMode('dev', this)">DEV</button>
             <button class="btn btn-{'primary' if mode != 'training' else 'secondary'}" onclick="switchMode('training', this)">TRAINING</button>
+            <button class="btn btn-{'primary' if mode != 'live' else 'secondary'}" onclick="switchMode('live', this)">LIVE</button>
             <button class="btn btn-{'primary' if mode != 'live_eval' else 'secondary'}" onclick="switchMode('live_eval', this)">LIVE_EVAL</button>
         </div>
         
@@ -1879,24 +2409,32 @@ def system_control_page():
             <tr>
                 <td><span class="badge badge-dev">DEV</span></td>
                 <td>Development</td>
-                <td>Full flexibility - all operations allowed</td>
+                <td>Full flexibility — data collection, retraining, betting all on</td>
             </tr>
             <tr>
                 <td><span class="badge badge-training">TRAINING</span></td>
                 <td>Training</td>
-                <td>Model updates allowed, betting disabled</td>
+                <td>Model retraining on, betting off</td>
+            </tr>
+            <tr>
+                <td><span class="badge badge-live">LIVE</span></td>
+                <td>Production</td>
+                <td>Betting on, models frozen, strict policies — pick the best predictions</td>
             </tr>
             <tr>
                 <td><span class="badge badge-live_eval">LIVE_EVAL</span></td>
-                <td>Live Evaluation</td>
-                <td>Frozen system - read-only, no mutations</td>
+                <td>Evaluation Snapshot</td>
+                <td>Predictions tracked &amp; settled, no retraining, no betting — clean accuracy measurement</td>
             </tr>
         </tbody>
     </table>
     
     <script>
     function switchMode(mode, btn) {{
-        if (mode === 'live_eval' && !confirm('WARNING: Switching to LIVE_EVAL will disable model retraining and restrict mutating operations. Continue?')) {{
+        if (mode === 'live' && !confirm('Switching to LIVE mode: betting is on, models are frozen, strict policies enforced. Continue?')) {{
+            return;
+        }}
+        if (mode === 'live_eval' && !confirm('WARNING: Switching to LIVE_EVAL will disable betting, model retraining, and all mutations. Continue?')) {{
             return;
         }}
         
@@ -2121,12 +2659,16 @@ def architecture_page():
     
     candidates_html = ''
     for c in candidates:
+        val = c.get('validation_score', 0)
+        val_color = '#3fb950' if val > 0.6 else '#f85149'
+        arch_id = c.get('architecture_id', '')
         candidates_html += f'''
         <tr>
-            <td>{c.get('architecture_id')}</td>
+            <td>{arch_id}</td>
             <td>{', '.join(c.get('active_layers', []))}</td>
-            <td style="color: {'#3fb950' if c.get('validation_score', 0) > 0.6 else '#f85149'}">{c.get('validation_score', 0):.2f}</td>
+            <td style="color: {val_color}">{val:.2f}</td>
             <td>{c.get('ev_score', 0):.4f}</td>
+            <td><button class="btn btn-secondary" style="padding:4px 10px;font-size:12px;" onclick="applyCandidate('{arch_id}')">Apply</button></td>
         </tr>
         '''
     
@@ -2246,19 +2788,67 @@ def architecture_page():
     function createCandidate() {{
         const data = window.currentProposal;
         if (!data) return;
-        
-        fetch('/api/architecture/simulate/' + data.proposed_architecture)
+
+        const btn = event.target;
+        btn.disabled = true;
+        btn.textContent = 'Creating...';
+
+        fetch('/api/architecture/candidates', {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify(data)
+        }})
+        .then(r => r.json())
+        .then(created => {{
+            if (!created.architecture_id) {{
+                throw new Error(created.error || 'Failed to create candidate');
+            }}
+            window.pendingCandidateId = created.architecture_id;
+            btn.textContent = 'Running simulation...';
+            return fetch('/api/architecture/simulate/' + created.architecture_id);
+        }})
         .then(r => r.json())
         .then(sim => {{
+            const safeColor = sim.is_safe ? '#3fb950' : '#f85149';
+            const safeText = sim.is_safe ? 'SAFE' : 'RISKY';
+            let html = document.getElementById('proposal-results').innerHTML;
+            html += '<div style="margin-top:12px; padding:12px; background:#0d1117; border-radius:6px;">';
+            html += '<strong>Candidate:</strong> ' + window.pendingCandidateId + '<br>';
+            html += '<strong>Validation:</strong> <span style="color:' + safeColor + '">' + safeText + ' (' + (sim.validation_score || 0).toFixed(2) + ')</span><br>';
+            html += '<strong>EV Delta:</strong> ' + (sim.ev_delta || 0).toFixed(4) + '<br>';
             if (sim.is_safe) {{
-                alert('Simulation passed! Safe to apply.');
-            }} else {{
-                alert('Warning: Simulation shows risk. Validation score: ' + sim.validation_score);
+                html += '<button class="btn btn-primary" style="margin-top:8px;" onclick="applyCandidate(\'' + window.pendingCandidateId + '\')">Apply Architecture</button>';
             }}
+            html += '</div>';
+            document.getElementById('proposal-results').innerHTML = html;
+            btn.textContent = 'Create Candidate';
+            btn.disabled = false;
+            location.reload();
         }})
         .catch(err => {{
-            document.getElementById('proposal-results').innerHTML = '<div style="color: #f85149;">Error: ' + err + '</div>';
+            document.getElementById('proposal-results').innerHTML += '<div style="color: #f85149; margin-top:8px;">Error: ' + err + '</div>';
+            btn.textContent = 'Create Candidate';
+            btn.disabled = false;
         }});
+    }}
+
+    function applyCandidate(architectureId) {{
+        if (!confirm('Apply architecture ' + architectureId + '? This will become the active architecture.')) return;
+        fetch('/api/architecture/apply/' + architectureId, {{
+            method: 'POST',
+            headers: {{'Content-Type': 'application/json'}},
+            body: JSON.stringify({{reason: 'Manual apply from UI'}})
+        }})
+        .then(r => r.json())
+        .then(result => {{
+            if (result.success) {{
+                alert('Architecture ' + architectureId + ' applied successfully.');
+                location.reload();
+            }} else {{
+                alert('Apply failed: ' + (result.error || 'Unknown error'));
+            }}
+        }})
+        .catch(err => alert('Error: ' + err));
     }}
     </script>
     '''
@@ -2539,7 +3129,10 @@ function renderPredictions(data) {
         const leagueFlag = p.league_flag ? '<img src="' + p.league_flag + '" style="width:16px;height:12px;vertical-align:middle;margin-right:4px;">' : '';
         const homeLogo = p.home_logo ? '<img src="' + p.home_logo + '" style="width:24px;height:24px;vertical-align:middle;margin-right:4px;">' : '';
         const awayLogo = p.away_logo ? '<img src="' + p.away_logo + '" style="width:24px;height:24px;vertical-align:middle;margin-left:4px;">' : '';
-        html += '<div class="prediction-card ' + cardClass + '">';
+        const safeHome = (p.home_name || 'Home').replace(/"/g, '&quot;');
+        const safeAway = (p.away_name || 'Away').replace(/"/g, '&quot;');
+        const fidAttr = p.fixture_id ? ' data-fixture-id="' + p.fixture_id + '" data-home="' + safeHome + '" data-away="' + safeAway + '"' : '';
+        html += '<div class="prediction-card ' + cardClass + '"' + fidAttr + '>';
         html += '<div class="match-time">' + (p.date || '').slice(0, 16) + ' | <span class="league-badge">' + leagueFlag + (p.league_name || 'Unknown') + '</span></div>';
         html += '<div class="team-name">' + homeLogo + (p.home_name || 'Home') + ' vs ' + (p.away_name || 'Away') + awayLogo + '</div>';
         html += '<div style="margin: 8px 0;">';
@@ -2660,15 +3253,15 @@ def api_live_games():
             league_info = {}
             all_fixture_ids = list(live_fresh.keys())
             if all_fixture_ids:
-                # Use SQLAlchemy parameter binding for IN clause (safe from SQL injection)
+                from sqlalchemy import text as _text, bindparam as _bp
                 league_rows = s.execute(
-                    text("""
-                        SELECT f.id, l.name, l.country, COALESCE(l.tier, 99)
+                    _text("""
+                        SELECT f.id, l.name, l.country
                         FROM fixtures f
                         LEFT JOIN leagues l ON f.league_id = l.id
-                        WHERE f.id IN :fixture_ids
-                    """),
-                    {"fixture_ids": tuple(all_fixture_ids)}
+                        WHERE f.id IN :ids
+                    """).bindparams(_bp('ids', expanding=True)),
+                    {"ids": all_fixture_ids}
                 ).fetchall()
                 for row in league_rows:
                     country = row[2] or ''
@@ -2677,7 +3270,6 @@ def api_live_games():
                         'league_name': row[1] or '',
                         'league_country': country,
                         'league_flag': flag,
-                        'league_tier': row[3] if row[3] else 99
                     }
             
             upcoming_rows = s.execute(text("""
@@ -2693,14 +3285,13 @@ def api_live_games():
                     f.goals_away,
                     f.elapsed,
                     l.name as league_name,
-                    l.country as league_country,
-                    COALESCE(l.tier, 99) as league_tier
+                    l.country as league_country
                 FROM fixtures f
                 JOIN teams home ON f.home_team_id = home.id
                 JOIN teams away ON f.away_team_id = away.id
                 LEFT JOIN leagues l ON f.league_id = l.id
                 WHERE f.status = 'NS' AND f.date >= :now AND f.date < :cutoff_24h
-                ORDER BY l.tier ASC, l.name ASC, f.date ASC
+                ORDER BY l.name ASC, f.date ASC
             """), {
                 'now': now.isoformat(),
                 'cutoff_24h': cutoff_24h.isoformat()
@@ -2744,7 +3335,6 @@ def api_live_games():
             'league_display': league_display,
             'goals_home': data.get('goals', {}).get('home'),
             'goals_away': data.get('goals', {}).get('away'),
-            'league_tier': 99,
         })
     
     for row in upcoming_rows:
@@ -2762,7 +3352,6 @@ def api_live_games():
             'league_name': row[10] or '',
             'league_flag': league_flags.get(row[11] or '', ''),
             'league_display': league_flags.get(row[11] or '', '') + ' ' + (row[10] or ''),
-            'league_tier': row[12] if len(row) > 12 else 99,
             'best_market': None,
             'best_odds': None,
             'date': str(row[6]) if row[6] else '',
@@ -2773,6 +3362,239 @@ def api_live_games():
     response.headers['Pragma'] = 'no-cache'
     response.headers['Expires'] = '0'
     return response
+
+
+@app.route('/api/fixture/<int:fixture_id>/focus')
+@require_auth
+def api_fixture_focus(fixture_id: int):
+    """
+    Return all available live data for a single fixture:
+    score, events, statistics, lineups, H2H, and our predictions.
+    Called every 30 s by the fixture focus panel.
+    """
+    import logging as _log
+    log = _log.getLogger(__name__)
+
+    from src.ingestion.client import APIFootballClient
+    from src.storage.db import get_session
+    from sqlalchemy import text as sa_text
+
+    client = APIFootballClient()
+    out = {
+        "fixture_id": fixture_id,
+        "home_team": "", "away_team": "",
+        "home_logo": "", "away_logo": "",
+        "home_team_id": None,
+        "league": "",
+        "score": {"home": None, "away": None},
+        "match_state": "",
+        "events": [],
+        "statistics": [],
+        "lineups": [],
+        "h2h": [],
+        "our_predictions": [],
+    }
+
+    # ── 1. Basic fixture info from DB ────────────────────────────────────────
+    home_team_id = away_team_id = league_id = None
+    try:
+        with get_session() as s:
+            row = s.execute(sa_text("""
+                SELECT f.goals_home, f.goals_away, f.status, f.elapsed,
+                       ht.name, at.name,
+                       f.home_team_id, f.away_team_id, f.league_id,
+                       l.name, l.country
+                FROM fixtures f
+                JOIN teams ht ON f.home_team_id = ht.id
+                JOIN teams at ON f.away_team_id = at.id
+                LEFT JOIN leagues l ON f.league_id = l.id
+                WHERE f.id = :fid
+            """), {"fid": fixture_id}).fetchone()
+            if row:
+                out["score"] = {"home": row[0], "away": row[1]}
+                out["match_state"] = str(row[3]) + "'" if row[3] else (row[2] or "")
+                out["home_team"] = row[4] or ""
+                out["away_team"] = row[5] or ""
+                home_team_id = row[6]
+                away_team_id = row[7]
+                league_id = row[8]
+                country = row[10] or ""
+                out["league"] = (row[9] or "") + (" · " + country if country else "")
+                out["home_team_id"] = home_team_id
+    except Exception as e:
+        log.warning(f"[FOCUS] DB lookup failed: {e}")
+
+    # ── 2. Live score + state from API (force-fresh for live games) ──────────
+    try:
+        fixture_data = client.get(
+            "fixtures", {"id": fixture_id}, force_refresh=True
+        )
+        if fixture_data:
+            fx = fixture_data[0]
+            goals = fx.get("goals", {})
+            status_obj = fx.get("fixture", {}).get("status", {})
+            elapsed = status_obj.get("elapsed")
+            short = status_obj.get("short", "")
+            if goals.get("home") is not None:
+                out["score"] = {"home": goals["home"], "away": goals["away"]}
+            if elapsed:
+                out["match_state"] = str(elapsed) + "'"
+            elif short:
+                out["match_state"] = short
+            if not out["home_logo"]:
+                out["home_logo"] = fx.get("teams", {}).get("home", {}).get("logo", "")
+            if not out["away_logo"]:
+                out["away_logo"] = fx.get("teams", {}).get("away", {}).get("logo", "")
+            if not out["home_team_id"]:
+                out["home_team_id"] = fx.get("teams", {}).get("home", {}).get("id")
+    except Exception as e:
+        log.warning(f"[FOCUS] Live fixture fetch failed: {e}")
+
+    # ── 3. Events (goals, cards, subs) ──────────────────────────────────────
+    try:
+        raw_events = client.get(
+            "fixtures/events", {"fixture": fixture_id}, force_refresh=True
+        )
+        for ev in raw_events:
+            team_name = ev.get("team", {}).get("name", "")
+            player = ev.get("player", {}).get("name", "")
+            assist = ev.get("assist", {}).get("name", "")
+            time_obj = ev.get("time", {})
+            elapsed = time_obj.get("elapsed", "")
+            extra = time_obj.get("extra")
+            time_str = str(elapsed) + ("+" + str(extra) if extra else "")
+            out["events"].append({
+                "time": time_str,
+                "team": team_name,
+                "team_id": ev.get("team", {}).get("id"),
+                "type": ev.get("type", ""),
+                "detail": ev.get("detail", ""),
+                "player": player,
+                "assist": assist,
+            })
+    except Exception as e:
+        log.warning(f"[FOCUS] Events fetch failed: {e}")
+
+    # ── 4. Statistics (shots, possession, corners, etc.) ────────────────────
+    try:
+        raw_stats = client.get(
+            "fixtures/statistics", {"fixture": fixture_id}, force_refresh=True
+        )
+        # raw_stats is [{"team": {...}, "statistics": [{type, value}, ...]}, ...]
+        stat_map = {}  # label -> {home, away}
+        for team_block in raw_stats:
+            team_name = team_block.get("team", {}).get("name", "")
+            is_home = team_name == out["home_team"]
+            for st in team_block.get("statistics", []):
+                label = st.get("type", "")
+                val = st.get("value")
+                val_str = str(val) if val is not None else "0"
+                if label not in stat_map:
+                    stat_map[label] = {"label": label, "home": "0", "away": "0"}
+                if is_home:
+                    stat_map[label]["home"] = val_str
+                else:
+                    stat_map[label]["away"] = val_str
+        # Order: important stats first
+        priority = [
+            "Ball Possession", "Total Shots", "Shots on Goal",
+            "Shots off Goal", "Blocked Shots", "Corner Kicks",
+            "Fouls", "Yellow Cards", "Red Cards",
+            "Goalkeeper Saves", "Total passes", "Passes accurate", "Offsides",
+        ]
+        ordered = []
+        for p in priority:
+            if p in stat_map:
+                ordered.append(stat_map.pop(p))
+        ordered.extend(stat_map.values())
+        out["statistics"] = ordered
+    except Exception as e:
+        log.warning(f"[FOCUS] Statistics fetch failed: {e}")
+
+    # ── 5. Lineups ───────────────────────────────────────────────────────────
+    try:
+        raw_lineups = client.get("fixtures/lineups", {"fixture": fixture_id})
+        for team_block in raw_lineups:
+            team_name = team_block.get("team", {}).get("name", "")
+            formation = team_block.get("formation", "")
+            def _player_entry(p):
+                pl = p.get("player", {})
+                pid = pl.get("id")
+                return {
+                    "number": pl.get("number", ""),
+                    "name": pl.get("name", ""),
+                    "photo": f"https://media.api-sports.io/football/players/{pid}.png" if pid else "",
+                    "pos": pl.get("pos", ""),
+                }
+            start_xi = [_player_entry(p) for p in team_block.get("startXI", [])]
+            subs = [_player_entry(p) for p in team_block.get("substitutes", [])]
+            out["lineups"].append({
+                "team": team_name,
+                "formation": formation,
+                "startXI": start_xi,
+                "substitutes": subs,
+            })
+    except Exception as e:
+        log.warning(f"[FOCUS] Lineups fetch failed: {e}")
+
+    # ── 6. Head-to-Head ──────────────────────────────────────────────────────
+    if home_team_id and away_team_id:
+        try:
+            raw_h2h = client.get(
+                "fixtures/headtohead",
+                {"h2h": f"{home_team_id}-{away_team_id}"},
+            )
+            for m in raw_h2h[:10]:
+                fx_obj = m.get("fixture", {})
+                teams = m.get("teams", {})
+                goals = m.get("goals", {})
+                date = fx_obj.get("date", "")[:10]
+                home_name = teams.get("home", {}).get("name", "")
+                away_name = teams.get("away", {}).get("name", "")
+                hg = goals.get("home")
+                ag = goals.get("away")
+                score_str = (str(hg) + "–" + str(ag)) if hg is not None else "?"
+                # Result from home side of THIS fixture
+                if hg is not None and ag is not None:
+                    if home_name == out["home_team"]:
+                        result = "H" if hg > ag else ("A" if hg < ag else "D")
+                    else:
+                        result = "H" if ag > hg else ("A" if ag < hg else "D")
+                else:
+                    result = "?"
+                out["h2h"].append({
+                    "date": date,
+                    "home": home_name,
+                    "away": away_name,
+                    "score": score_str,
+                    "result": result,
+                })
+        except Exception as e:
+            log.warning(f"[FOCUS] H2H fetch failed: {e}")
+
+    # ── 7. Our predictions for this fixture ──────────────────────────────────
+    try:
+        with get_session() as s:
+            pred_rows = s.execute(sa_text("""
+                SELECT market, predicted_outcome, our_prob, odds_decimal, ev
+                FROM prediction_records
+                WHERE fixture_id = :fid AND is_legacy = 0
+                ORDER BY market
+            """), {"fid": fixture_id}).fetchall()
+            for r in pred_rows:
+                out["our_predictions"].append({
+                    "market": r[0] or "",
+                    "outcome": r[1] or "",
+                    "prob": float(r[2]) if r[2] is not None else None,
+                    "odds": float(r[3]) if r[3] is not None else None,
+                    "ev": float(r[4]) if r[4] is not None else None,
+                })
+    except Exception as e:
+        log.warning(f"[FOCUS] Predictions fetch failed: {e}")
+
+    resp = jsonify(out)
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
 
 
 _model_cache: dict = {}
@@ -2957,9 +3779,12 @@ def api_predictions():
                     cache_hits += 1
                     continue
 
-                # Fallback: check PredictionRecord from DB (already loaded as pred_records)
+                # Fallback: check PredictionRecord from DB (already loaded as pred_records).
+                # Also show preliminary predictions (odds_decimal=None) so every NS fixture
+                # appears in the table even before odds are available.
                 db_pred = pred_records.get(market)
-                if db_pred and db_pred.odds_decimal and db_pred.ev and db_pred.ev > 0:
+                if db_pred:
+                    has_odds = db_pred.odds_decimal is not None and db_pred.odds_decimal >= 1.0
                     cached_pred = {
                         'fixture_id': fix.id,
                         'date_utc': fix.date.isoformat() if fix.date else None,
@@ -2968,8 +3793,9 @@ def api_predictions():
                         'prob': db_pred.our_prob,
                         'calibrated_prob': round(db_pred.calibrated_prob or db_pred.our_prob, 3),
                         'odds': db_pred.odds_decimal,
-                        'ev': db_pred.ev,
-                        'ev_positive': bool(db_pred.ev > 0),
+                        'ev': db_pred.ev if has_odds else None,
+                        'ev_positive': bool(db_pred.ev and db_pred.ev > 0),
+                        'preliminary': not has_odds,
                     }
                     cache_prediction(fix.id, market, cached_pred)
                     cache_hits += 1
@@ -3059,16 +3885,23 @@ def api_predictions():
                                     if home_standing and away_standing:
                                         hs = home_standing[0]
                                         as_ = away_standing[0]
+                                        h_rank = float(hs.rank or 15)
+                                        a_rank = float(as_.rank or 15)
+                                        h_gf = float(hs.goals_for or 1)
+                                        h_ga = float(hs.goals_against or 1)
+                                        a_gf = float(as_.goals_for or 1)
+                                        a_ga = float(as_.goals_against or 1)
                                         features = np.array([[
-                                            float(hs.rank or 15),
-                                            float(as_.rank or 15),
-                                            float((hs.goals_for or 1) - (hs.goals_against or 1)),
-                                            float((as_.goals_for or 1) - (as_.goals_against or 1)),
-                                            float(hs.goals_for or 1),
-                                            float(as_.goals_for or 1),
-                                            float(hs.goals_against or 1),
-                                            float(as_.goals_against or 1),
-                                            float(abs((hs.rank or 15) - (as_.rank or 15))),
+                                            h_rank,
+                                            a_rank,
+                                            a_rank - h_rank,
+                                            (h_gf - h_ga) - (a_gf - a_ga),
+                                            h_gf + a_ga,
+                                            a_gf + h_ga,
+                                            h_gf,
+                                            a_gf,
+                                            h_ga,
+                                            a_ga,
                                         ]])
 
                                 import warnings
@@ -3208,8 +4041,8 @@ def betting_page():
         <div class="metric-value pending">''' + str(state.pending_count) + '''</div>
     </div>
     <div class="metric-box">
-        <div class="metric-label">Wins/Losses</div>
-        <div class="metric-value">''' + str(state.wins) + '/' + str(state.losses) + '''</div>
+        <div class="metric-label">Record (W/L)</div>
+        <div class="metric-value">''' + str(state.wins) + 'W / ' + str(state.losses) + 'L' + '''</div>
     </div>
     <div class="metric-box">
         <div class="metric-label">Pending Stake</div>
@@ -3221,7 +4054,6 @@ def betting_page():
     <div class="col">
         <button class="btn btn-success" onclick="placeBets()" id="btnPlace">Place Bets (Auto)</button>
         <button class="btn btn-danger" onclick="settleBets()" id="btnSettle">Settle Bets</button>
-        <button class="btn btn-primary" onclick="newRound()">New Round</button>
     </div>
 </div>
 
@@ -3263,6 +4095,23 @@ def betting_page():
     </tbody>
 </table>
 
+<div id="roundDetailPanel" style="display:none; margin-top:16px; background:#1a1a1a; border:1px solid #333; border-radius:6px; padding:16px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+        <h3 id="roundDetailTitle" style="margin:0; font-size:1.1em;"></h3>
+        <button onclick="document.getElementById('roundDetailPanel').style.display='none'" style="background:#333; border:none; color:#ccc; padding:4px 12px; cursor:pointer; border-radius:4px;">Close</button>
+    </div>
+    <div id="roundDetailSummary" style="display:flex; gap:20px; flex-wrap:wrap; margin-bottom:14px; font-size:0.9em; color:#aaa;"></div>
+    <table>
+        <thead>
+            <tr>
+                <th>Date</th><th>Match</th><th>Market</th><th>Ver</th><th>Pick</th>
+                <th>Stake</th><th>Odds</th><th>EV</th><th>Result</th><th>P&L</th>
+            </tr>
+        </thead>
+        <tbody id="roundDetailBody"></tbody>
+    </table>
+</div>
+
 <script>
 console.log("Loading betting data...");
 function loadBets() {
@@ -3288,7 +4137,7 @@ function loadBets() {
                 els[2].querySelector('.metric-value').textContent = (roi >= 0 ? '+' : '') + Math.round(roi) + '%';
                 els[2].querySelector('.metric-value').className = 'metric-value ' + (roi >= 0 ? 'positive' : 'negative');
                 els[3].querySelector('.metric-value').textContent = r.pending;
-                els[4].querySelector('.metric-value').textContent = r.wins + '/' + r.settled;
+                els[4].querySelector('.metric-value').textContent = r.wins + 'W / ' + (r.settled - r.wins) + 'L';
                 els[5].querySelector('.metric-value').textContent = 'SEK ' + Math.round(r.pending_stake);
             }
         }
@@ -3299,13 +4148,14 @@ function loadBets() {
             var b = d.bets[i];
             var evPct = (b.ev * 100).toFixed(1) + '%';
             var result = b.settled ? (b.won ? 'WIN' : 'LOSS') : 'PENDING';
-            html = html + "<tr>" +
+            var fidAttr = b.fixture_id ? ' data-fixture-id="' + b.fixture_id + '" data-home="' + (b.home || '').replace(/"/g,'&quot;') + '" data-away="' + (b.away || '').replace(/"/g,'&quot;') + '"' : '';
+            html = html + "<tr" + fidAttr + ">" +
                 "<td>" + b.date + "</td>" +
                 "<td>" + b.home + " vs " + b.away + "</td>" +
                 "<td>" + b.market + "</td>" +
                 "<td>" + (b.model_version || '-') + "</td>" +
                 "<td>" + b.outcome + "</td>" +
-                "<td>SEK " + b.stake + "</td>" +
+                "<td>SEK " + parseFloat(b.stake).toFixed(2) + "</td>" +
                 "<td>" + b.odds + "</td>" +
                 "<td>" + evPct + "</td>" +
                 "<td>" + result + "</td>" +
@@ -3330,13 +4180,16 @@ function loadHistory() {
         var html = "";
         for (var i = 0; i < d.history.length; i++) {
             var h = d.history[i];
-            html = html + "<tr>" +
+            var pnl = (h.total_pnl !== null && h.total_pnl !== undefined) ? h.total_pnl.toFixed(2) : '—';
+            var roi = (h.roi_pct !== null && h.roi_pct !== undefined) ? h.roi_pct.toFixed(1) : '—';
+            var pnlColor = (h.total_pnl > 0) ? 'color:#4caf50' : (h.total_pnl < 0 ? 'color:#f44336' : '');
+            html = html + '<tr style="cursor:pointer;" onclick="showRoundDetail(' + h.id + ', ' + h.round_number + ')" data-round-id="' + h.id + '">' +
                 "<td>#" + h.round_number + "</td>" +
-                "<td>" + h.started_at + "</td>" +
+                "<td>" + (h.started_at || '—') + "</td>" +
                 "<td>SEK " + h.initial_bankroll + "</td>" +
-                "<td>" + h.ended_at + "</td>" +
-                "<td>SEK " + h.total_pnl.toFixed(2) + "</td>" +
-                "<td>" + h.roi_pct.toFixed(1) + "%</td>" +
+                "<td>" + (h.ended_at || '—') + "</td>" +
+                '<td style="' + pnlColor + '">SEK ' + pnl + "</td>" +
+                "<td>" + roi + "%</td>" +
                 "<td>" + h.status + "</td>" +
                 "</tr>";
         }
@@ -3345,6 +4198,113 @@ function loadHistory() {
 }
 
 loadBets();
+
+function showRoundDetail(roundId, roundNumber) {
+    var panel = document.getElementById('roundDetailPanel');
+    var title = document.getElementById('roundDetailTitle');
+    var body = document.getElementById('roundDetailBody');
+    var summary = document.getElementById('roundDetailSummary');
+
+    title.textContent = 'Round #' + roundNumber + ' — loading…';
+    panel.style.display = 'block';
+    panel.scrollIntoView({behavior: 'smooth', block: 'nearest'});
+    body.innerHTML = '<tr><td colspan="10" style="color:#888; padding:12px;">Loading…</td></tr>';
+    summary.innerHTML = '';
+
+    fetch('/betting/action', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: 'round_detail', round_id: roundId})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+        if (!d.ok) { body.innerHTML = '<tr><td colspan="10">Error: ' + (d.error || 'unknown') + '</td></tr>'; return; }
+
+        var r = d.round || {};
+        var stats = d.stats || {};
+        title.textContent = 'Round #' + roundNumber + (r.status ? '  (' + r.status + ')' : '');
+
+        var pnlVal = (r.total_pnl !== null && r.total_pnl !== undefined) ? r.total_pnl.toFixed(2) : '—';
+        var roiVal = (r.roi_pct !== null && r.roi_pct !== undefined) ? r.roi_pct.toFixed(1) + '%' : '—';
+        var wins = stats.wins || 0;
+        var losses = stats.losses || 0;
+        var pending = stats.pending || 0;
+        var totalBets = (r.total_bets !== null && r.total_bets !== undefined) ? r.total_bets : (wins + losses + pending);
+        var totalStaked = (r.total_staked !== null && r.total_staked !== undefined) ? 'SEK ' + parseFloat(r.total_staked).toFixed(2) : '—';
+
+        summary.innerHTML =
+            '<span><b>' + wins + 'W / ' + losses + 'L' + (pending > 0 ? ' / ' + pending + 'P' : '') + '</b></span>' +
+            '<span>Bets: ' + totalBets + '</span>' +
+            '<span>Staked: ' + totalStaked + '</span>' +
+            '<span style="' + (r.total_pnl > 0 ? 'color:#4caf50' : r.total_pnl < 0 ? 'color:#f44336' : '') + '">P&L: SEK ' + pnlVal + '</span>' +
+            '<span>ROI: ' + roiVal + '</span>' +
+            '<span>Started: ' + (r.started_at || '—') + '</span>' +
+            (r.ended_at ? '<span>Ended: ' + r.ended_at + '</span>' : '');
+
+        var html = '';
+        if (!d.bets || d.bets.length === 0) {
+            html = '<tr><td colspan="10" style="color:#888; padding:12px;">No bets recorded for this round.</td></tr>';
+        } else {
+            for (var i = 0; i < d.bets.length; i++) {
+                var b = d.bets[i];
+                var result = b.settled ? (b.won ? '<span style="color:#4caf50">WIN</span>' : '<span style="color:#f44336">LOSS</span>') : '<span style="color:#888">PENDING</span>';
+                var evStr = (b.ev !== null && b.ev !== undefined) ? (b.ev * 100).toFixed(1) + '%' : '—';
+                var pnlStr = (b.pnl !== null && b.pnl !== undefined) ? (b.pnl >= 0 ? '<span style="color:#4caf50">+' : '<span style="color:#f44336">') + parseFloat(b.pnl).toFixed(2) + '</span>' : '—';
+                html += '<tr>' +
+                    '<td>' + b.date + '</td>' +
+                    '<td>' + (b.home || '?') + ' vs ' + (b.away || '?') + '</td>' +
+                    '<td>' + (b.market || '—') + '</td>' +
+                    '<td style="font-size:0.8em;">' + (b.model_version || '—') + '</td>' +
+                    '<td>' + (b.outcome || '—') + '</td>' +
+                    '<td>SEK ' + parseFloat(b.stake || 0).toFixed(2) + '</td>' +
+                    '<td>' + (b.odds || '—') + '</td>' +
+                    '<td>' + evStr + '</td>' +
+                    '<td>' + result + '</td>' +
+                    '<td>' + pnlStr + '</td>' +
+                    '</tr>';
+            }
+        }
+        body.innerHTML = html;
+    })
+    .catch(function(e) {
+        body.innerHTML = '<tr><td colspan="10">Request failed: ' + e + '</td></tr>';
+    });
+}
+
+function placeBets() {
+    var btn = document.getElementById('btnPlace');
+    var msg = document.getElementById('msg');
+    btn.disabled = true;
+    btn.textContent = 'Placing…';
+    msg.style.display = 'none';
+    fetch('/betting/action', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        credentials: 'include',
+        body: JSON.stringify({action: 'place-bets'})
+    })
+    .then(r => r.json())
+    .then(d => {
+        btn.disabled = false;
+        btn.textContent = 'Place Bets (Auto)';
+        msg.style.display = 'block';
+        if (d.ok) {
+            msg.className = 'msg msg-success';
+            msg.textContent = d.message || 'Done';
+            if (d.placed > 0) setTimeout(() => location.reload(), 1200);
+        } else {
+            msg.className = 'msg msg-error';
+            msg.textContent = d.error || 'Error placing bets';
+        }
+    })
+    .catch(e => {
+        btn.disabled = false;
+        btn.textContent = 'Place Bets (Auto)';
+        msg.style.display = 'block';
+        msg.className = 'msg msg-error';
+        msg.textContent = 'Request failed: ' + e;
+    });
+}
 
 function settleBets() {
     if (!confirm('Settle all pending bets?')) return;
@@ -3370,8 +4330,8 @@ function settleBets() {
 def betting_run_page(run_id):
     """Detail view for a specific experiment run."""
     from sqlalchemy import text
-    tz_name = request.args.get('tz', 'UTC')
-    
+    tz_name = request.args.get('tz', 'Europe/Stockholm')
+
     with get_session() as s:
         rd = s.execute(text("""
             SELECT run_id, mode, start_timestamp, end_timestamp, bankroll_snapshot, status
@@ -3398,13 +4358,11 @@ def betting_run_page(run_id):
                 return '-'
             try:
                 from zoneinfo import ZoneInfo
-                # Handle string timestamps
                 if isinstance(dt, str):
-                    return dt[:16] if len(dt) >= 16 else dt
+                    dt = datetime.fromisoformat(dt.replace('Z', '').split('+')[0].split('.')[0])
                 if dt.tzinfo is None:
                     dt = dt.replace(tzinfo=timezone.utc)
-                local = dt.astimezone(ZoneInfo(tz))
-                return local.strftime('%Y-%m-%d %H:%M')
+                return dt.astimezone(ZoneInfo(tz)).strftime('%Y-%m-%d %H:%M')
             except Exception:
                 return str(dt)[:16]
         
@@ -3415,12 +4373,13 @@ def betting_run_page(run_id):
             home = TEAM_NAMES.get(fix.home_team_id, str(fix.home_team_id)) if fix else '?'
             away = TEAM_NAMES.get(fix.away_team_id, str(fix.away_team_id)) if fix else '?'
             
-            model_ver = None
-            model_ver_id = b[16]  # model_version_id column
-            if model_ver_id:
-                mv = s.execute(select(ModelVersion).where(ModelVersion.id == model_ver_id)).scalar_one_or_none()
-                if mv:
-                    model_ver = mv.version_name or f"v{mv.version_number}"
+            model_ver = b[18]  # calibration_version_id (most specific label)
+            if not model_ver:
+                model_ver_id = b[16]  # model_version_id column
+                if model_ver_id:
+                    mv = s.execute(select(ModelVersion).where(ModelVersion.id == model_ver_id)).scalar_one_or_none()
+                    if mv:
+                        model_ver = mv.version_label or f"v{mv.version_number:02d}_c00"
             
             bets_list.append({
                 'id': b[0],
@@ -3510,7 +4469,7 @@ def betting_run_page(run_id):
             <td>''' + str(b['market']) + '''</td>
             <td>''' + (str(b['model_version']) if b['model_version'] else '-') + '''</td>
             <td>''' + str(b['outcome']) + '''</td>
-            <td>SEK ''' + str(b['stake']) + '''</td>
+            <td>SEK ''' + f"{float(b['stake']):.2f}" + '''</td>
             <td>''' + str(b['odds']) + '''</td>
             <td>''' + str(round((b['ev'] or 0) * 100, 1)) + '''%</td>
             <td class="''' + ('positive' if b['pnl'] else 'negative') + '''">''' + str(b['pnl'] or 0) + '''</td>
@@ -3677,19 +4636,20 @@ function loadTracking() {
             tbody.innerHTML = (d.results || []).map(r => {
                 const homeLogo = r.home_logo ? '<img src="' + r.home_logo + '" style="width:20px;height:20px;vertical-align:middle;margin-right:4px;">' : '';
                 const awayLogo = r.away_logo ? '<img src="' + r.away_logo + '" style="width:20px;height:20px;vertical-align:middle;margin-left:4px;">' : '';
-                return '<tr>' +
+                const fidAttr = r.fixture_id ? ' data-fixture-id="' + r.fixture_id + '" data-home="' + (r.home || '').replace(/"/g,'&quot;') + '" data-away="' + (r.away || '').replace(/"/g,'&quot;') + '"' : '';
+                return '<tr' + fidAttr + '>' +
                 '<td>' + formatLocalDateTime(r.date) + '</td>' +
                 '<td>' + homeLogo + r.home + ' vs ' + r.away + awayLogo + '</td>' +
                 '<td>' + (r.market || '') + '</td>' +
                 '<td>' + (r.model_version || '-') + '</td>' +
                 '<td>' + (r.predicted || '-') + '</td>' +
                 '<td>' + (r.prob ? (r.prob * 100).toFixed(0) + '%' : '-') + '</td>' +
-                '<td>' + (r.odds || '-') + '</td>' +
+                '<td>' + (r.odds ? r.odds : (r.preliminary ? '<span style="color:#8b949e;font-size:0.8em;">No odds</span>' : '-')) + '</td>' +
                 '<td>' + (r.bookmaker || '-') + '</td>' +
-                '<td>' + (r.ev ? (r.ev * 100).toFixed(1) + '%' : '-') + '</td>' +
+                '<td>' + (r.ev ? (r.ev * 100).toFixed(1) + '%' : (r.preliminary ? '<span style="color:#8b949e;font-size:0.8em;">—</span>' : '-')) + '</td>' +
                 '<td>' + (r.actual || '-') + '</td>' +
                 '<td class="' + (r.settled ? (r.won ? 'win' : 'loss') : 'pending') + '">' +
-                    (r.settled ? (r.won ? 'WIN' : 'LOSS') : 'PENDING') +
+                    (r.preliminary ? '<span style="color:#8b949e;font-size:0.8em;">PRELIMINARY</span>' : r.settled ? (r.won ? 'WIN' : 'LOSS') : 'PENDING') +
                 '</td>' +
                 '<td>' + (r.pnl != null && typeof r.pnl === 'number' ? (r.pnl >= 0 ? '+' : '') + r.pnl.toFixed(2) : '-') + '</td>' +
                 '</tr>';
@@ -3711,7 +4671,7 @@ function loadTracking() {
                 '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #21262d;font-size:0.85em;">' +
                 '<strong style="color:#d29922;">Odds Coverage:</strong> ' +
                 oc.fixtures_with_odds + '/' + oc.fixtures_with_predictions + ' (' + oc.odds_pct + '%) with odds | ' +
-                'NS: ' + oc.ns_with_odds + '/' + oc.ns_fixtures + ' (' + oc.ns_odds_pct + '%) upcoming' +
+                'NS: ' + (oc.ns_with_predictions || 0) + ' predicted / ' + oc.ns_fixtures + ' total (' + oc.ns_with_odds + ' with odds) |' +
                 '</div>' +
                 '<div style="margin-top:8px;padding-top:8px;border-top:1px solid #21262d;font-size:0.85em;">' +
                 '<strong style="color:#f0883e;">High EV (≥10%):</strong> ' +
@@ -3830,9 +4790,11 @@ function goToPage(page) {
     loadTracking();
 }
 
-// Set default "From" date to today BEFORE initial load
+// Set default "From" date to today and "To" to +7 days BEFORE initial load
 const today = new Date().toISOString().split('T')[0];
+const nextWeek = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
 document.getElementById('fromDate').value = today;
+document.getElementById('toDate').value = nextWeek;
 
 // Now load with the date preset
 loadTracking();
@@ -3863,7 +4825,7 @@ def api_predictions_recent():
 
     with get_session() as s:
         query = (
-            select(PredictionRecord, Fixture.home_team_id, Fixture.away_team_id, Fixture.date, Fixture.goals_home, Fixture.goals_away)
+            select(PredictionRecord, Fixture.home_team_id, Fixture.away_team_id, Fixture.date, Fixture.goals_home, Fixture.goals_away, Fixture.status)
             .join(Fixture, PredictionRecord.fixture_id == Fixture.id)
         )
 
@@ -4031,12 +4993,21 @@ def api_predictions_recent():
             .where(Fixture.date >= dt.utcnow())
         ).scalar() or 0
         
+        # NS fixtures with predictions (includes preliminary ones without odds)
+        ns_with_predictions = s.execute(
+            select(func.count(func.distinct(PredictionRecord.fixture_id)))
+            .join(Fixture, Fixture.id == PredictionRecord.fixture_id)
+            .where(Fixture.status == 'NS')
+            .where(Fixture.date >= dt.utcnow())
+        ).scalar() or 0
+
         odds_coverage = {
             'fixtures_with_predictions': total_fixtures_with_preds,
             'fixtures_with_odds': fixtures_with_both,
             'odds_pct': round(fixtures_with_both / total_fixtures_with_preds * 100) if total_fixtures_with_preds else 0,
             'ns_fixtures': total_ns_fixtures,
             'ns_with_odds': ns_with_odds,
+            'ns_with_predictions': ns_with_predictions,
             'ns_odds_pct': round(ns_with_odds / total_ns_fixtures * 100) if total_ns_fixtures else 0,
         }
         
@@ -4091,10 +5062,16 @@ def api_predictions_recent():
         rows = s.execute(query).all()
 
         results = []
-        for pred, home_id, away_id, fix_date, goals_home, goals_away in rows:
+        for pred, home_id, away_id, fix_date, goals_home, goals_away, fix_status in rows:
             home = TEAM_NAMES.get(home_id, str(home_id))
             away = TEAM_NAMES.get(away_id, str(away_id))
-            actual = f"{goals_home}-{goals_away}" if goals_home is not None else None
+            if goals_home is not None and goals_away is not None:
+                score_str = f"{goals_home}-{goals_away}"
+                if fix_status and fix_status not in ("FT", "AET", "PEN"):
+                    score_str += f" ({fix_status})"
+                actual = score_str
+            else:
+                actual = None
 
             # Get logos
             home_logo = away_logo = None
@@ -4105,11 +5082,11 @@ def api_predictions_recent():
             if away_team:
                 away_logo = away_team.logo_url
 
-            model_ver = None
-            if pred.model_version_id:
+            model_ver = pred.calibration_version_id  # most specific label
+            if not model_ver and pred.model_version_id:
                 mv = s.execute(select(ModelVersion).where(ModelVersion.id == pred.model_version_id)).scalar_one_or_none()
                 if mv:
-                    model_ver = mv.version_name or f"v{mv.version_number}"
+                    model_ver = mv.version_label or f"v{mv.version_number:02d}_c00"
 
             # Calculate P&L - only show when odds_decimal is not null
             pnl = None
@@ -4224,6 +5201,28 @@ def admin_page():
 
 <h3 style="margin-top: 24px;">Retrain Events</h3>
 <div id="retrainEvents">Loading...</div>
+
+<h3 style="margin-top: 32px;">League Calibrations</h3>
+<p style="color:#8b949e;font-size:13px;margin-bottom:12px;">
+    Per-league Platt-scaling calibration fitted on top of the global model.
+    Select a league to inspect its calibration status per market.
+    Only shows when a league has been selected.
+</p>
+<div style="display:flex;gap:12px;margin-bottom:16px;flex-wrap:wrap;">
+    <select id="leagueCalSelect" onchange="loadLeagueCals()" style="min-width:220px;">
+        <option value="">— Select a league —</option>
+    </select>
+    <select id="leagueCalMarket" onchange="loadLeagueCals()" style="min-width:140px;">
+        <option value="btts">BTTS</option>
+        <option value="ou25">Over/Under 2.5</option>
+        <option value="ou15">Over/Under 1.5</option>
+        <option value="h2h">Head to Head</option>
+    </select>
+    <button onclick="runLeagueCal()" style="padding:6px 14px;">Run Calibration Now</button>
+</div>
+<div id="leagueCalContainer" style="display:none;">
+    <div id="leagueCalTable"></div>
+</div>
 
 <script>
 function runMaintenance() {
@@ -4405,19 +5404,22 @@ function loadIterations() {
                 return;
             }
             let html = '<table style="width: 100%;">';
-            html += '<thead><tr><th>Version</th><th>Name</th><th>Brier</th><th>Accuracy</th><th>ECE</th><th>Samples</th><th>Active</th><th>Trained</th></tr></thead>';
+            html += '<thead><tr><th>Label</th><th>Brier</th><th>Accuracy</th><th>ECE</th><th>Samples</th><th>Status</th><th>Trained</th><th>Actions</th></tr></thead>';
             html += '<tbody>';
             for (const iter of d) {
-                const activeBadge = iter.is_active ? '<span style="background: #3fb950; color: #000; padding: 2px 6px; border-radius: 3px;">Active</span>' : '';
+                const label = iter.version_label || ('v' + String(iter.version_number).padStart(2,'0') + '_c00');
+                const activeStyle = iter.is_active ? 'background:#3fb950;color:#000;padding:2px 6px;border-radius:3px;font-size:11px;' : 'color:#8b949e;font-size:11px;';
+                const activeText = iter.is_active ? 'Active' : 'Inactive';
+                const activateBtn = iter.is_active ? '' : '<button style="font-size:11px;padding:2px 6px;" onclick="activateVersion(' + iter.id + ')">Activate</button>';
                 html += '<tr>';
-                html += '<td>v' + iter.version_number + '</td>';
-                html += '<td>' + (iter.version_name || '-') + '</td>';
+                html += '<td><code style="font-size:13px;">' + label + '</code></td>';
                 html += '<td>' + (iter.brier_score ? iter.brier_score.toFixed(4) : 'N/A') + '</td>';
                 html += '<td>' + (iter.accuracy ? (iter.accuracy * 100).toFixed(1) + '%' : 'N/A') + '</td>';
                 html += '<td>' + (iter.ece ? (iter.ece * 100).toFixed(2) + '%' : 'N/A') + '</td>';
-                html += '<td>' + iter.sample_size.toLocaleString() + '</td>';
-                html += '<td>' + activeBadge + '</td>';
+                html += '<td>' + (iter.sample_size || 0).toLocaleString() + '</td>';
+                html += '<td><span style="' + activeStyle + '">' + activeText + '</span></td>';
                 html += '<td>' + (iter.trained_at ? new Date(iter.trained_at).toLocaleDateString() : 'N/A') + '</td>';
+                html += '<td>' + activateBtn + '</td>';
                 html += '</tr>';
             }
             html += '</tbody></table>';
@@ -4458,12 +5460,226 @@ function loadIterations() {
 
 // Initial load
 loadIterations();
+
+function activateVersion(versionId) {
+    if (!confirm('Activate version ' + versionId + '? This will replace the active model pkl.')) return;
+    fetch('/api/models/activate/' + versionId, {method: 'POST', credentials: 'include'})
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                alert('Activated: ' + d.activated);
+                loadIterations();
+            } else {
+                alert('Error: ' + (d.error || 'unknown'));
+            }
+        })
+        .catch(e => alert('Request failed: ' + e));
+}
+
+// ── League calibration UI ────────────────────────────────────────────────────
+
+// Populate league dropdown using the same /api/leagues endpoint as Predictions page
+fetch('/api/leagues', {credentials: 'include'})
+    .then(r => r.json())
+    .then(leagues => {
+        const sel = document.getElementById('leagueCalSelect');
+        leagues.sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        for (const lg of leagues) {
+            const opt = document.createElement('option');
+            opt.value = lg.id;
+            opt.textContent = lg.name + (lg.country ? ' (' + lg.country + ')' : '');
+            sel.appendChild(opt);
+        }
+    })
+    .catch(() => {});
+
+function loadLeagueCals() {
+    const leagueId = document.getElementById('leagueCalSelect').value;
+    const market   = document.getElementById('leagueCalMarket').value;
+    const container = document.getElementById('leagueCalContainer');
+    if (!leagueId) { container.style.display = 'none'; return; }
+    container.style.display = 'block';
+    document.getElementById('leagueCalTable').innerHTML = 'Loading...';
+    fetch('/api/league_calibrations/' + leagueId + '/' + market, {credentials: 'include'})
+        .then(r => r.json())
+        .then(rows => {
+            if (!rows.length) {
+                document.getElementById('leagueCalTable').innerHTML =
+                    '<p style="color:#8b949e;">No calibration data yet for this league/market (min 100 settled samples required).</p>';
+                return;
+            }
+            let html = '<table style="width:100%;">';
+            html += '<thead><tr><th>Version</th><th>Slope</th><th>Intercept</th><th>Brier (League)</th><th>Brier (Global)</th><th>Improvement</th><th>Samples</th><th>Status</th><th>Fitted</th></tr></thead>';
+            html += '<tbody>';
+            for (const r of rows) {
+                const impColor = r.brier_improvement > 0 ? '#3fb950' : (r.brier_improvement < 0 ? '#f85149' : '#8b949e');
+                const impSign  = r.brier_improvement > 0 ? '+' : '';
+                const statusBadge = r.is_active
+                    ? '<span style="background:#3fb950;color:#000;padding:2px 6px;border-radius:3px;font-size:11px;">Active</span>'
+                    : '<span style="color:#8b949e;font-size:11px;">Inactive</span>';
+                html += '<tr>';
+                html += '<td><code>' + r.version_label + '</code></td>';
+                html += '<td>' + (r.slope !== null ? r.slope.toFixed(4) : '-') + '</td>';
+                html += '<td>' + (r.intercept !== null ? r.intercept.toFixed(4) : '-') + '</td>';
+                html += '<td>' + (r.brier_score !== null ? r.brier_score.toFixed(4) : '-') + '</td>';
+                html += '<td>' + (r.brier_score_global !== null ? r.brier_score_global.toFixed(4) : '-') + '</td>';
+                html += '<td style="color:' + impColor + ';">' + (r.brier_improvement !== null ? impSign + r.brier_improvement.toFixed(4) : '-') + '</td>';
+                html += '<td>' + (r.sample_size || 0).toLocaleString() + '</td>';
+                html += '<td>' + statusBadge + '</td>';
+                html += '<td>' + (r.created_at ? new Date(r.created_at).toLocaleDateString() : '-') + '</td>';
+                html += '</tr>';
+            }
+            html += '</tbody></table>';
+            document.getElementById('leagueCalTable').innerHTML = html;
+        })
+        .catch(() => { document.getElementById('leagueCalTable').innerHTML = '<p style="color:#f85149;">Error loading calibration data.</p>'; });
+}
+
+function runLeagueCal() {
+    if (!confirm('Run league calibration now? This will fit calibrations for all leagues with enough data.')) return;
+    showMsg('Running league calibration...', 'info');
+    fetch('/api/league_calibrations/run', {method: 'POST', credentials: 'include'})
+        .then(r => r.json())
+        .then(d => {
+            if (d.success) {
+                showMsg('Fitted ' + d.count + ' league calibrations.', 'success');
+                loadLeagueCals();
+            } else {
+                showMsg('Error: ' + (d.error || 'unknown'), 'error');
+            }
+        })
+        .catch(e => showMsg('Request failed: ' + e, 'error'));
+}
 </script>
 
 <style>
 .degrading { background: rgba(248, 81, 73, 0.1); }
 .improving { background: rgba(63, 185, 80, 0.1); }
 </style>
+
+<h2 style="margin-top: 32px;">League Performance Ranking</h2>
+<p style="color:#8b949e;font-size:13px;margin-bottom:12px;">
+    Leagues ranked by prediction accuracy (win rate) across all settled predictions.
+    Version shows league-specific calibration where active, otherwise the global model.
+    Min 10 settled predictions per market to appear.
+</p>
+<div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap;">
+    <div>
+        <label style="color:#8b949e;font-size:13px;">Show: </label>
+        <select id="rankLimit" onchange="loadLeagueRanking()" style="min-width:100px;">
+            <option value="10">Top 10</option>
+            <option value="25">Top 25</option>
+            <option value="all">All</option>
+        </select>
+    </div>
+    <div>
+        <label style="color:#8b949e;font-size:13px;">Market: </label>
+        <select id="rankMarket" onchange="loadLeagueRanking()" style="min-width:120px;">
+            <option value="all">All markets</option>
+            <option value="btts">BTTS</option>
+            <option value="ou25">Over/Under 2.5</option>
+            <option value="ou15">Over/Under 1.5</option>
+            <option value="h2h">Head to Head</option>
+        </select>
+    </div>
+    <label style="display:flex;align-items:center;gap:6px;cursor:pointer;user-select:none;">
+        <input type="checkbox" id="rankOddsFilter" checked onchange="loadLeagueRanking()"
+               style="width:16px;height:16px;accent-color:#58a6ff;cursor:pointer;">
+        <span style="color:#c9d1d9;font-size:13px;">Min odds 1.6</span>
+    </label>
+    <button onclick="loadLeagueRanking()" style="padding:4px 12px;font-size:13px;">Refresh</button>
+</div>
+<div id="leagueRankingContainer">
+    <div id="leagueRankingTable" style="color:#8b949e;">Loading...</div>
+</div>
+
+<script>
+function loadLeagueRanking() {
+    const limit      = document.getElementById('rankLimit').value;
+    const market     = document.getElementById('rankMarket').value;
+    const oddsFilter = document.getElementById('rankOddsFilter').checked;
+    document.getElementById('leagueRankingTable').innerHTML = 'Loading...';
+
+    const url = '/api/leagues/performance' + (oddsFilter ? '?min_odds=1.6' : '');
+    fetch(url, {credentials: 'include'})
+        .then(r => r.json())
+        .then(all => {
+            let rows = market === 'all' ? all : all.filter(r => r.market === market);
+            const total = rows.length;
+            if (limit !== 'all') rows = rows.slice(0, parseInt(limit));
+
+            if (!rows.length) {
+                document.getElementById('leagueRankingTable').innerHTML =
+                    '<p style="color:#8b949e;">No data yet — predictions are still being settled.</p>';
+                return;
+            }
+
+            const MARKET_LABELS = {btts: 'BTTS', ou25: 'O/U 2.5', ou15: 'O/U 1.5', h2h: 'H2H'};
+            const FLAG_MAP = ''' + __import__('json').dumps({
+                'England':'🏴󠁧󠁢󠁥󠁮󠁧󠁿','France':'🇫🇷','Germany':'🇩🇪','Spain':'🇪🇸','Italy':'🇮🇹',
+                'Netherlands':'🇳🇱','Portugal':'🇵🇹','Belgium':'🇧🇪','Switzerland':'🇨🇭',
+                'Turkey':'🇹🇷','Austria':'🇦🇹','Sweden':'🇸🇪','Denmark':'🇩🇰','Norway':'🇳🇴',
+                'Poland':'🇵🇱','Hungary':'🇭🇺','Romania':'🇷🇴','Croatia':'🇭🇷','Serbia':'🇷🇸',
+                'Ukraine':'🇺🇦','Scotland':'🏴󠁧󠁢󠁳󠁣󠁴󠁿','Greece':'🇬🇷','Slovakia':'🇸🇰',
+                'Australia':'🇦🇺','Japan':'🇯🇵','USA':'🇺🇸','South Korea':'🇰🇷','Brazil':'🇧🇷',
+            }) + ''';
+
+            let html = '<table style="width:100%;border-collapse:collapse;">';
+            html += '<thead><tr style="border-bottom:1px solid #30363d;">';
+            html += '<th style="text-align:right;padding:6px 8px;color:#8b949e;font-size:12px;">#</th>';
+            html += '<th style="text-align:left;padding:6px 8px;color:#8b949e;font-size:12px;">League</th>';
+            html += '<th style="text-align:left;padding:6px 8px;color:#8b949e;font-size:12px;">Market</th>';
+            html += '<th style="text-align:left;padding:6px 8px;color:#8b949e;font-size:12px;">Version</th>';
+            html += '<th style="text-align:right;padding:6px 8px;color:#8b949e;font-size:12px;">Samples</th>';
+            html += '<th style="text-align:right;padding:6px 8px;color:#8b949e;font-size:12px;">Win %</th>';
+            html += '<th style="text-align:right;padding:6px 8px;color:#8b949e;font-size:12px;">Brier</th>';
+            html += '<th style="text-align:right;padding:6px 8px;color:#8b949e;font-size:12px;">Δ Global</th>';
+            html += '</tr></thead><tbody>';
+
+            rows.forEach((r, i) => {
+                const flag = FLAG_MAP[r.country] || '🌍';
+                const mLabel = MARKET_LABELS[r.market] || r.market;
+                const verStyle = r.has_league_cal
+                    ? 'color:#58a6ff;font-size:11px;'
+                    : 'color:#8b949e;font-size:11px;';
+
+                const winColor = r.win_rate >= 60 ? '#3fb950' : r.win_rate >= 50 ? '#d29922' : '#f85149';
+
+                let brierCell = r.brier_score !== null ? r.brier_score.toFixed(4) : '—';
+                let deltaCell = '—';
+                let deltaColor = '#8b949e';
+                if (r.brier_improvement !== null) {
+                    const sign = r.brier_improvement > 0 ? '+' : '';
+                    deltaCell = sign + r.brier_improvement.toFixed(4);
+                    deltaColor = r.brier_improvement > 0 ? '#3fb950' : '#f85149';
+                }
+
+                const rowBg = i % 2 === 0 ? '' : 'background:rgba(255,255,255,0.02);';
+                html += `<tr style="${rowBg}">`;
+                html += `<td style="text-align:right;padding:5px 8px;color:#8b949e;font-size:12px;">${i + 1}</td>`;
+                html += `<td style="padding:5px 8px;font-size:13px;">${flag} ${r.league}</td>`;
+                html += `<td style="padding:5px 8px;font-size:12px;color:#8b949e;">${mLabel}</td>`;
+                html += `<td style="padding:5px 8px;"><code style="${verStyle}">${r.version}</code></td>`;
+                html += `<td style="text-align:right;padding:5px 8px;font-size:13px;">${r.total.toLocaleString()}</td>`;
+                html += `<td style="text-align:right;padding:5px 8px;font-weight:600;color:${winColor};">${r.win_rate}%</td>`;
+                html += `<td style="text-align:right;padding:5px 8px;font-size:12px;color:#8b949e;">${brierCell}</td>`;
+                html += `<td style="text-align:right;padding:5px 8px;font-size:12px;color:${deltaColor};">${deltaCell}</td>`;
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            if (limit !== 'all') {
+                html += `<p style="color:#8b949e;font-size:12px;margin-top:8px;">Showing ${rows.length} of ${total} entries.</p>`;
+            }
+            document.getElementById('leagueRankingTable').innerHTML = html;
+        })
+        .catch(() => {
+            document.getElementById('leagueRankingTable').innerHTML =
+                '<p style="color:#f85149;">Error loading ranking data.</p>';
+        });
+}
+loadLeagueRanking();
+</script>
 
 <h2 style="margin-top: 24px;">Configuration</h2>
 <table>
@@ -4529,7 +5745,12 @@ def api_settle_bets():
         
         # Settle all bets and predictions
         result = settle_all()
-        
+
+        from src.betting.round_manager import update_closed_round_stats
+        from src.storage.db import get_session as _get_session
+        with _get_session() as _s:
+            update_closed_round_stats(_s)
+
         logger.info(f"Settled: {result['bets_settled']} bets, {result['predictions_settled']} predictions, P/L: {result['bets_pnl']:+.2f}")
         
         return jsonify({
@@ -4577,14 +5798,24 @@ def api_admin_maintenance():
         ).scalar() or 0
         results['pending_bets'] = pending_bets
 
-        non_cup_leagues = select(League.id).where(~League.name.ilike('%cup%'))
+        # Exclude competitions that structurally have no league standings
+        _no_standings = [
+            '%cup%', '%trophy%', '%pokal%', '%beker%', '%copa%', '%coupe%',
+            '%coppa%', '%taç%', '%friendl%', '%nations%', '%champions league%',
+            '%europa league%', '%concacaf%', '%conmebol%', '%libertador%',
+            '%sudamerican%', '%saff%', '%eaff%', '%asean%', '%youth league%',
+        ]
+        from sqlalchemy import and_
+        exclude_filter = and_(*[~League.name.ilike(p) for p in _no_standings])
+        league_standings_subq = select(Standing.league_id).distinct()
+        league_has_standings = select(League.id).where(exclude_filter)
         orphaned = s.execute(
-            select(Fixture)
-            .where(Fixture.league_id.notin_(select(Standing.league_id).distinct()))
-            .where(Fixture.league_id.in_(non_cup_leagues))
-            .limit(5)
-        ).scalars().all()
-        results['orphaned_fixtures'] = len(orphaned)
+            select(func.count(func.distinct(Fixture.league_id)))
+            .join(League, Fixture.league_id == League.id)
+            .where(Fixture.league_id.notin_(league_standings_subq))
+            .where(exclude_filter)
+        ).scalar() or 0
+        results['orphaned_fixtures'] = orphaned
 
         ft_null_goals = s.execute(
             select(func.count()).select_from(Fixture)
@@ -4798,94 +6029,43 @@ def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
         brier_calibrated = float(brier_score_loss(y_binary, calibrated_probs))
         ece = calc_ece(calibrated_probs, y_binary)
     else:
-        # Multi-class: Brier score for each class averaged, no calibration ECE
-        brier_raw = float(brier_score_loss(y_test, raw_probs, multi_class='raw') if hasattr(brier_score_loss, 'multi_class') else np.mean([brier_score_loss(y_test == i, raw_probs[:, i]) for i in range(num_classes)]))
-        brier_calibrated = brier_raw  # No calibration for multi-class yet
-        ece = 0.0  # ECE not implemented for multi-class
-
-    # Get next version number
-    tracker = get_model_tracker(market)
-    existing_iterations = tracker.get_iterations(limit=1)
-    version_number = (existing_iterations[0].version_number + 1) if existing_iterations else 1
+        # Multi-class: per-class OvR Brier averaged; ECE on top-pick confidence vs win rate
+        brier_raw = float(np.mean([brier_score_loss(y_test == i, raw_probs[:, i]) for i in range(num_classes)]))
+        brier_calibrated = brier_raw
+        # ECE: treat as binary — "did the model's argmax pick win?"
+        top_probs = np.max(raw_probs, axis=1)
+        top_wins = (np.argmax(raw_probs, axis=1) == y_test).astype(float)
+        ece = calc_ece(top_probs, top_wins)
 
     # Calculate accuracy
     if num_classes == 2:
         y_pred = (calibrated_probs > 0.5).astype(float)
         accuracy = float(np.mean(y_pred == y_binary))
     else:
-        # Multi-class: use raw_probs for predictions
         y_pred = np.argmax(raw_probs, axis=1)
         accuracy = float(np.mean(y_pred == y_test))
 
-    # Record to ModelVersion
-    from src.storage.models import ModelVersion, RetrainEvent
-    with get_session() as s:
-        old_version = s.execute(
-            select(ModelVersion)
-            .where(ModelVersion.market == market)
-            .where(ModelVersion.is_active == True)
-        ).scalar_one_or_none()
-
-        old_version_id = old_version.id if old_version else None
-        old_brier = old_version.brier_score if old_version else None
-
-        if old_version:
-            old_version.is_active = False
-
-        new_version = ModelVersion(
-            market=market,
-            version_number=version_number,
-            version_name=f"v{version_number}",
-            brier_score=brier_calibrated,
-            accuracy=accuracy,
-            ece=ece,
-            sample_size=len(X_train),
-            calibration_sample_size=len(X_test),
-            model_type=f'{model_name.lower()}+isotonic',
-            is_active=True,
-        )
-        s.add(new_version)
-        s.flush()
-
-        # Record retrain event if this is not the first version
-        if old_version:
-            retrain_event = RetrainEvent(
-                market=market,
-                old_version_id=old_version_id,
-                new_version_id=new_version.id,
-                reason=reason,
-                reason_detail=f"Brier: {old_brier:.4f} -> {brier_calibrated:.4f}",
-                brier_score_before=old_brier,
-                brier_score_after=brier_calibrated,
-                triggered_by_drift=False,
-            )
-            s.add(retrain_event)
-
-        s.commit()
-
-    # Save model and calibrator to disk for predictions to use
-    import pickle
-    import os
-    model_dir = '/opt/projects/bootball/data'
-    os.makedirs(model_dir, exist_ok=True)
-
-    model_data = {
-        'model': model,
-        'calibrator': calibrator,
-        'market': market,
-        'version': version_number,
-        'features_used': ['rank', 'goal_diff', 'goals_for', 'goals_against', 'rank_diff'],
+    metrics = {
+        "brier_score": brier_calibrated,
+        "accuracy": accuracy,
+        "ece": ece,
+        "sample_size": len(X_train),
+        "calibration_sample_size": len(X_test),
+        "model_type": f"{model_name.lower()}+isotonic",
+        "features_used": "rank,goal_diff,goals_for,goals_against,rank_diff",
     }
 
-    model_path = os.path.join(model_dir, f'model_{market}.pkl')
-    with open(model_path, 'wb') as f:
-        pickle.dump(model_data, f)
-    logger.info(f"Saved {market} model to {model_path}")
+    # Register through ModelRegistry — this handles DB write, versioned pkl, and active swap.
+    from src.models.model_registry import get_model_registry
+    registry = get_model_registry()
+    new_ver = registry.register_retrain(market, model, calibrator, metrics, reason=reason)
+    label = new_ver["version_label"] if new_ver else "unknown"
 
-    logger.info(f"Trained {market} v{version_number}: Brier={brier_calibrated:.4f}, ECE={ece:.4f}, Accuracy={accuracy:.3f}")
+    logger.info("Trained %s %s: Brier=%.4f ECE=%.4f Acc=%.3f", market, label, brier_calibrated, ece, accuracy)
 
     return {
-        'version': version_number,
+        'version_label': label,
+        'version': new_ver["version_number"] if new_ver else 0,
         'brier_score': round(brier_calibrated, 4),
         'brier_raw': round(brier_raw, 4),
         'ece': round(ece, 4),
@@ -5308,25 +6488,23 @@ def api_model_stats():
 @app.route('/api/models/iterations/<market>', methods=['GET'])
 @require_auth
 def api_model_iterations(market):
-    """Get iteration history for a specific market.
-
-    Returns list of model versions with metrics.
-    """
-    tracker = get_model_tracker(market)
-    iterations = tracker.get_iterations(limit=50)
-
+    """Get iteration history for a specific market — returns vXX_cYY labels."""
+    from src.models.model_registry import get_model_registry
+    versions = get_model_registry().list_versions(market, limit=50)
     return jsonify([
         {
-            "version_number": i.version_number,
-            "version_name": i.version_name,
-            "brier_score": round(i.brier_score, 4),
-            "accuracy": round(i.accuracy, 4) if i.accuracy else None,
-            "ece": round(i.ece, 4) if i.ece else None,
-            "sample_size": i.sample_size,
-            "is_active": i.is_active,
-            "trained_at": i.trained_at.isoformat() if i.trained_at else None,
+            "id": v["id"],
+            "version_number": v["version_number"],
+            "version_label": v["version_label"] or f"v{v['version_number']:02d}_c00",
+            "version_name": v["version_name"],
+            "brier_score": round(v["brier_score"], 4) if v["brier_score"] else None,
+            "accuracy": round(v["accuracy"], 4) if v["accuracy"] else None,
+            "ece": round(v["ece"], 4) if v["ece"] else None,
+            "sample_size": v["sample_size"],
+            "is_active": v["is_active"],
+            "trained_at": v["trained_at"],
         }
-        for i in iterations
+        for v in versions
     ])
 
 
@@ -5352,6 +6530,980 @@ def api_retrain_events(market):
     lifecycle = tracker.get_lifecycle_graph()
 
     return jsonify(lifecycle.retrain_events)
+
+
+@app.route('/api/models/versions/<market>', methods=['GET'])
+@require_auth
+def api_model_versions(market):
+    """List all versions for a market with vXX_cYY labels."""
+    from src.models.model_registry import get_model_registry
+    registry = get_model_registry()
+    versions = registry.list_versions(market, limit=50)
+    return jsonify([
+        {
+            "id": v.id,
+            "market": v.market,
+            "version_label": v.version_label or f"v{v.version_number:02d}_c00",
+            "model_number": v.model_number,
+            "calibration_number": v.calibration_number,
+            "version_number": v.version_number,
+            "brier_score": round(v.brier_score, 4) if v.brier_score else None,
+            "accuracy": round(v.accuracy, 4) if v.accuracy else None,
+            "ece": round(v.ece, 4) if v.ece else None,
+            "sample_size": v.sample_size,
+            "model_type": v.model_type,
+            "is_active": v.is_active,
+            "trained_at": v.trained_at.isoformat() if v.trained_at else None,
+        }
+        for v in versions
+    ])
+
+
+@app.route('/api/models/activate/<int:version_id>', methods=['POST'])
+@require_auth
+def api_model_activate(version_id):
+    """Activate a specific model version (deactivates all others for that market)."""
+    from src.models.model_registry import get_model_registry
+    registry = get_model_registry()
+    ok = registry.activate(version_id)
+    if ok:
+        ver = registry.get_by_id(version_id)
+        return jsonify({"success": True, "activated": ver["version_label"] if ver else version_id})
+    return jsonify({"success": False, "error": "version not found or activation failed"}), 404
+
+
+@app.route('/api/models/compare', methods=['GET'])
+@require_auth
+def api_model_compare():
+    """Compare two model versions by metric delta.
+
+    Query params: v1=<id>&v2=<id>
+    """
+    from src.models.model_registry import get_model_registry
+    try:
+        v1 = int(request.args.get("v1", 0))
+        v2 = int(request.args.get("v2", 0))
+    except (TypeError, ValueError):
+        return jsonify({"error": "v1 and v2 must be integer version IDs"}), 400
+
+    if not v1 or not v2:
+        return jsonify({"error": "provide ?v1=<id>&v2=<id>"}), 400
+
+    registry = get_model_registry()
+    return jsonify(registry.compare(v1, v2))
+
+
+@app.route('/api/models/recalibrate/<market>', methods=['POST'])
+@require_auth
+def api_model_recalibrate(market):
+    """Recalibrate the active model for a market (increments cYY, keeps vXX).
+
+    Refits the isotonic calibrator on recent settled prediction_records.
+    """
+    from src.models.model_registry import get_model_registry
+    from backend.execution_engine import _fit_calibrator_for_market
+
+    calibrator, cal_metrics = _fit_calibrator_for_market(market)
+    if calibrator is None:
+        return jsonify({"error": "insufficient settled prediction data for recalibration"}), 400
+
+    registry = get_model_registry()
+    new_ver = registry.register_recalibration(market, calibrator, metrics=cal_metrics, reason="manual")
+    if new_ver:
+        return jsonify({"success": True, "version_label": new_ver["version_label"]})
+    return jsonify({"error": "recalibration failed"}), 500
+
+
+# =============================================================================
+# API: League Calibrations
+# =============================================================================
+
+@app.route('/api/league_calibrations/<int:league_id>/<market>', methods=['GET'])
+@require_auth
+def api_league_calibrations(league_id, market):
+    """List all LeagueCalibration rows for a (league_id, market) pair."""
+    from src.storage.models import LeagueCalibration
+    with get_session() as s:
+        rows = s.execute(
+            select(LeagueCalibration)
+            .where(LeagueCalibration.league_id == league_id)
+            .where(LeagueCalibration.market == market)
+            .order_by(LeagueCalibration.created_at.desc())
+        ).scalars().all()
+        return jsonify([
+            {
+                "id": r.id,
+                "market": r.market,
+                "league_id": r.league_id,
+                "version_label": r.version_label,
+                "slope": r.slope,
+                "intercept": r.intercept,
+                "brier_score": r.brier_score,
+                "brier_score_global": r.brier_score_global,
+                "brier_improvement": r.brier_improvement,
+                "sample_size": r.sample_size,
+                "is_active": r.is_active,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ])
+
+
+@app.route('/api/league_calibrations/run', methods=['POST'])
+@require_auth
+def api_league_calibrations_run():
+    """Trigger league calibration fitting for all qualifying leagues."""
+    from src.calibration.league_calibration_engine import LeagueCalibrationEngine
+    try:
+        engine = LeagueCalibrationEngine()
+        results = engine.fit_all()
+        return jsonify({"success": True, "count": len(results)})
+    except Exception as exc:
+        logger.exception("League calibration run failed")
+        return jsonify({"success": False, "error": str(exc)}), 500
+
+
+# =============================================================================
+# API: League Performance Ranking
+# =============================================================================
+
+@app.route('/api/leagues/performance', methods=['GET'])
+@require_auth
+def api_league_performance():
+    """Per-(league, market) prediction performance, sorted by win rate descending.
+
+    Returns rows with settled prediction stats, active version label (league-specific
+    if available, else global), and Brier improvement where league calibration exists.
+    Only leagues with >= 10 settled predictions for the market are included.
+    """
+    min_odds = request.args.get('min_odds', type=float)
+
+    from src.storage.models import LeagueCalibration, ModelVersion
+    with get_session() as s:
+        # Aggregate prediction outcomes per (league_id, market)
+        q = (
+            select(
+                Fixture.league_id,
+                League.name.label("league_name"),
+                League.country.label("country"),
+                PredictionRecord.market,
+                func.count(PredictionRecord.id).label("total"),
+                func.sum(case((PredictionRecord.won == True, 1), else_=0)).label("won"),
+            )
+            .join(Fixture, PredictionRecord.fixture_id == Fixture.id)
+            .join(League, Fixture.league_id == League.id)
+            .where(PredictionRecord.settled == True)
+            .where(PredictionRecord.won.isnot(None))
+        )
+        if min_odds is not None:
+            q = q.where(PredictionRecord.odds_decimal >= min_odds)
+        pred_rows = s.execute(
+            q.group_by(Fixture.league_id, League.name, League.country, PredictionRecord.market)
+            .having(func.count(PredictionRecord.id) >= 10)
+        ).all()
+
+        # Active league calibrations keyed by (market, league_id)
+        cal_rows = s.execute(
+            select(LeagueCalibration)
+            .where(LeagueCalibration.is_active == True)
+        ).scalars().all()
+        cal_map = {(c.market, c.league_id): c for c in cal_rows}
+
+        # Active global versions keyed by market
+        global_vers = s.execute(
+            select(ModelVersion).where(ModelVersion.is_active == True)
+        ).scalars().all()
+        global_map = {mv.market: mv.version_label or f"v{mv.version_number:02d}_c00" for mv in global_vers}
+
+    rows = []
+    for r in pred_rows:
+        win_rate = r.won / r.total if r.total else 0
+        cal = cal_map.get((r.market, r.league_id))
+        version = (cal.version_label if cal else None) or global_map.get(r.market, "—")
+        rows.append({
+            "league_id": r.league_id,
+            "league": r.league_name,
+            "country": r.country or "",
+            "market": r.market,
+            "version": version,
+            "has_league_cal": cal is not None,
+            "total": r.total,
+            "won": r.won,
+            "win_rate": round(win_rate * 100, 1),
+            "brier_score": round(cal.brier_score, 4) if cal and cal.brier_score else None,
+            "brier_improvement": round(cal.brier_improvement, 4) if cal and cal.brier_improvement is not None else None,
+        })
+
+    rows.sort(key=lambda x: x["win_rate"], reverse=True)
+    return jsonify(rows)
+
+
+# =============================================================================
+# API: Unified Observability (Backwards Compatible Wrappers)
+# =============================================================================
+
+@app.route('/api/unified/predictions')
+@require_auth
+def api_unified_predictions():
+    """Unified predictions endpoint using system truth."""
+    from src.api.system_truth_snapshot import get_truth_response
+    from src.governance.ui_semantic_contract_engine import validate_dashboard_snapshot
+    
+    response = get_truth_response()
+    if not response.success:
+        return jsonify({"success": False, "error": response.error})
+    
+    truth = response.data
+    predictions = truth.get("predictions", {})
+    
+    # Semantic validation
+    computed = {"total_count": predictions.get("total_count", 0)}
+    validation = validate_dashboard_snapshot("predictions", predictions, computed)
+    
+    # Auto-healing if divergences detected
+    healing_data = predictions
+    healing_applied = False
+    if validation.divergences and validation.status.value != "VALID":
+        from src.governance.ui_semantic_auto_healing_engine import heal_dashboard
+        healing_data = heal_dashboard("predictions", validation.divergences, predictions)
+        healing_applied = True
+    
+    return jsonify({
+        "success": True,
+        "data": healing_data,
+        "meta": {
+            "source": "system_truth",
+            "timestamp": truth.get("timestamp")
+        },
+        "semantic": {
+            "status": validation.status.value,
+            "contract_version": validation.contract_version,
+            "warnings": validation.warnings,
+            "divergences": validation.divergences,
+            "healing_applied": healing_applied
+        }
+    })
+
+
+@app.route('/api/unified/betting')
+@require_auth
+def api_unified_betting():
+    """Unified betting endpoint using system truth."""
+    from src.api.system_truth_snapshot import get_truth_response
+    from src.governance.ui_semantic_contract_engine import validate_dashboard_snapshot
+    
+    response = get_truth_response()
+    if not response.success:
+        return jsonify({"success": False, "error": response.error})
+    
+    truth = response.data
+    execution = truth.get("execution", {})
+    data_health = truth.get("data_health", {})
+    
+    data = {
+        "bankroll": execution.get("bankroll", 0),
+        "total_staked": execution.get("total_staked", 0),
+        "total_won": execution.get("total_won", 0),
+        "pnl": execution.get("pnl", 0),
+        "bets": data_health.get("bets", {})
+    }
+    
+    # Semantic validation
+    computed = {"bankroll": data["bankroll"], "total_staked": data["total_staked"], "pnl": data["pnl"]}
+    validation = validate_dashboard_snapshot("betting", data, computed)
+    
+    # Auto-healing
+    healing_data = data
+    healing_applied = False
+    if validation.divergences and validation.status.value != "VALID":
+        from src.governance.ui_semantic_auto_healing_engine import heal_dashboard
+        healing_data = heal_dashboard("betting", validation.divergences, data)
+        healing_applied = True
+    
+    return jsonify({
+        "success": True,
+        "data": healing_data,
+        "meta": {
+            "source": "system_truth",
+            "timestamp": truth.get("timestamp")
+        },
+        "semantic": {
+            "status": validation.status.value,
+            "contract_version": validation.contract_version,
+            "warnings": validation.warnings,
+            "divergences": validation.divergences,
+            "healing_applied": healing_applied
+        }
+    })
+
+
+@app.route('/api/unified/tracking')
+@require_auth
+def api_unified_tracking():
+    """Unified tracking/CLVE endpoint using system truth."""
+    from src.api.system_truth_snapshot import get_truth_response
+    from src.governance.ui_semantic_contract_engine import validate_dashboard_snapshot
+    
+    response = get_truth_response()
+    if not response.success:
+        return jsonify({"success": False, "error": response.error})
+    
+    truth = response.data
+    clve = truth.get("clve", {})
+    
+    data = {
+        "pds_threshold": clve.get("pds_threshold"),
+        "ai_threshold": clve.get("ai_threshold"),
+        "cds_threshold": clve.get("cds_threshold"),
+        "system_health": clve.get("system_health", {})
+    }
+    
+    # Semantic validation
+    computed = {"pds": data["pds_threshold"], "ai": data["ai_threshold"], "cds": data["cds_threshold"]}
+    validation = validate_dashboard_snapshot("tracking", data, computed)
+    
+    # Auto-healing
+    healing_data = data
+    healing_applied = False
+    if validation.divergences and validation.status.value != "VALID":
+        from src.governance.ui_semantic_auto_healing_engine import heal_dashboard
+        healing_data = heal_dashboard("tracking", validation.divergences, data)
+        healing_applied = True
+    
+    return jsonify({
+        "success": True,
+        "data": healing_data,
+        "meta": {
+            "source": "system_truth",
+            "timestamp": truth.get("timestamp")
+        },
+        "semantic": {
+            "status": validation.status.value,
+            "contract_version": validation.contract_version,
+            "warnings": validation.warnings,
+            "divergences": validation.divergences,
+            "healing_applied": healing_applied
+        }
+    })
+
+
+@app.route('/api/unified/runs')
+@require_auth
+def api_unified_runs():
+    """Unified runs/lineage endpoint using system truth."""
+    from src.api.system_truth_snapshot import get_truth_response
+    from src.governance.ui_semantic_contract_engine import validate_dashboard_snapshot
+    
+    response = get_truth_response()
+    if not response.success:
+        return jsonify({"success": False, "error": response.error})
+    
+    truth = response.data
+    lineage = truth.get("lineage", {})
+    
+    # Semantic validation
+    computed = {"recent_runs": len(lineage.get("recent_runs", []))}
+    validation = validate_dashboard_snapshot("runs", lineage, computed)
+    
+    # Auto-healing
+    healing_data = lineage
+    healing_applied = False
+    if validation.divergences and validation.status.value != "VALID":
+        from src.governance.ui_semantic_auto_healing_engine import heal_dashboard
+        healing_data = heal_dashboard("runs", validation.divergences, lineage)
+        healing_applied = True
+    
+    return jsonify({
+        "success": True,
+        "data": healing_data,
+        "meta": {
+            "source": "system_truth",
+            "timestamp": truth.get("timestamp")
+        },
+        "semantic": {
+            "status": validation.status.value,
+            "contract_version": validation.contract_version,
+            "warnings": validation.warnings,
+            "divergences": validation.divergences,
+            "healing_applied": healing_applied
+        }
+    })
+
+
+@app.route('/api/unified/health')
+@require_auth
+def api_unified_health():
+    """Unified scheduler health endpoint using system truth."""
+    from src.api.system_truth_snapshot import get_truth_response
+    from src.governance.ui_semantic_contract_engine import validate_dashboard_snapshot
+    
+    response = get_truth_response()
+    if not response.success:
+        return jsonify({"success": False, "error": response.error})
+    
+    truth = response.data
+    scheduler = truth.get("scheduler_state", {})
+    
+    # Semantic validation
+    computed = {"job_count": scheduler.get("job_count", 0)}
+    validation = validate_dashboard_snapshot("health", scheduler, computed)
+    
+    # Auto-healing
+    healing_data = scheduler
+    healing_applied = False
+    if validation.divergences and validation.status.value != "VALID":
+        from src.governance.ui_semantic_auto_healing_engine import heal_dashboard
+        healing_data = heal_dashboard("health", validation.divergences, scheduler)
+        healing_applied = True
+    
+    return jsonify({
+        "success": True,
+        "data": healing_data,
+        "meta": {
+            "source": "system_truth",
+            "timestamp": truth.get("timestamp")
+        },
+        "semantic": {
+            "status": validation.status.value,
+            "contract_version": validation.contract_version,
+            "warnings": validation.warnings,
+            "divergences": validation.divergences,
+            "healing_applied": healing_applied
+        }
+    })
+
+
+@app.route('/api/unified/governance')
+@require_auth
+def api_unified_governance():
+    """Unified governance endpoint using system truth."""
+    from src.api.system_truth_snapshot import get_truth_response
+    from src.governance.ui_semantic_contract_engine import validate_dashboard_snapshot
+    
+    response = get_truth_response()
+    if not response.success:
+        return jsonify({"success": False, "error": response.error})
+    
+    truth = response.data
+    temporal = truth.get("temporal_governance", {})
+    clve = truth.get("clve", {})
+    
+    data = {
+        "temporal": temporal,
+        "clve": clve
+    }
+    
+    # Semantic validation
+    computed = {"psi": temporal.get("recent_states", [{}])[0].get("psi", 0) if temporal.get("recent_states") else 0}
+    validation = validate_dashboard_snapshot("governance", data, computed)
+    
+    # Auto-healing
+    healing_data = data
+    healing_applied = False
+    if validation.divergences and validation.status.value != "VALID":
+        from src.governance.ui_semantic_auto_healing_engine import heal_dashboard
+        healing_data = heal_dashboard("governance", validation.divergences, data)
+        healing_applied = True
+    
+    return jsonify({
+        "success": True,
+        "data": healing_data,
+        "meta": {
+            "source": "system_truth",
+            "timestamp": truth.get("timestamp")
+        },
+        "semantic": {
+            "status": validation.status.value,
+            "contract_version": validation.contract_version,
+            "warnings": validation.warnings,
+            "divergences": validation.divergences,
+            "healing_applied": healing_applied
+        }
+    })
+
+
+@app.route('/api/unified/architecture')
+@require_auth
+def api_unified_architecture():
+    """Unified architecture/pipeline endpoint using system truth."""
+    from src.api.system_truth_snapshot import get_truth_response
+    from src.governance.ui_semantic_contract_engine import validate_dashboard_snapshot
+    
+    response = get_truth_response()
+    if not response.success:
+        return jsonify({"success": False, "error": response.error})
+    
+    truth = response.data
+    pipeline = truth.get("pipeline", {})
+    system_status = truth.get("system_status", {})
+    
+    data = {
+        "pipeline": pipeline,
+        "system_status": system_status
+    }
+    
+    # Semantic validation
+    computed = {"status": system_status.get("status", "unknown")}
+    validation = validate_dashboard_snapshot("architecture", data, computed)
+    
+    # Auto-healing
+    healing_data = data
+    healing_applied = False
+    if validation.divergences and validation.status.value != "VALID":
+        from src.governance.ui_semantic_auto_healing_engine import heal_dashboard
+        healing_data = heal_dashboard("architecture", validation.divergences, data)
+        healing_applied = True
+    
+    return jsonify({
+        "success": True,
+        "data": healing_data,
+        "meta": {
+            "source": "system_truth",
+            "timestamp": truth.get("timestamp")
+        },
+        "semantic": {
+            "status": validation.status.value,
+            "contract_version": validation.contract_version,
+            "warnings": validation.warnings,
+            "divergences": validation.divergences,
+            "healing_applied": healing_applied
+        }
+    })
+
+
+# =============================================================================
+# ROUTES: System Truth (Unified Observability)
+# =============================================================================
+
+@app.route('/system/truth')
+@require_auth
+def system_truth():
+    """Unified System Truth Layer - single source of observability."""
+    from src.api.system_truth_snapshot import get_truth_response
+    
+    response = get_truth_response()
+    return jsonify(response.to_dict())
+
+
+@app.route('/system/debug/truth_validation')
+@require_auth
+def truth_validation():
+    """Validate truth schema completeness."""
+    from src.api.system_truth_snapshot import get_truth_response, validate_truth_schema
+    
+    response = get_truth_response()
+    if not response.success:
+        return jsonify({"success": False, "error": response.error})
+    
+    validation = validate_truth_schema(response.data)
+    return jsonify({
+        "success": True,
+        "data": validation
+    })
+
+
+@app.route('/system/debug/predictions_live')
+@require_auth
+def debug_predictions_live():
+    """Debug endpoint showing live prediction status."""
+    from src.storage.db import get_session
+    from src.storage.models import PredictionRecord
+    from src.governance.lineage_tracker import get_lineage_tracker
+    from sqlalchemy import select, func
+    from datetime import datetime, timedelta
+    
+    with get_session() as s:
+        # Generated count (last 1 hour)
+        one_hour_ago = datetime.utcnow() - timedelta(hours=1)
+        generated = s.execute(
+            select(func.count(PredictionRecord.id))
+            .where(
+                PredictionRecord.is_legacy == 0,
+                PredictionRecord.timestamp > one_hour_ago
+            )
+        ).scalar() or 0
+        
+        # Saved count (non-legacy total)
+        saved = s.execute(
+            select(func.count(PredictionRecord.id))
+            .where(PredictionRecord.is_legacy == 0)
+        ).scalar() or 0
+        
+        # Linked to current run
+        lineage_tracker = get_lineage_tracker()
+        linked_to_run = len(lineage_tracker._current_lineage.prediction_ids) if lineage_tracker._current_lineage else 0
+        
+        # Visible in truth
+        visible = generated  # Same as generated for recent timeframe
+    
+    return jsonify({
+        "success": True,
+        "data": {
+            "generated": generated,
+            "saved": saved,
+            "linked_to_run": linked_to_run,
+            "visible_in_truth": visible
+        }
+    })
+
+
+@app.route('/system/debug/ui_view')
+@require_auth
+def system_truth_ui_debug():
+    """UI debug panel showing raw system truth JSON."""
+    from src.api.system_truth_snapshot import get_truth_response, validate_truth_schema
+    from src.governance.ui_semantic_contract_engine import get_semantic_status
+    
+    response = get_truth_response()
+    if not response.success:
+        content = f'''
+        <h1>System Truth Debug</h1>
+        <div class="error">Error: {response.error}</div>
+        '''
+        return page(content)
+    
+    validation = validate_truth_schema(response.data)
+    semantic_status = get_semantic_status()
+    
+    content = f'''
+    <h1>System Truth Debug Panel</h1>
+    
+    <div class="card">
+        <div class="card-title">Schema Validation</div>
+        <pre style="color: {"#3fb950" if validation["valid"] else "#f85149"};">
+Valid: {validation["valid"]}
+Errors: {len(validation["errors"])}
+Warnings: {len(validation["warnings"])}
+        </pre>
+    </div>
+    
+    <div class="card">
+        <div class="card-title">Semantic Consistency Status</div>
+        <pre style="color: {"#3fb950" if semantic_status.get("status") == "SEMANTICALLY_CONSISTENT" else "#f85149"};">
+Status: {semantic_status.get("status", "UNKNOWN")}
+Dashboards Validated: {semantic_status.get("dashboards_validated", 0)}
+Divergence Summary: {semantic_status.get("divergence_summary", {})}
+        </pre>
+        <pre>{json.dumps(validation["errors"], indent=2) if validation["errors"] else "None"}</pre>
+    </div>
+    
+    <div class="card">
+        <div class="card-title">System Status</div>
+        <pre>{json.dumps(response.data.get("system_status", {}), indent=2)}</pre>
+    </div>
+    
+    <div class="card">
+        <div class="card-title">Predictions</div>
+        <pre>{json.dumps(response.data.get("predictions", {}), indent=2)}</pre>
+    </div>
+    
+    <div class="card">
+        <div class="card-title">Scheduler State</div>
+        <pre>{json.dumps(response.data.get("scheduler_state", {}), indent=2)}</pre>
+    </div>
+    
+    <div class="card">
+        <div class="card-title">Temporal Governance</div>
+        <pre>{json.dumps(response.data.get("temporal_governance", {}), indent=2)}</pre>
+    </div>
+    
+    <div class="card">
+        <div class="card-title">Data Health</div>
+        <pre>{json.dumps(response.data.get("data_health", {}), indent=2)}</pre>
+    </div>
+    
+    <script>
+        // Auto-refresh every 30 seconds
+        setTimeout(() => window.location.reload(), 30000);
+    </script>
+    '''
+    return page(content)
+
+
+# =============================================================================
+# ROUTES: Process Monitor
+# =============================================================================
+
+@app.route('/api/system/processes')
+@require_auth
+def api_system_processes():
+    import sqlite3
+    import subprocess
+    from datetime import datetime as _dt
+
+    SCHEDULER_DB = os.path.join(os.path.dirname(__file__), '..', 'data', 'scheduler.db')
+    SCHEDULER_DB = os.path.normpath(SCHEDULER_DB)
+
+    SCHEDULE_LABELS = {
+        'fetch_fixtures':      'every 6 h',
+        'fetch_results':       'every 1 h',
+        'fetch_odds':          'every 1 h',
+        'cleanup_matches':     'every 5 min',
+        'betting_pipeline':    'every 20 min',
+        'backfill_all':        'manual',
+        'backfill_cron':       'daily 04:07',
+    }
+
+    JOB_DESCRIPTIONS = {
+        'fetch_fixtures':      'Pull upcoming fixtures from API-Football',
+        'fetch_results':       'Update finished scores, auto-settle bets',
+        'fetch_odds':          'Poll fresh odds, recalculate EV',
+        'cleanup_matches':     'Archive stale live matches',
+        'betting_pipeline':    'Prediction + portfolio execution cycle (20 min)',
+        'backfill_all':        'Historical data backfill (manually started)',
+        'backfill_cron':       'Daily automated backfill of all 1225 leagues',
+    }
+
+    now_ts = _dt.utcnow()
+
+    # ── APScheduler jobs (next_run_time) ─────────────────────────────────────
+    scheduler_jobs = {}
+    try:
+        conn = sqlite3.connect(SCHEDULER_DB)
+        rows = conn.execute('SELECT id, next_run_time FROM apscheduler_jobs').fetchall()
+        conn.close()
+        for job_id, nrt in rows:
+            if nrt:
+                nrt_dt = _dt.utcfromtimestamp(nrt)
+                overdue = nrt_dt < now_ts
+                scheduler_jobs[job_id] = {
+                    'next_run': nrt_dt.strftime('%Y-%m-%d %H:%M'),
+                    'overdue': overdue,
+                }
+            else:
+                scheduler_jobs[job_id] = {'next_run': None, 'overdue': False}
+    except Exception as e:
+        scheduler_jobs['_error'] = str(e)
+
+    # ── execution_logs: last run per job ────────────────────────────────────
+    exec_history = {}
+    try:
+        with get_session() as s:
+            from sqlalchemy import text as _text
+            rows = s.execute(_text('''
+                SELECT job_name, start_time, end_time, status, error_message, result_summary
+                FROM execution_logs
+                ORDER BY start_time DESC
+            ''')).fetchall()
+        # For each job: pick the most recent completed record, and note if
+        # there is currently a running record with no end_time.
+        seen = {}
+        running_now = set()
+        for job_name, start, end, status, error, summary in rows:
+            if status == 'running' and not end:
+                running_now.add(job_name)
+            if job_name not in seen and status != 'running':
+                seen[job_name] = {
+                    'last_start': start,
+                    'last_end': end,
+                    'last_status': status,
+                    'last_error': error,
+                    'last_summary': summary,
+                }
+        # For jobs that only ever appear as running (never completed), add them
+        for job_name in running_now:
+            if job_name not in seen:
+                seen[job_name] = {
+                    'last_start': None, 'last_end': None,
+                    'last_status': 'running', 'last_error': None, 'last_summary': None,
+                }
+        exec_history = seen
+        exec_running_now = running_now
+    except Exception as e:
+        exec_history['_error'] = str(e)
+        exec_running_now = set()
+
+    # ── ingestion_log: last run per base job name ────────────────────────────
+    ingestion_history = {}
+    try:
+        with get_session() as s:
+            rows = s.execute(_text('''
+                SELECT job_name, run_at, success, fixtures_updated, error_message
+                FROM ingestion_log
+                WHERE job_name NOT LIKE 'heal_%'
+                AND job_name != 'test'
+                ORDER BY run_at DESC
+            ''')).fetchall()
+        seen_ing = {}
+        for job_name, run_at, success, updated, error in rows:
+            if job_name not in seen_ing:
+                seen_ing[job_name] = {
+                    'last_run': run_at,
+                    'success': bool(success),
+                    'fixtures_updated': updated,
+                    'error': error,
+                }
+        ingestion_history = seen_ing
+    except Exception as e:
+        ingestion_history['_error'] = str(e)
+
+    # ── Is execution_runtime process alive? ──────────────────────────────────
+    runtime_pid = None
+    runtime_alive = False
+    try:
+        result = subprocess.run(
+            ['pgrep', '-f', 'execution_runtime.py'],
+            capture_output=True, text=True
+        )
+        pids = result.stdout.strip().splitlines()
+        if pids:
+            runtime_pid = int(pids[0])
+            runtime_alive = True
+    except Exception:
+        pass
+
+    # ── Detect manually-run background processes ─────────────────────────────
+    backfill_running = False
+    try:
+        bp = subprocess.run(['pgrep', '-f', 'backfill_all.py'], capture_output=True, text=True)
+        backfill_running = bool(bp.stdout.strip())
+    except Exception:
+        pass
+
+    backfill_cron_running = False
+    try:
+        bc = subprocess.run(['pgrep', '-f', 'backfill_cron.py'], capture_output=True, text=True)
+        backfill_cron_running = bool(bc.stdout.strip())
+    except Exception:
+        pass
+
+    # ── Merge into unified job list ──────────────────────────────────────────
+    all_job_ids = set(SCHEDULE_LABELS.keys()) | set(exec_history.keys()) | set(ingestion_history.keys())
+    jobs = []
+    for job_id in sorted(all_job_ids):
+        sched = scheduler_jobs.get(job_id, {})
+        ex = exec_history.get(job_id, {})
+        ing = ingestion_history.get(job_id, {})
+
+        last_run = ex.get('last_start') or ing.get('last_run')
+        last_status = ex.get('last_status') or ('success' if ing.get('success') else ('failed' if ing else None))
+        last_error = ex.get('last_error') or ing.get('error')
+        last_summary = ex.get('last_summary') or (f"{ing.get('fixtures_updated',0)} updated" if ing else None)
+        is_running = job_id in exec_running_now
+        if job_id == 'backfill_all':
+            is_running = backfill_running
+        elif job_id == 'backfill_cron':
+            is_running = backfill_cron_running
+
+        jobs.append({
+            'id': job_id,
+            'description': JOB_DESCRIPTIONS.get(job_id, ''),
+            'schedule': SCHEDULE_LABELS.get(job_id, ''),
+            'running': is_running,
+            'next_run': sched.get('next_run'),
+            'next_overdue': sched.get('overdue', False),
+            'last_run': last_run,
+            'last_status': last_status,
+            'last_error': last_error,
+            'last_summary': last_summary,
+        })
+
+    return jsonify({
+        'jobs': jobs,
+        'runtime': {'pid': runtime_pid, 'alive': runtime_alive},
+        'as_of': now_ts.strftime('%Y-%m-%d %H:%M:%S'),
+    })
+
+
+@app.route('/processes')
+@require_auth
+def processes_page():
+    content = '''
+<h1>Process Monitor</h1>
+<div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
+    <span id="runtimeBadge" style="padding:4px 12px;border-radius:4px;font-size:0.85em;">...</span>
+    <span style="color:#8b949e;font-size:0.85em;">As of: <span id="asOf">—</span></span>
+    <button class="btn btn-secondary" onclick="loadProcesses()" style="margin-left:auto;">Refresh</button>
+</div>
+
+<table id="processTable">
+    <thead>
+        <tr>
+            <th>Job</th>
+            <th>Description</th>
+            <th>Schedule</th>
+            <th>Status</th>
+            <th>Last Run</th>
+            <th>Last Result</th>
+            <th>Next Scheduled</th>
+            <th>Details</th>
+        </tr>
+    </thead>
+    <tbody id="processBody">
+        <tr><td colspan="8" style="text-align:center;color:#8b949e;">Loading...</td></tr>
+    </tbody>
+</table>
+
+<script>
+function loadProcesses() {
+    fetch('/api/system/processes', {credentials: 'include'})
+        .then(r => r.json())
+        .then(d => {
+            document.getElementById('asOf').textContent = d.as_of + ' UTC';
+
+            const rt = d.runtime || {};
+            const badge = document.getElementById('runtimeBadge');
+            if (rt.alive) {
+                badge.textContent = 'ExecutionRuntime running (PID ' + rt.pid + ')';
+                badge.style.background = '#1a4731';
+                badge.style.color = '#3fb950';
+            } else {
+                badge.textContent = 'ExecutionRuntime NOT running';
+                badge.style.background = '#4a1515';
+                badge.style.color = '#f85149';
+            }
+
+            const tbody = document.getElementById('processBody');
+            tbody.innerHTML = (d.jobs || []).map(j => {
+                const statusCell = j.running
+                    ? '<span style="color:#f0883e;">⟳ RUNNING</span>'
+                    : j.last_status === 'success'
+                        ? '<span style="color:#3fb950;">✓ OK</span>'
+                        : j.last_status === 'failed'
+                            ? '<span style="color:#f85149;">✗ FAILED</span>'
+                            : '<span style="color:#8b949e;">—</span>';
+
+                const nextCell = j.next_run
+                    ? (j.next_overdue
+                        ? '<span style="color:#f85149;" title="Overdue">' + j.next_run + ' ⚠</span>'
+                        : '<span style="color:#8b949e;">' + j.next_run + '</span>')
+                    : '<span style="color:#8b949e;">—</span>';
+
+                const lastRunCell = j.last_run
+                    ? '<span style="color:#8b949e;">' + j.last_run.toString().slice(0,16) + '</span>'
+                    : '<span style="color:#8b949e;">never</span>';
+
+                const summaryCell = j.last_summary
+                    ? '<span style="color:#8b949e;font-size:0.85em;">' + j.last_summary + '</span>'
+                    : '<span style="color:#8b949e;">—</span>';
+
+                const detailCell = j.last_error
+                    ? '<span style="color:#f85149;font-size:0.8em;" title="' + j.last_error.replace(/"/g, "&quot;") + '">' + j.last_error.slice(0, 60) + (j.last_error.length > 60 ? '…' : '') + '</span>'
+                    : '<span style="color:#8b949e;">—</span>';
+
+                return '<tr>' +
+                    '<td style="font-family:monospace;white-space:nowrap;">' + j.id + '</td>' +
+                    '<td style="color:#8b949e;font-size:0.85em;">' + (j.description || '') + '</td>' +
+                    '<td style="color:#8b949e;font-size:0.85em;white-space:nowrap;">' + (j.schedule || '') + '</td>' +
+                    '<td>' + statusCell + '</td>' +
+                    '<td style="white-space:nowrap;">' + lastRunCell + '</td>' +
+                    '<td>' + summaryCell + '</td>' +
+                    '<td style="white-space:nowrap;">' + nextCell + '</td>' +
+                    '<td style="max-width:300px;">' + detailCell + '</td>' +
+                    '</tr>';
+            }).join('');
+        })
+        .catch(err => {
+            document.getElementById('processBody').innerHTML =
+                '<tr><td colspan="8" style="color:#f85149;">Error: ' + err.message + '</td></tr>';
+        });
+}
+
+loadProcesses();
+setTimeout(() => window.location.reload(), 30000);
+</script>
+'''
+    return page(content)
 
 
 # =============================================================================
@@ -5436,12 +7588,29 @@ def betting_action():
                 settled = [b for b in state.bets if b.get("settled")]
                 settled_pnl = sum(b.get("pnl", 0) or 0 for b in settled)
                 
+                from datetime import timezone as _utc_tz
+                from zoneinfo import ZoneInfo
+                _sthlm = ZoneInfo('Europe/Stockholm')
+
+                def _fmt_bet_date(fd):
+                    if fd is None:
+                        return '-'
+                    try:
+                        if isinstance(fd, str):
+                            fd = datetime.fromisoformat(fd.replace('Z', '').split('+')[0].split('.')[0])
+                        if fd.tzinfo is None:
+                            fd = fd.replace(tzinfo=_utc_tz.utc)
+                        return fd.astimezone(_sthlm).strftime('%Y-%m-%d %H:%M')
+                    except Exception:
+                        return str(fd)[:16]
+
                 bets_list = []
                 for b in state.bets:
                     bets_list.append({
+                        'fixture_id': b.get('fixture_id'),
                         'home': b.get('home_team', '?'),
                         'away': b.get('away_team', '?'),
-                        'date': str(b.get('fixture_date', ''))[:16] if b.get('fixture_date') else '-',
+                        'date': _fmt_bet_date(b.get('fixture_date')),
                         'market': b.get('market'),
                         'model_version': b.get('model_version') or '-',
                         'outcome': b.get('outcome'),
@@ -5468,18 +7637,82 @@ def betting_action():
 
             elif action == 'history':
                 from src.state.betting_state import build_betting_state
-                
+
                 state = build_betting_state()
-                
+
                 return jsonify({'ok': True, 'history': state.rounds})
-            
+
+            elif action == 'round_detail':
+                req_round_id = data.get('round_id')
+                if not req_round_id:
+                    return jsonify({'ok': False, 'error': 'round_id required'})
+
+                from src.state.betting_state import build_betting_state
+                from datetime import timezone as _utc_tz2
+                from zoneinfo import ZoneInfo as _ZoneInfo
+
+                _sthlm2 = _ZoneInfo('Europe/Stockholm')
+
+                def _fmt_rd(fd):
+                    if fd is None:
+                        return '-'
+                    try:
+                        if isinstance(fd, str):
+                            fd = datetime.fromisoformat(fd.replace('Z', '').split('+')[0].split('.')[0])
+                        if fd.tzinfo is None:
+                            fd = fd.replace(tzinfo=_utc_tz2.utc)
+                        return fd.astimezone(_sthlm2).strftime('%Y-%m-%d %H:%M')
+                    except Exception:
+                        return str(fd)[:16]
+
+                rd_state = build_betting_state(active_round_id=int(req_round_id))
+
+                rd_bets = []
+                for b in rd_state.bets:
+                    rd_bets.append({
+                        'fixture_id': b.get('fixture_id'),
+                        'home': b.get('home_team', '?'),
+                        'away': b.get('away_team', '?'),
+                        'date': _fmt_rd(b.get('fixture_date')),
+                        'market': b.get('market'),
+                        'model_version': b.get('model_version') or '-',
+                        'outcome': b.get('outcome'),
+                        'stake': b.get('stake'),
+                        'odds': b.get('odds'),
+                        'ev': b.get('ev'),
+                        'settled': b.get('settled'),
+                        'won': b.get('won'),
+                        'pnl': b.get('pnl'),
+                    })
+
+                rd_round = next((r for r in rd_state.rounds if r['id'] == int(req_round_id)), None)
+
+                return jsonify({
+                    'ok': True,
+                    'round': rd_round,
+                    'bets': rd_bets,
+                    'stats': {
+                        'wins': rd_state.wins,
+                        'losses': rd_state.losses,
+                        'pending': rd_state.pending_count,
+                    }
+                })
+
             elif action == 'place-bets':
                 from src.betting.kelly import fractional_kelly, kelly_stake
                 from src.betting.ev import expected_value
                 from src.models.trainer import get_cache_path
+                from src.betting.round_manager import close_round_if_full
                 import pickle
                 import numpy as np
                 import warnings
+
+                r = active_round
+                new_r = close_round_if_full(s)
+                if new_r:
+                    r = new_r
+                    round_id = r.id
+                    initial = r.initial_bankroll
 
                 MIN_ODDS = 1.5
                 MAX_ODDS = 10.0
@@ -5500,6 +7733,13 @@ def betting_action():
                     .where(Fixture.date >= today)
                     .where(Fixture.date < tomorrow)
                 ).all()
+
+                open_positions = {
+                    (b.fixture_id, b.market, b.outcome)
+                    for b in s.execute(
+                        select(PlacedBet).where(PlacedBet.settled == False)
+                    ).scalars().all()
+                }
 
                 all_candidates = []
 
@@ -5566,6 +7806,8 @@ def betting_action():
                             for outcome, odd in market_odds.items():
                                 if not odd or odd <= 0:
                                     continue
+                                if (fix.id, market, outcome) in open_positions:
+                                    continue
                                 our_prob = model_probs.get(outcome, 0.0)
                                 if our_prob <= 0:
                                     continue
@@ -5592,7 +7834,7 @@ def betting_action():
                 if not all_candidates:
                     return jsonify({'ok': True, 'placed': 0, 'message': 'No value bets found'})
 
-                all_candidates.sort(key=lambda x: x['ev'], reverse=True)
+                all_candidates.sort(key=lambda x: x['our_prob'] * x['ev'], reverse=True)
                 cand = all_candidates[0]
                 fix = cand['fixture']
 
@@ -5613,17 +7855,6 @@ def betting_action():
                 ).scalar_one_or_none()
                 model_version_id = active_version.id if active_version else None
 
-                existing = s.execute(
-                    select(PlacedBet).where(
-                        PlacedBet.round_id == r.id,
-                        PlacedBet.fixture_id == fix.id,
-                        PlacedBet.market == cand['market'],
-                        PlacedBet.outcome == cand['outcome']
-                    )
-                ).scalar_one_or_none()
-                if existing:
-                    return jsonify({'ok': True, 'placed': 0, 'message': 'Bet already exists for this selection'})
-
                 bet = PlacedBet(
                     round_id=r.id, fixture_id=fix.id,
                     market=cand['market'], model_version_id=model_version_id,
@@ -5635,52 +7866,27 @@ def betting_action():
                 s.add(bet)
                 s.commit()
 
+                close_round_if_full(s)
+
                 home = TEAM_NAMES.get(fix.home_team_id, str(fix.home_team_id))
                 away = TEAM_NAMES.get(fix.away_team_id, str(fix.away_team_id))
                 league_name = LEAGUE_NAMES.get(fix.league_id, '')
 
+                win_prob_pct = round(cand['our_prob'] * 100, 1)
                 return jsonify({
-                    'ok': True, 'placed': 1, 'message': f"Bet placed: {home} vs {away} - {cand['market']} {cand['outcome']} @ {cand['decimal_odd']}",
+                    'ok': True, 'placed': 1, 'message': f"Bet placed: {home} vs {away} - {cand['market']} {cand['outcome']} @ {cand['decimal_odd']} (win prob {win_prob_pct}%)",
                     'bet': {
                         'home': home, 'away': away,
                         'market': cand['market'],
                         'model_version': active_version.version_name if active_version else None,
                         'outcome': cand['outcome'],
                         'stake': stake, 'odds': cand['decimal_odd'],
-                        'ev': cand['ev'], 'settled': False
+                        'ev': cand['ev'], 'our_prob': cand['our_prob'], 'settled': False
                     }
                 })
 
             elif action == 'settle':
                 return jsonify({'ok': False, 'error': 'Use /api/settle_bets endpoint'}), 400
-
-            elif action == 'new-round':
-                from sqlalchemy import func
-
-                settled = s.execute(
-                    select(PlacedBet).where(PlacedBet.round_id == r.id).where(PlacedBet.settled == True)
-                ).scalars().all()
-
-                r.is_active = False
-                r.ended_at = datetime.utcnow()
-                r.ending_balance = initial + sum(b.pnl or 0 for b in settled)
-                r.total_bets = len(settled)
-                r.total_wins = sum(1 for b in settled if b.won)
-                r.total_staked = sum(b.stake for b in settled)
-                r.total_pnl = sum(b.pnl or 0 for b in settled)
-                r.roi_pct = (r.total_pnl / r.total_staked * 100) if r.total_staked > 0 else 0
-                r.reason = 'manual_reset'
-
-                new_round = BankrollRound(
-                    round_number=r.round_number + 1,
-                    started_at=datetime.utcnow(),
-                    initial_bankroll=initial,
-                    is_active=True,
-                )
-                s.add(new_round)
-                s.commit()
-
-                return jsonify({'ok': True, 'round_number': new_round.round_number})
 
             else:
                 return jsonify({'ok': False, 'error': 'Unknown action'}), 400

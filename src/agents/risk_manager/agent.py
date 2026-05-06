@@ -1,6 +1,8 @@
 """
 Risk Manager Agent - computes risk profile and constraints.
 
+STATEFUL VERSION - accepts PortfolioState for drawdown/volatility.
+
 Responsibilities:
 - Compute drawdown, volatility, bankroll state
 - Compute lambda (risk aversion)
@@ -19,6 +21,7 @@ from typing import Optional
 from src.alerts.event_bus import event_bus
 from src.agents.shared.events import AgentEvents, RISK_PROFILE_PAYLOAD
 from src.agents.shared.state_store import get_state_store
+from src.portfolio.state.portfolio_state import PortfolioState
 
 logger = logging.getLogger(__name__)
 
@@ -58,18 +61,26 @@ class RiskManagerAgent:
         """Handle predictions ready event."""
         self.run()
     
-    def run(self) -> dict:
+    def run(self, portfolio_state: PortfolioState = None) -> dict:
         """
-        Compute risk profile.
+        Compute risk profile - STATEFUL VERSION.
         
+        Args:
+            portfolio_state: Optional PortfolioState for stateful risk calculation
+            
         Returns:
             Risk profile dict
         """
         logger.info("[RISK] Computing risk profile")
         
-        # Step 1: Calculate metrics
-        drawdown = self.state_store.get_drawdown()
-        volatility = self.state_store.get_volatility()
+        # Step 1: Calculate metrics - prefer PortfolioState if provided
+        if portfolio_state is not None:
+            drawdown = portfolio_state.drawdown
+            volatility = portfolio_state.volatility
+            logger.info(f"[RISK] Using stateful metrics: drawdown={drawdown:.2%}, volatility={volatility:.2%}")
+        else:
+            drawdown = self.state_store.get_drawdown()
+            volatility = self.state_store.get_volatility()
         
         # Step 2: Compute lambda
         lambda_val = self._compute_lambda(drawdown, volatility)
@@ -128,11 +139,11 @@ class RiskManagerAgent:
             max_exposure = 0.03  # 3% per fixture
             max_total = 0.25     # 25% total max
         
-        # Correlation penalties
+        # Correlation penalties - use tuples for proper key handling
         correlation_penalties = {
-            "btts_ou25": 0.65,
-            "ou25_ou15": 0.70,
-            "h2h_btts": 0.20,
+            ("btts", "ou25"): 0.65,
+            ("ou25", "ou15"): 0.70,
+            ("h2h", "btts"): 0.20,
         }
         
         return {

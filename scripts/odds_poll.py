@@ -16,9 +16,10 @@ Usage:
 import argparse
 import logging
 import sys
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
-sys.path.insert(0, '/opt/projects/bootball')
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select, func
 
@@ -37,7 +38,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 EV_THRESHOLD = 0.05
-KICKOFF_HOURS_AHEAD = 48
+KICKOFF_HOURS_AHEAD = 168  # 7 days — match the prediction window
 
 
 def find_fixtures_needing_odds(s, league_ids=None):
@@ -46,7 +47,8 @@ def find_fixtures_needing_odds(s, league_ids=None):
     Priority:
     1. Fixtures with pending placed bets
     2. PredictionRecords with EV > threshold
-    3. Fixtures kicking off within 48 hours with unsettled predictions
+    3. Fixtures with unsettled predictions
+    4. Upcoming NS fixtures with no odds at all (bootstrap initial odds)
     """
     now = datetime.utcnow()
     cutoff = now + timedelta(hours=KICKOFF_HOURS_AHEAD)
@@ -63,6 +65,7 @@ def find_fixtures_needing_odds(s, league_ids=None):
     fixtures = s.execute(query.order_by(Fixture.date)).scalars().all()
 
     fixtures_needing = set()
+    fixtures_without_odds = []
 
     for fix in fixtures:
         pending_bets = s.execute(
@@ -97,6 +100,19 @@ def find_fixtures_needing_odds(s, league_ids=None):
         if unsettled_preds > 0:
             fixtures_needing.add(fix.id)
             logger.debug(f"Fixture {fix.id}: {unsettled_preds} unsettled predictions")
+            continue
+
+        # Bootstrap: add fixtures with no odds yet (lowest priority)
+        has_odds = s.execute(
+            select(func.count()).select_from(FixtureOdds)
+            .where(FixtureOdds.fixture_id == fix.id)
+        ).scalar() or 0
+
+        if has_odds == 0:
+            fixtures_without_odds.append(fix.id)
+
+    # Fill remaining capacity with no-odds fixtures (ordered by kickoff proximity)
+    fixtures_needing.update(fixtures_without_odds)
 
     return list(fixtures_needing)
 
@@ -213,10 +229,11 @@ def recalculate_prediction_ev(s, fixture_ids, dry_run=False):
         ).scalars().all()
 
         for pred in preds:
+            bet_type = MARKET_BET_TYPE_MAP.get(pred.market, pred.market)
             odds_row = s.execute(
                 select(FixtureOdds).where(
                     FixtureOdds.fixture_id == fix_id,
-                    FixtureOdds.bet_type == pred.market,
+                    FixtureOdds.bet_type == bet_type,
                 )
             ).scalars().first()
 
@@ -400,18 +417,6 @@ def main():
     with get_session() as s:
         updated_odds = poll_and_update_odds(s, client, fixture_ids, args.dry_run)
         logger.info(f"Updated {updated_odds} odds rows")
-
-        if not args.dry_run and updated_odds > 0:
-            # Make predictions for fixtures that now have odds
-            logger.info("Making predictions for fixtures with new odds...")
-            from scripts.make_predictions import make_predictions_for_fixture
-            
-            for fix_id in fixture_ids:
-                with get_session() as ps:
-                    count = make_predictions_for_fixture(ps, fix_id, args.dry_run)
-                    if count > 0:
-                        ps.commit()
-                        logger.info(f"  Fixture {fix_id}: made {count} predictions")
 
         recalculated = recalculate_prediction_ev(s, fixture_ids, args.dry_run)
         logger.info(f"Recalculated EV for {recalculated} predictions")

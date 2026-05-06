@@ -2,12 +2,13 @@ import logging
 import os
 import pickle
 import sys
+from pathlib import Path
 import warnings
 
 import numpy as np
 from sqlalchemy import select
 
-sys.path.insert(0, '/opt/projects/bootball')
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from src.storage.db import get_session
 from src.storage.models import Standing, Fixture, FixtureStats
@@ -26,44 +27,28 @@ MARKET_OUTCOMES = {
 
 
 def build_features_h2h(home: Standing, away: Standing, baseline=None) -> np.ndarray:
-    """Build features for H2H (categorical outcome) - team strength based.
-    
-    If baseline is provided, features are normalized against league context.
+    """Build features for H2H (categorical outcome).
+
+    Must match trainer._build_features_h2h exactly (10 features).
     """
-    home_gf = home.goals_for or 1
-    home_ga = home.goals_against or 1
-    away_gf = away.goals_for or 1
-    away_ga = away.goals_against or 1
-    
-    if baseline:
-        avg_goals = baseline.avg_goals
-        home_adv = baseline.home_advantage
-        
-        home_gf_norm = (home_gf - avg_goals / 2 - home_adv / 2) / (avg_goals + 0.1)
-        away_gf_norm = (away_gf - avg_goals / 2 + home_adv / 2) / (avg_goals + 0.1)
-        home_ga_norm = (home_ga - avg_goals / 2 + home_adv / 2) / (avg_goals + 0.1)
-        away_ga_norm = (away_ga - avg_goals / 2 - home_adv / 2) / (avg_goals + 0.1)
-        
-        goal_diff_home_norm = (home_gf - home_ga - home_adv) / (avg_goals + 0.1)
-        goal_diff_away_norm = (away_gf - away_ga + home_adv) / (avg_goals + 0.1)
-    else:
-        home_gf_norm = home_gf
-        away_gf_norm = away_gf
-        home_ga_norm = home_ga
-        away_ga_norm = away_ga
-        goal_diff_home_norm = home_gf - home_ga
-        goal_diff_away_norm = away_gf - away_ga
-    
+    h_rank = float(home.rank or 15)
+    a_rank = float(away.rank or 15)
+    h_gf   = float(home.goals_for or 1)
+    h_ga   = float(home.goals_against or 1)
+    a_gf   = float(away.goals_for or 1)
+    a_ga   = float(away.goals_against or 1)
+
     return np.array([[
-        float(home.rank or 15),
-        float(away.rank or 15),
-        goal_diff_home_norm,
-        goal_diff_away_norm,
-        home_gf_norm,
-        away_gf_norm,
-        home_ga_norm,
-        away_ga_norm,
-        float(abs((home.rank or 15) - (away.rank or 15))),
+        h_rank,
+        a_rank,
+        a_rank - h_rank,                        # rank diff (away advantage if positive)
+        (h_gf - h_ga) - (a_gf - a_ga),         # goal-diff differential
+        h_gf + a_ga,                            # home attack vs away defence
+        a_gf + h_ga,                            # away attack vs home defence
+        h_gf,
+        a_gf,
+        h_ga,
+        a_ga,
     ]])
 
 

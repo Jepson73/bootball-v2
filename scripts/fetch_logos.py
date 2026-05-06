@@ -6,7 +6,8 @@ Usage:
     python scripts/fetch_logos.py
 """
 import sys
-sys.path.insert(0, '/opt/projects/bootball')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.ingestion.client import APIFootballClient
 from src.storage.db import get_session

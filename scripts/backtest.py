@@ -16,11 +16,12 @@ Usage:
 import argparse
 import logging
 import sys
+from pathlib import Path
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-sys.path.insert(0, '/opt/projects/bootball')
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 from sqlalchemy import select, func
@@ -190,7 +191,7 @@ def simulate_market(
     kelly_fraction: float = 0.25,
     min_odds: float = 1.0,
     max_odds: float = 100.0,
-    starting_bankroll: float = 10000.0,
+    starting_bankroll: float = 1000.0,
 ) -> tuple[list[BetRecord], MarketResult]:
     """
     Simulate betting on a market across fixtures.
@@ -279,7 +280,7 @@ def simulate_market_from_dict(
     kelly_fraction: float = 0.25,
     min_odds: float = 1.0,
     max_odds: float = 100.0,
-    starting_bankroll: float = 10000.0,
+    starting_bankroll: float = 1000.0,
 ) -> tuple[list[BetRecord], MarketResult]:
     """Simulate betting using dict fixtures (for backtesting)."""
     bets = []

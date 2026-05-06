@@ -90,11 +90,20 @@ class ExecutionEngine:
     
     def _run_daily_predictions(self, context: "RunContext") -> Dict[str, Any]:
         """Execute daily predictions pipeline."""
-        from scripts.daily_run import DailyPipeline
-        
-        pipeline = DailyPipeline(context=context)
-        pipeline.run()
-        return {"predictions_completed": True}
+        from scripts.make_predictions import find_fixtures_needing_predictions, make_predictions_for_fixture
+        from src.storage.db import get_session
+
+        total = 0
+        with get_session() as s:
+            fixture_ids = find_fixtures_needing_predictions(s)
+
+        for fix_id in fixture_ids[:100]:
+            with get_session() as s:
+                count = make_predictions_for_fixture(s, fix_id, dry_run=False, context=context)
+                s.commit()
+                total += count
+
+        return {"predictions_completed": True, "predictions_made": total, "fixtures_processed": len(fixture_ids[:100])}
     
     def _run_betting_pipeline(self, context: "RunContext") -> Dict[str, Any]:
         """Execute betting pipeline."""
@@ -104,40 +113,79 @@ class ExecutionEngine:
         return {"betting_completed": True}
     
     def _run_retrain_models(self, context: "RunContext") -> Dict[str, Any]:
-        """Execute model retraining."""
-        from scripts.train_multi_calibrated import main as train_main
-        
-        train_main()
-        return {"retraining_completed": True}
-    
+        """Execute model retraining via versioned registry (records in model_versions table)."""
+        from scripts.web_ui import _train_market_with_calibration
+
+        results = {}
+        markets = ["h2h", "btts", "ou25", "ou15"]
+        for market in markets:
+            try:
+                result = _train_market_with_calibration(market, reason="scheduled")
+                results[market] = result
+                logger.info("Retrain %s: %s", market, result)
+            except Exception:
+                logger.exception("Retrain failed for market %s", market)
+                results[market] = {"error": "training failed"}
+
+        return {"retraining_completed": True, "results": results}
+
     def _run_calibration_update(self, context: "RunContext") -> Dict[str, Any]:
-        """Execute calibration update."""
-        logger.info("Calibration update job executed via ExecutionEngine")
-        return {"calibration_completed": True}
+        """Execute recalibration of all markets (increments cYY, keeps vXX)."""
+        from src.models.model_registry import get_model_registry
+
+        registry = get_model_registry()
+        results = {}
+        for market in ["h2h", "btts", "ou25", "ou15"]:
+            try:
+                active = registry.get_active(market)
+                if active is None:
+                    results[market] = {"error": "no active version to recalibrate"}
+                    continue
+                # Recalibration refits the calibrator on recent settled predictions.
+                calibrator, cal_metrics = _fit_calibrator_for_market(market)
+                if calibrator is None:
+                    results[market] = {"error": "insufficient settled data for calibration"}
+                    continue
+                new_ver = registry.register_recalibration(market, calibrator, metrics=cal_metrics, reason="scheduled")
+                results[market] = {"label": new_ver["version_label"] if new_ver else None}
+            except Exception:
+                logger.exception("Recalibration failed for market %s", market)
+                results[market] = {"error": "recalibration failed"}
+
+        return {"calibration_completed": True, "results": results}
     
     def _run_fetch_fixtures(self, context: "RunContext") -> Dict[str, Any]:
         """Fetch fixtures from API."""
-        from scripts.daily_run import DailyPipeline
-        
-        pipeline = DailyPipeline(context=context, send_alerts=False)
+        from scripts.daily_run import DailyBaselinePipeline
+
+        pipeline = DailyBaselinePipeline(context={"run_id": context.run_id})
         pipeline.run()
         return {"fixtures_fetched": True}
-    
+
     def _run_fetch_results(self, context: "RunContext") -> Dict[str, Any]:
         """Fetch match results from API."""
-        from scripts.daily_run import DailyPipeline
-        
-        pipeline = DailyPipeline(context=context, send_alerts=False)
+        from scripts.daily_run import DailyBaselinePipeline
+
+        pipeline = DailyBaselinePipeline(context={"run_id": context.run_id})
         pipeline.run()
         return {"results_fetched": True}
-    
+
     def _run_fetch_odds(self, context: "RunContext") -> Dict[str, Any]:
         """Fetch odds from API."""
-        from scripts.daily_run import DailyPipeline
-        
-        pipeline = DailyPipeline(context=context, send_alerts=False)
-        pipeline.run()
-        return {"odds_fetched": True}
+        from scripts.odds_poll import find_fixtures_needing_odds, poll_and_update_odds, recalculate_prediction_ev
+        from src.storage.db import get_session
+        from src.ingestion.client import APIFootballClient, calls_remaining_today
+
+        remaining = calls_remaining_today()
+        if remaining < 50:
+            return {"odds_fetched": False, "reason": "low_api_calls"}
+
+        client = APIFootballClient()
+        with get_session() as s:
+            fixture_ids = find_fixtures_needing_odds(s)
+            updated = poll_and_update_odds(s, client, fixture_ids[:50])
+            recalculate_prediction_ev(s, fixture_ids[:50])
+        return {"odds_fetched": True, "fixtures_updated": updated}
     
     def run_job(self, job_name: str, context: "RunContext") -> Dict[str, Any]:
         """
@@ -192,7 +240,7 @@ class ExecutionEngine:
             exec_log.status = "failed"
             exec_log.error_message = str(e)
             exec_log.end_time = datetime.utcnow()
-            logger.error(f"ExecutionEngine: Failed job={job_name}, run_id={context.run_id}, error={e}")
+            logger.exception("ExecutionEngine: Failed job=%s run_id=%s", job_name, context.run_id)
             raise
             
         finally:
@@ -225,6 +273,62 @@ class ExecutionEngine:
                 sess.commit()
         except Exception as e:
             logger.warning(f"Failed to log execution: {e}")
+
+
+def _fit_calibrator_for_market(market: str):
+    """Fit an isotonic calibrator on recent settled prediction_records for a market.
+
+    Returns (calibrator, metrics) tuple, or (None, None) if insufficient data.
+    metrics includes brier_score and ece computed on post-calibration probabilities.
+    """
+    import numpy as np
+    from sklearn.isotonic import IsotonicRegression
+    from src.storage.db import get_session
+    from sqlalchemy import text
+
+    try:
+        with get_session() as s:
+            # Use our_prob (raw model output) not calibrated_prob — fitting on
+            # already-calibrated values creates a circular dependency that degrades quality.
+            rows = s.execute(text("""
+                SELECT our_prob, won FROM prediction_records
+                WHERE market = :market AND settled = 1 AND our_prob IS NOT NULL AND won IS NOT NULL
+                ORDER BY id DESC LIMIT 2000
+            """), {"market": market}).fetchall()
+
+        if len(rows) < 100:
+            logger.warning("_fit_calibrator: only %d settled rows for %s", len(rows), market)
+            return None, None
+
+        probs = np.array([r[0] for r in rows], dtype=float)
+        outcomes = np.array([int(r[1]) for r in rows], dtype=float)
+
+        calibrator = IsotonicRegression(out_of_bounds="clip")
+        calibrator.fit(probs, outcomes)
+
+        cal_probs = np.clip(calibrator.predict(probs), 0.01, 0.99)
+        brier = float(np.mean((cal_probs - outcomes) ** 2))
+
+        n_bins = 10
+        bin_edges = np.linspace(0, 1, n_bins + 1)
+        ece = 0.0
+        for i in range(n_bins):
+            mask = (cal_probs >= bin_edges[i]) & (
+                cal_probs <= bin_edges[i + 1] if i == n_bins - 1 else cal_probs < bin_edges[i + 1]
+            )
+            if np.sum(mask) == 0:
+                continue
+            ece += (np.sum(mask) / len(cal_probs)) * abs(np.mean(outcomes[mask]) - np.mean(cal_probs[mask]))
+
+        metrics = {
+            "brier_score": brier,
+            "ece": ece,
+            "calibration_sample_size": len(rows),
+        }
+        return calibrator, metrics
+    except Exception:
+        logger.exception("_fit_calibrator failed for %s", market)
+        return None, None
 
 
 def get_execution_engine() -> ExecutionEngine:

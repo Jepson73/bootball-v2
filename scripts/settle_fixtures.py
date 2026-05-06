@@ -17,9 +17,10 @@ Usage:
 import argparse
 import logging
 import sys
+from pathlib import Path
 from datetime import datetime, timedelta
 
-sys.path.insert(0, '/opt/projects/bootball')
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.settlement import settle_all, fetch_and_update_fixtures
 from src.storage.db import init_db, get_session

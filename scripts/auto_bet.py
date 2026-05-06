@@ -28,11 +28,12 @@ import logging
 import pickle
 import os
 import sys
+from pathlib import Path
 import warnings
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-sys.path.insert(0, '/opt/projects/bootball')
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import numpy as np
 from sqlalchemy import select, func
@@ -50,6 +51,47 @@ from src.betting.ev import expected_value
 from src.betting.shin import shin_probabilities
 from src.betting.prediction import get_model_prediction, MARKET_OUTCOMES
 from src.betting.market_feasibility import should_place_bet, get_all_market_statuses
+
+# ===== MIGRATION MODE CONFIGURATION =====
+# This controls whether legacy execution is allowed
+RUNTIME_MODE = os.getenv("BOOTBALL_RUNTIME_MODE", "PORTFOLIO_PRIMARY")
+
+# Migration mode states:
+# - LEGACY_ACTIVE: Allow old auto_bet.py execution (testing only)
+# - HYBRID_OBSERVABILITY: Run both, compare outputs (not implemented)
+# - PORTFOLIO_PRIMARY: Only AgentCoordinator allowed to execute
+
+if RUNTIME_MODE == "PORTFOLIO_PRIMARY":
+    LEGACY_EXECUTION_ENABLED = False
+else:
+    LEGACY_EXECUTION_ENABLED = True
+    warnings.warn(
+        f"BOOTBALL_RUNTIME_MODE={RUNTIME_MODE} - Legacy execution path is ACTIVE. "
+        "This is not recommended for production.",
+        DeprecationWarning
+    )
+
+# ===== DEPRECATION GUARDS =====
+
+def check_legacy_execution_allowed():
+    """Check if legacy execution is allowed in current mode."""
+    if not LEGACY_EXECUTION_ENABLED:
+        raise RuntimeError(
+            "LEGACY EXECUTION BLOCKED: The legacy betting pipeline has been disabled. "
+            "Use AgentCoordinator.run_cycle() or run_multi_agent_pipeline() instead. "
+            f"Current mode: {RUNTIME_MODE}"
+        )
+    return True
+
+def warn_legacy_path():
+    """Warn when legacy path is being used."""
+    warnings.warn(
+        "WARNING: Legacy execution path used. "
+        "This code path bypasses the governance spine. "
+        "Use AgentCoordinator for production betting.",
+        DeprecationWarning,
+        stacklevel=3
+    )
 
 logging.basicConfig(
     level=logging.INFO,
@@ -266,6 +308,11 @@ def place_bets(the_round: BankrollRound, session, league_ids: list[int] | None =
     
     require_run_context(context, "place_bets")
     
+    # ===== DEPRECATION GUARD =====
+    check_legacy_execution_allowed()
+    warn_legacy_path()
+    logger.warning("LEGACY PATH USED - NON-AUTHORIZED EXECUTION FLOW")
+    
     leagues = league_ids or ALL_LEAGUE_IDS
 
     today = datetime.now(ZoneInfo("UTC")).date()
@@ -457,7 +504,7 @@ def settle_bets(the_round: BankrollRound, session) -> tuple[int, float]:
             select(Fixture).where(Fixture.id == bet.fixture_id)
         ).scalars().first()
 
-        if not fixture or fixture.status not in ("FT", "FTm", "AET", "PEN"):
+        if not fixture or fixture.status not in ("FT", "AET", "PEN"):
             continue
 
         if fixture.goals_home is None or fixture.goals_away is None:
@@ -629,6 +676,14 @@ def run_pipeline(league_ids: list[int] | None = None, bet_only: bool = False, se
             the_round = get_or_create_round(session)
             round_id = the_round.id
 
+        # Auto-close round if it has reached ROUND_SIZE bets (handles already-overdue rounds)
+        from src.betting.round_manager import close_round_if_full
+        new_r = close_round_if_full(session)
+        if new_r:
+            the_round = new_r
+            round_id = the_round.id
+            logger.info(f"Auto-closed overdue round → new Round #{the_round.round_number}")
+
         logger.info(f"Auto-bet pipeline | Round #{the_round.round_number} | "
                      f"Balance: {get_current_balance(the_round, session):.2f}")
 
@@ -639,6 +694,13 @@ def run_pipeline(league_ids: list[int] | None = None, bet_only: bool = False, se
 
             if placed_bets:
                 send_bets_alert(placed_bets, the_round.round_number)
+
+            # Auto-close if this run just brought the round to ROUND_SIZE
+            new_r = close_round_if_full(session)
+            if new_r:
+                the_round = new_r
+                round_id = the_round.id
+                logger.info(f"Round closed after bet placement → new Round #{the_round.round_number}")
 
         if not bet_only:
             settled, total_pnl = settle_bets(the_round, session)

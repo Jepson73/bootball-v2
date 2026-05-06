@@ -18,13 +18,14 @@ This is a READ-ONLY debugging tool:
 
 import argparse
 import sys
+from pathlib import Path
 import json
 import logging
 from datetime import datetime, timedelta
 from typing import Optional
 
 # Ensure path
-sys.path.insert(0, "/opt/projects/bootball")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from src.events.event_store import get_event_store
 from src.state.reconstructor import StateReconstructor

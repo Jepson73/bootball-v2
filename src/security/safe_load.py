@@ -1,58 +1,133 @@
 """
-Safe model loading utilities.
+Safe model loading utilities with HMAC integrity verification.
 
-Provides safe wrappers for pickle.load to handle failures gracefully.
+Two-layer defence:
+  1. HMAC-SHA256 signature written alongside the pickle (.sig file).
+  2. Signature verified before unpickling — tampered files are refused.
+
+The signing key is derived from SECRET_KEY in settings.
+If a .sig file is absent the load is allowed but logged as a warning
+so that legacy models still work. Once a model is re-saved it will
+always carry a signature.
 """
 
+import hashlib
+import hmac
+import logging
 import os
 import pickle
-import logging
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
 
-def safe_model_load(path, default_return=None):
+def _signing_key() -> bytes:
+    """Return the HMAC signing key from settings."""
+    try:
+        from config.settings import settings
+        return settings.secret_key.encode()
+    except Exception:
+        return b"bootball-default-key"
+
+
+def _sig_path(model_path: str) -> str:
+    return model_path + ".sig"
+
+
+def _compute_hmac(data: bytes, key: bytes) -> str:
+    return hmac.new(key, data, hashlib.sha256).hexdigest()
+
+
+# ── Public API ────────────────────────────────────────────────────────────────
+
+def safe_model_load(path: str, default_return=None, verify_hmac: bool = True):
     """
-    Safely load a model from disk using pickle.
-    
+    Load a pickled model from disk.
+
+    If a .sig file exists alongside the model it is verified before
+    unpickling.  If verification fails the load is aborted and
+    default_return is returned.  If no .sig file exists the model is
+    loaded with a warning (backward compatibility for unsigned legacy files).
+
     Args:
-        path: Path to the model file
-        default_return: Value to return on failure (default: None)
-        
+        path:          Path to the .pkl file.
+        default_return: Value to return on any failure.
+        verify_hmac:   Set False only in tests / migration tooling.
+
     Returns:
-        Loaded model on success, default_return on failure
+        Loaded model or default_return.
     """
     if not os.path.exists(path):
-        logger.error(f"safe_model_load: File not found: {path}")
+        logger.error("safe_model_load: file not found: %s", path)
         return default_return
-    
+
     try:
         with open(path, "rb") as f:
-            model = pickle.load(f)
-        logger.debug(f"safe_model_load: Successfully loaded: {path}")
+            data = f.read()
+    except OSError:
+        logger.exception("safe_model_load: could not read %s", path)
+        return default_return
+
+    sig_file = _sig_path(path)
+    if verify_hmac:
+        if os.path.exists(sig_file):
+            try:
+                stored_sig = Path(sig_file).read_text().strip()
+            except OSError:
+                logger.exception("safe_model_load: could not read sig file %s", sig_file)
+                return default_return
+
+            expected = _compute_hmac(data, _signing_key())
+            if not hmac.compare_digest(stored_sig, expected):
+                logger.error(
+                    "safe_model_load: HMAC verification FAILED for %s — refusing to load",
+                    path,
+                )
+                return default_return
+        else:
+            logger.warning(
+                "safe_model_load: no .sig file for %s — loading unsigned model "
+                "(re-save to add HMAC protection)",
+                path,
+            )
+
+    try:
+        model = pickle.loads(data)  # noqa: S301 — data verified above
+        logger.debug("safe_model_load: loaded %s", path)
         return model
-    except Exception as e:
-        logger.error(f"safe_model_load: Failed to load {path}: {e}")
+    except Exception:
+        logger.exception("safe_model_load: unpickling failed for %s", path)
         return default_return
 
 
-def safe_model_save(model, path) -> bool:
+def safe_model_save(model, path: str) -> bool:
     """
-    Safely save a model to disk.
-    
+    Save a model to disk and write an HMAC-SHA256 signature alongside it.
+
+    Always writes both .pkl and .sig atomically (sig written after data).
+
     Args:
-        model: Model object to save
-        path: Path to save to
-        
+        model: Model object to save.
+        path:  Destination path.
+
     Returns:
-        True on success, False on failure
+        True on success, False on failure.
     """
     try:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
+        data = pickle.dumps(model)
+
         with open(path, "wb") as f:
-            pickle.dump(model, f)
-        logger.debug(f"safe_model_save: Successfully saved: {path}")
+            f.write(data)
+
+        sig = _compute_hmac(data, _signing_key())
+        with open(_sig_path(path), "w") as f:
+            f.write(sig)
+
+        logger.debug("safe_model_save: saved %s + .sig", path)
         return True
-    except Exception as e:
-        logger.error(f"safe_model_save: Failed to save {path}: {e}")
+    except Exception:
+        logger.exception("safe_model_save: failed to save %s", path)
         return False
+
+

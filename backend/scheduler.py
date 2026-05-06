@@ -1,20 +1,79 @@
 import logging
 import os
+import time
+from datetime import datetime
+from pathlib import Path
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 
 logger = logging.getLogger(__name__)
 
+_BASE_DIR = Path(__file__).resolve().parent.parent
+_SCHEDULER_DB = _BASE_DIR / "data" / "scheduler.db"
+_SCHEDULER_DB.parent.mkdir(parents=True, exist_ok=True)
+
 jobstores = {
-    'default': SQLAlchemyJobStore(url='sqlite:///data/scheduler.db')
+    'default': SQLAlchemyJobStore(url=f'sqlite:///{_SCHEDULER_DB}')
 }
 
-MUTATING_JOBS = {"retrain_models", "run_betting_bot"}
+MUTATING_JOBS = {"retrain_models", "run_betting_bot", "run_continuous_cycle"}
+
+# ── Circuit Breaker ────────────────────────────────────────────────────────────
+# Tracks consecutive failures per job. After CIRCUIT_OPEN_AFTER failures the job
+# is skipped for an exponentially increasing cooldown before resetting.
+
+_CIRCUIT_OPEN_AFTER = 3          # failures before opening
+_CIRCUIT_MAX_COOLDOWN = 7200     # cap cooldown at 2 hours (seconds)
+
+_circuit: dict[str, dict] = {}  # {job_id: {failures, open_until}}
+
+
+def _circuit_ok(job_id: str) -> bool:
+    """Return True if the job is allowed to run (circuit closed or cooled down)."""
+    state = _circuit.get(job_id)
+    if not state:
+        return True
+    if state["failures"] < _CIRCUIT_OPEN_AFTER:
+        return True
+    now = time.monotonic()
+    if now >= state["open_until"]:
+        logger.info("CIRCUIT: %s cooldown expired — resetting", job_id)
+        _circuit.pop(job_id, None)
+        return True
+    remaining = int(state["open_until"] - now)
+    logger.warning("CIRCUIT OPEN: skipping %s (%ds cooldown remaining)", job_id, remaining)
+    return False
+
+
+def _circuit_success(job_id: str) -> None:
+    """Record a successful job run — resets the circuit."""
+    _circuit.pop(job_id, None)
+
+
+def _circuit_failure(job_id: str) -> None:
+    """Record a job failure — may open the circuit."""
+    state = _circuit.setdefault(job_id, {"failures": 0, "open_until": 0.0})
+    state["failures"] += 1
+    failures = state["failures"]
+    if failures >= _CIRCUIT_OPEN_AFTER:
+        # Exponential backoff: 60s * 2^(failures - OPEN_AFTER), capped
+        cooldown = min(60 * (2 ** (failures - _CIRCUIT_OPEN_AFTER)), _CIRCUIT_MAX_COOLDOWN)
+        state["open_until"] = time.monotonic() + cooldown
+        logger.error(
+            "CIRCUIT OPENED: %s failed %d times in a row — pausing for %ds",
+            job_id, failures, cooldown,
+        )
 
 
 def is_job_allowed_in_mode(job_id: str) -> bool:
-    """Check if a job is allowed to run in the current runtime mode."""
-    from backend.runtime_mode import is_live_eval_mode, is_training_mode
+    """Check if a job is allowed to run in the current runtime mode.
+    
+    Uses unified RuntimeModeManager as SINGLE SOURCE OF TRUTH.
+    """
+    from backend.runtime_mode import (
+        is_live_eval_mode, is_training_mode, is_live_mode, 
+        is_backtest_mode, allow_execution
+    )
     
     if job_id in MUTATING_JOBS:
         if is_live_eval_mode():
@@ -23,70 +82,168 @@ def is_job_allowed_in_mode(job_id: str) -> bool:
                 f"BLOCKED in LIVE_EVAL mode for evaluation integrity"
             )
             return False
-        elif is_training_mode() and job_id == "run_betting_bot":
+        elif is_backtest_mode():
             logger.warning(
-                f"⏭️  SCHEDULER SKIP: Job '{job_id}' (betting) is "
-                f"BLOCKED in TRAINING mode"
+                f"⏭️  SCHEDULER SKIP: Job '{job_id}' is a mutating job and is "
+                f"BLOCKED in BACKTEST mode"
             )
             return False
+        elif is_training_mode():
+            if job_id in ("run_betting_bot", "run_continuous_cycle"):
+                logger.warning(
+                    f"⏭️  SCHEDULER SKIP: Job '{job_id}' (betting/prediction) is "
+                    f"BLOCKED in TRAINING mode"
+                )
+                return False
+    
+    if job_id == "run_betting_bot" and not allow_execution():
+        logger.warning(f"⏭️  SCHEDULER SKIP: {job_id} not allowed in current mode")
+        return False
     
     return True
 
 
 def job_fetch_fixtures():
     """Pull upcoming fixtures, upsert changes."""
+    if not _circuit_ok("fetch_fixtures"):
+        return
     logger.info("JOB: fetch_fixtures starting")
-    from backend.execution_engine import get_execution_engine
-    engine = get_execution_engine()
+    from src.storage.db import get_session
+    from sqlalchemy import text
+    success = False
+    error_msg = None
     try:
-        engine.run_job("fetch_fixtures", None)
+        import uuid
+        from scripts.daily_run import DailyBaselinePipeline
+        pipeline = DailyBaselinePipeline(context={"run_id": str(uuid.uuid4())[:8]})
+        pipeline.run()
+        _circuit_success("fetch_fixtures")
+        success = True
         logger.info("JOB: fetch_fixtures completed")
     except Exception as e:
-        logger.error(f"JOB: fetch_fixtures failed: {e}")
+        error_msg = str(e)
+        _circuit_failure("fetch_fixtures")
+        logger.exception("JOB: fetch_fixtures failed")
+    try:
+        with get_session() as s:
+            s.execute(
+                text("INSERT INTO ingestion_log (job_name, success, fixtures_updated, error_message) VALUES (:job, :success, :updated, :error)"),
+                {"job": "fetch_fixtures", "success": success, "updated": 0, "error": error_msg}
+            )
+            s.commit()
+    except Exception:
+        logger.exception("JOB: fetch_fixtures — failed to write ingestion_log")
 
 
 def job_fetch_results():
     """Update finished match scores and outcomes."""
+    if not _circuit_ok("fetch_results"):
+        return
     logger.info("JOB: fetch_results starting")
-    from backend.execution_engine import get_execution_engine
     from src.storage.db import get_session
     from sqlalchemy import text
-    
-    engine = get_execution_engine()
-    fixtures_updated = 0
+
     success = False
     error_msg = None
-    
+
     try:
-        engine.run_job("fetch_results", None)
+        import uuid
+        from scripts.daily_run import DailyBaselinePipeline
+        pipeline = DailyBaselinePipeline(context={"run_id": str(uuid.uuid4())[:8]})
+        pipeline.run()
         success = True
-        logger.info(f"JOB: fetch_results completed")
+        _circuit_success("fetch_results")
+        logger.info("JOB: fetch_results completed")
     except Exception as e:
         error_msg = str(e)
-        logger.error(f"JOB: fetch_results failed: {e}")
-    
+        _circuit_failure("fetch_results")
+        logger.exception("JOB: fetch_results failed")
+
+    # After fetching results, settle any pending bets whose fixtures are now FT
+    try:
+        from src.settlement import fetch_and_update_fixtures, update_live_fixture_statuses, settle_all, backfill_missing_scores
+        fetch_and_update_fixtures(days=7)
+        update_live_fixture_statuses()
+        backfill_missing_scores(days=14)
+        result = settle_all()
+        if result['bets_settled'] > 0 or result['predictions_settled'] > 0:
+            logger.info(
+                f"JOB: fetch_results auto-settled "
+                f"{result['bets_settled']} bets, {result['predictions_settled']} predictions, "
+                f"P/L: {result['bets_pnl']:+.2f}"
+            )
+    except Exception:
+        logger.exception("JOB: fetch_results — auto-settlement failed (non-fatal)")
+
     try:
         with get_session() as s:
             s.execute(
-                text("""INSERT INTO ingestion_log (job_name, success, fixtures_updated, error_message) 
+                text("""INSERT INTO ingestion_log (job_name, success, fixtures_updated, error_message)
                        VALUES (:job, :success, :updated, :error)"""),
-                {"job": "fetch_results", "success": success, "updated": fixtures_updated, "error": error_msg}
+                {"job": "fetch_results", "success": success, "updated": 0, "error": error_msg}
             )
             s.commit()
-    except Exception as log_err:
-        logger.error(f"Failed to log to ingestion_log: {log_err}")
+    except Exception:
+        logger.exception("JOB: fetch_results — failed to write ingestion_log")
 
 
 def job_fetch_odds():
-    """Pull latest odds into fixture_odds + bookmaker_odds."""
+    """Poll fresh odds for upcoming fixtures and recalculate EV on predictions."""
+    if not _circuit_ok("fetch_odds"):
+        return
     logger.info("JOB: fetch_odds starting")
-    from backend.execution_engine import get_execution_engine
-    engine = get_execution_engine()
+    from src.storage.db import get_session
+    from sqlalchemy import text
+
+    success = False
+    error_msg = None
+    odds_updated = 0
+
     try:
-        engine.run_job("fetch_odds", None)
-        logger.info("JOB: fetch_odds completed")
+        from src.ingestion.client import APIFootballClient, calls_remaining_today
+        from scripts.odds_poll import find_fixtures_needing_odds, poll_and_update_odds, recalculate_prediction_ev
+
+        remaining = calls_remaining_today()
+        if remaining < 50:
+            logger.warning(f"JOB: fetch_odds — low API calls ({remaining}), skipping")
+            return
+
+        client = APIFootballClient()
+
+        with get_session() as s:
+            fixture_ids = find_fixtures_needing_odds(s)
+
+        if not fixture_ids:
+            logger.info("JOB: fetch_odds — no fixtures need odds polling")
+            _circuit_success("fetch_odds")
+            return
+
+        max_fixtures = min(200, remaining // 3)
+        fixture_ids = fixture_ids[:max_fixtures]
+        logger.info(f"JOB: fetch_odds — polling {len(fixture_ids)} fixtures")
+
+        with get_session() as s:
+            odds_updated = poll_and_update_odds(s, client, fixture_ids)
+            recalculate_prediction_ev(s, fixture_ids)
+
+        success = True
+        _circuit_success("fetch_odds")
+        logger.info(f"JOB: fetch_odds completed — {odds_updated} odds rows updated")
     except Exception as e:
-        logger.error(f"JOB: fetch_odds failed: {e}")
+        error_msg = str(e)
+        _circuit_failure("fetch_odds")
+        logger.exception("JOB: fetch_odds failed")
+
+    try:
+        with get_session() as s:
+            s.execute(
+                text("""INSERT INTO ingestion_log (job_name, success, fixtures_updated, error_message)
+                       VALUES (:job, :success, :updated, :error)"""),
+                {"job": "fetch_odds", "success": success, "updated": odds_updated, "error": error_msg}
+            )
+            s.commit()
+    except Exception:
+        logger.exception("JOB: fetch_odds — failed to write ingestion_log")
 
 
 def job_auto_heal_runs():
@@ -96,60 +253,42 @@ def job_auto_heal_runs():
         from backend.auto_healing_engine import run_auto_healing
         result = run_auto_healing()
         logger.info(f"JOB: auto_heal_runs completed - {result.get('healed_count', 0)} runs healed")
-    except Exception as e:
-        logger.error(f"JOB: auto_heal_runs failed: {e}")
+    except Exception:
+        logger.exception("JOB: auto_heal_runs failed")
 
 
 def job_cleanup_matches():
     """Cleanup stale live matches and archive old finished matches."""
+    if not _circuit_ok("cleanup_matches"):
+        return
     logger.info("JOB: cleanup_matches starting")
+    from src.storage.db import get_session
+    from sqlalchemy import text
+    success = False
+    error_msg = None
     try:
         from backend.match_state_normalizer import cleanup_finished_matches
         result = cleanup_finished_matches()
-        logger.info(f"JOB: cleanup_matches completed - {result.get('transitioned_to_ft', 0)} transitioned, {result.get('archived', 0)} archived")
+        _circuit_success("cleanup_matches")
+        success = True
+        logger.info(
+            "JOB: cleanup_matches completed — %d transitioned, %d archived",
+            result.get("transitioned_to_ft", 0), result.get("archived", 0),
+        )
     except Exception as e:
-        logger.error(f"JOB: cleanup_matches failed: {e}")
-
-
-def job_run_predictions():
-    """Run ML inference, write to prediction_records."""
-    logger.info("JOB: run_predictions starting")
-    
-    from backend.runtime_mode import get_mode_name
-    from backend.run_context import create_run_context
-    from backend.experiment_tracker import get_tracker
-    from backend.execution_engine import get_execution_engine
-    
-    mode = get_mode_name()
-    tracker = get_tracker()
-    engine = get_execution_engine()
-    run_id = None
-    context = None
-    
+        error_msg = str(e)
+        _circuit_failure("cleanup_matches")
+        logger.exception("JOB: cleanup_matches failed")
     try:
-        if mode in ['training', 'dev']:
-            run_id = tracker.start_run(runtime_mode=mode)
-            logger.info(f"JOB: Started experiment run {run_id}")
-            context = create_run_context(run_id, mode)
-            
-            # TEMP DEBUG: fail-fast guard
-            if run_id is None:
-                raise RuntimeError("CRITICAL: Run ID not created in allowed mode")
-        
-        engine.run_job("daily_predictions", context)
-        
-        if run_id:
-            tracker.finalize_run(run_id)
-            logger.info(f"JOB: Finalized experiment run {run_id}")
-        
-        logger.info("JOB: run_predictions completed")
-    except Exception as e:
-        logger.error(f"JOB: run_predictions failed: {e}")
-        if run_id:
-            try:
-                tracker.finalize_run(run_id, status='failed')
-            except:
-                pass
+        with get_session() as s:
+            s.execute(
+                text("INSERT INTO ingestion_log (job_name, success, fixtures_updated, error_message) VALUES (:job, :success, :updated, :error)"),
+                {"job": "cleanup_matches", "success": success, "updated": 0, "error": error_msg}
+            )
+            s.commit()
+    except Exception:
+        logger.exception("JOB: cleanup_matches — failed to write ingestion_log")
+
 
 
 def job_retrain_models():
@@ -184,27 +323,25 @@ def job_retrain_models():
             logger.info(f"JOB: Finalized experiment run {run_id}")
         
         logger.info("JOB: retrain_models completed")
-    except Exception as e:
-        logger.error(f"JOB: retrain_models failed: {e}")
+    except Exception:
+        logger.exception("JOB: retrain_models failed")
         if run_id:
             try:
                 tracker.finalize_run(run_id, status='failed')
-            except:
-                pass
+            except Exception:
+                logger.exception("JOB: retrain_models — failed to finalize run %s as failed", run_id)
 
 
 def job_run_betting_bot():
-    """Evaluate value bets, write to placed_bets (fake money)."""
-    logger.info("JOB: run_betting_bot starting")
+    """Execute betting via AgentCoordinator (PORTFOLIO PRIMARY PATH)."""
+    logger.info("JOB: run_betting_bot starting - USING AGENTCOORDINATOR")
     
-    from backend.runtime_mode import get_mode_name
+    from backend.runtime_mode import get_mode_name, is_live_eval_mode
     from backend.run_context import create_run_context
     from backend.experiment_tracker import get_tracker
-    from backend.execution_engine import get_execution_engine
     
     mode = get_mode_name()
     tracker = get_tracker()
-    engine = get_execution_engine()
     run_id = None
     context = None
     
@@ -214,28 +351,119 @@ def job_run_betting_bot():
             logger.info(f"JOB: Started experiment run {run_id}")
             context = create_run_context(run_id, mode)
             
-            # TEMP DEBUG: fail-fast guard
             if run_id is None:
                 raise RuntimeError("CRITICAL: Run ID not created in allowed mode")
         
-        engine.run_job("betting_pipeline", context)
+        # Check runtime mode
+        import os
+        runtime_mode = os.getenv("BOOTBALL_RUNTIME_MODE", "PORTFOLIO_PRIMARY")
+        
+        if runtime_mode == "PORTFOLIO_PRIMARY":
+            # PRIMARY PATH: Use AgentCoordinator
+            from src.agents.coordinator import run_multi_agent_pipeline
+            result = run_multi_agent_pipeline()
+            logger.info(f"JOB: AgentCoordinator completed: {result}")
+        else:
+            # Legacy mode - warn and use old path
+            logger.warning(f"JOB: Runtime mode {runtime_mode} - using legacy path")
+            from backend.execution_engine import get_execution_engine
+            engine = get_execution_engine()
+            engine.run_job("betting_pipeline", context)
         
         if run_id:
             tracker.finalize_run(run_id)
             logger.info(f"JOB: Finalized experiment run {run_id}")
         
-        logger.info("JOB: run_betting_bot completed")
-    except Exception as e:
-        logger.error(f"JOB: run_betting_bot failed: {e}")
+        logger.info("JOB: run_betting_bot completed via AgentCoordinator")
+    except Exception:
+        logger.exception("JOB: run_betting_bot failed")
         if run_id:
             try:
                 tracker.finalize_run(run_id, status='failed')
-            except:
-                pass
+            except Exception:
+                logger.exception("JOB: run_betting_bot — failed to finalize run %s as failed", run_id)
+        raise
+
+
+def job_run_continuous_cycle():
+    """Continuous prediction pipeline - SINGLE EXECUTION SPINE.
+    
+    ENFORCEMENT RULE:
+    This is the ONLY entry point for prediction pipeline execution.
+    All execution must flow through AgentCoordinator.
+    
+    Flow (SINGLE PATH):
+    1. Scheduler triggers this job
+    2. → AgentCoordinator.run_cycle() [SINGLE ENTRY POINT]
+    3. → UnifiedPredictionService.generate()
+    4. → PortfolioEngine.compute_allocation()
+    5. → RiskEngine.evaluate()
+    6. → PolicyEngine.evaluate()
+    7. → ExecutionEngine.execute()
+    
+    NO other execution paths allowed.
+    """
+    logger.info("JOB: run_continuous_cycle starting - SINGLE EXECUTION SPINE")
+    
+    from backend.runtime_mode import get_mode_name, allow_execution
+    from backend.run_context import create_run_context
+    from backend.experiment_tracker import get_tracker
+    
+    mode = get_mode_name()
+    tracker = get_tracker()
+    run_id = None
+    context = None
+    
+    if not allow_execution():
+        logger.warning(f"⏭️  SCHEDULER SKIP: Execution not allowed in {mode} mode")
+        return
+    
+    try:
+        if mode in ['training', 'dev', 'live']:
+            run_id = tracker.start_run(runtime_mode=mode)
+            logger.info(f"JOB: Started experiment run {run_id}")
+            context = create_run_context(run_id, mode)
+            
+            if run_id is None:
+                raise RuntimeError("CRITICAL: Run ID not created in allowed mode")
+        
+        from scripts.run_continuous_cycle import run_continuous_cycle
+        result = run_continuous_cycle(run_id, context)
+        logger.info(f"JOB: run_continuous_cycle completed: {result}")
+        
+        if run_id:
+            tracker.finalize_run(run_id)
+            logger.info(f"JOB: Finalized experiment run {run_id}")
+        
+    except Exception:
+        logger.exception("JOB: run_continuous_cycle failed")
+        if run_id:
+            try:
+                tracker.finalize_run(run_id, status='failed')
+            except Exception:
+                logger.exception("JOB: run_continuous_cycle — failed to finalize run %s as failed", run_id)
+        raise
 
 
 def get_scheduler() -> BackgroundScheduler:
-    """Create and configure the scheduler."""
+    """Create and configure the scheduler.
+    
+    NOTE: This scheduler is now AUXILIARY ONLY.
+    
+    Core execution (run_continuous_cycle) is handled by ExecutionRuntime.
+    This scheduler only handles non-critical data operations:
+    - fetch_fixtures: Fixture ingestion
+    - fetch_results: Result updates
+    - fetch_odds: Odds updates
+    - cleanup_matches: Match cleanup
+    
+    Jobs REMOVED from APScheduler (now handled by ExecutionRuntime):
+    - run_continuous_cycle (core pipeline)
+    - run_betting_bot (execution)
+    - run_predictions (predictions)
+    - retrain_models (training)
+    - auto_heal_runs (governance)
+    """
     try:
         from backend.runtime_mode import is_live_eval_mode, get_mode_name
         mode = get_mode_name()
@@ -250,27 +478,22 @@ def get_scheduler() -> BackgroundScheduler:
     )
     
     logger.info(f"Configuring scheduler for RUNTIME_MODE: {mode}")
+    logger.info("NOTE: Scheduler is now AUXILIARY ONLY (data operations)")
 
     try:
         if is_live_eval_mode():
             logger.info("⚠️  LIVE_EVAL MODE: Scheduler will run ONLY ingestion jobs")
-            logger.info("   - retrain_models: BLOCKED")
-            logger.info("   - run_betting_bot: BLOCKED")
     except Exception:
         pass
 
-    jobs_to_add = [
+    auxiliary_jobs = [
         ("fetch_fixtures", job_fetch_fixtures, 'interval', {'hours': 6}),
         ("fetch_results", job_fetch_results, 'interval', {'hours': 1}),
         ("fetch_odds", job_fetch_odds, 'interval', {'hours': 1}),
-        ("run_predictions", job_run_predictions, 'cron', {'hour': 3, 'minute': 0}),
-        ("retrain_models", job_retrain_models, 'cron', {'day_of_week': 'mon', 'hour': 4, 'minute': 0}),
-        ("run_betting_bot", job_run_betting_bot, 'interval', {'minutes': 30}),
-        ("auto_heal_runs", job_auto_heal_runs, 'interval', {'minutes': 30}),
         ("cleanup_matches", job_cleanup_matches, 'interval', {'minutes': 5}),
     ]
     
-    for job_id, job_func, trigger_type, trigger_args in jobs_to_add:
+    for job_id, job_func, trigger_type, trigger_args in auxiliary_jobs:
         if not is_job_allowed_in_mode(job_id):
             logger.info(f"   → Skipping job: {job_id}")
             continue
@@ -283,7 +506,12 @@ def get_scheduler() -> BackgroundScheduler:
             replace_existing=True,
             **trigger_args
         )
-        logger.info(f"   → Added job: {job_id}")
+        logger.info(f"   → Added auxiliary job: {job_id}")
+
+    logger.info("=" * 50)
+    logger.info("SCHEDULER CONFIGURATION COMPLETE")
+    logger.info("Core execution moved to ExecutionRuntime")
+    logger.info("=" * 50)
 
     return scheduler
 

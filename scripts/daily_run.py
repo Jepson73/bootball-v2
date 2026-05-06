@@ -1,62 +1,46 @@
 #!/usr/bin/env python3
 """
-scripts/daily_run.py
+scripts/daily_run.py - DATA BASELINE ONLY (REFACTORED)
 
-Pure orchestrator pipeline - produces facts, emits events, NO alerting.
+This script is now ONLY responsible for:
+1. Backfilling finished fixtures from API
+2. Fetching upcoming fixtures (7 days ahead)
+3. Validating DB consistency
+4. Forcing settlement baseline
 
-Responsibilities:
-1. Fetch fixtures + odds
-2. Generate predictions
-3. Compute value bets
-4. Persist results
-5. Emit structured events via EventBus
+MUST NOT:
+- call prediction engine
+- call portfolio engine  
+- call execution engine
 
-DO NOT:
-- Send Discord messages
-- Build alert strings  
-- Call alerting libraries directly
-- Format dashboard summaries
-- Duplicate notification logic
-
-ALL side effects are handled by EventBus Consumers.
+The continuous prediction/betting is handled by run_continuous_cycle()
 """
 
 import argparse
 import logging
 import sys
+from pathlib import Path
 import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
-sys.path.insert(0, "/opt/projects/bootball")
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from config.leagues import ALL_LEAGUE_IDS, LEAGUES
-from src.ingestion.client import APIFootballClient, calls_remaining_today
+from src.ingestion.client import APIFootballClient
 from src.storage.db import get_session, init_db
-from src.storage.models import Fixture, FixtureOdds, PredictionRecord, Team, ModelVersion
-
-from src.betting.ev import expected_value
-from src.betting.kelly import fractional_kelly
-from src.betting.shin import shin_probabilities
-from src.betting.prediction import get_model_prediction
-from src.models.calibrator import calibrate_prediction
+from src.storage.models import Fixture, FixtureOdds, PredictionRecord, PlacedBet, Team, League
 
 from src.alerts.event_bus import event_bus as EventBus, Events
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-EV_THRESHOLD = 0.05
-KELLY_FRACTION = 0.25
 
-
-def run_with_context(run_id: str, mode: str = "daily", dry_run: bool = False):
-    """
-    Execute pipeline with run context for tracking.
-    Returns (success, error_count, duration_seconds)
-    """
+def run_with_context(run_id: str, mode: str = "daily_baseline", dry_run: bool = False):
+    """Execute pipeline with run context for tracking."""
     from backend.experiment_tracker import ExperimentTracker
     
     start_time = time.time()
@@ -72,10 +56,7 @@ def run_with_context(run_id: str, mode: str = "daily", dry_run: bool = False):
             },
         )
         
-        pipeline = DailyPipeline(
-            dry_run=dry_run,
-            context={"run_id": run_id, "mode": mode},
-        )
+        pipeline = DailyBaselinePipeline(dry_run=dry_run, context={"run_id": run_id, "mode": mode})
         pipeline.run()
         
         duration = time.time() - start_time
@@ -85,10 +66,7 @@ def run_with_context(run_id: str, mode: str = "daily", dry_run: bool = False):
             {
                 "run_id": run_id,
                 "mode": mode,
-                "total_bets": len(pipeline.value_bets),
-                "total_ev": sum(b.get("ev", 0) for b in pipeline.value_bets),
                 "errors": errors,
-                "duration": duration,
                 "timestamp": datetime.now(ZoneInfo("UTC")).isoformat(),
             },
         )
@@ -96,123 +74,136 @@ def run_with_context(run_id: str, mode: str = "daily", dry_run: bool = False):
         return True, len(errors), duration
         
     except Exception as e:
-        errors.append(str(e))
         duration = time.time() - start_time
+        logger.error(f"Pipeline failed: {e}")
         
         EventBus.emit(
             Events.RUN_FINISHED,
             {
                 "run_id": run_id,
                 "mode": mode,
-                "total_bets": 0,
-                "total_ev": 0,
-                "errors": errors,
-                "duration": duration,
+                "errors": [str(e)],
                 "timestamp": datetime.now(ZoneInfo("UTC")).isoformat(),
             },
         )
         
-        return False, len(errors), duration
+        return False, len(errors) + 1, duration
 
 
-class DailyPipeline:
+class DailyBaselinePipeline:
     """
-    Pure computation pipeline.
-    No alerts, no formatting, no messaging.
-    Emits events only.
+    DATA BASELINE ONLY - NO predictions, NO betting.
+    
+    Responsibilities:
+    1. Backfill ALL finished fixtures (FT) from API
+    2. Fetch ALL upcoming fixtures (7 days ahead)
+    3. Validate DB consistency
+    4. Force settlement baseline
+    5. Emit events for data readiness
     """
-
-    def __init__(self, dry_run=False, league_ids=None, markets=None, catchup_days=0, context=None):
+    
+    def __init__(self, dry_run=False, league_ids=None, catchup_days=7, context=None):
         self.client = APIFootballClient()
         self.dry_run = dry_run
         self.league_ids = league_ids or ALL_LEAGUE_IDS
-        self.markets = markets or ["h2h", "btts", "ou25", "ou15"]
         self.catchup_days = catchup_days
         self.context = context or {}
-
-        self.value_bets = []
+        
         self.errors = []
-        self.prediction_count = 0
-        self.fixture_count = 0
+        self.fixtures_backfilled = 0
+        self.upcoming_count = 0
+        self.settled_count = 0
+        
+        # Track last successful run for incremental backfill
+        self._last_run_timestamp = None
+    
+    @staticmethod
+    def _league_season(league_id: int, now: datetime) -> int:
+        from config.settings import settings
+        return settings.get_season(league_id)
 
     def run(self):
-        logger.info("Daily pipeline starting")
-        logger.info(f"Leagues: {len(self.league_ids)} markets: {self.markets}")
+        """Execute data baseline pipeline."""
+        logger.info("=" * 60)
+        logger.info("DAILY BASELINE PIPELINE - DATA ONLY")
+        logger.info("=" * 60)
 
         now = datetime.now(ZoneInfo("UTC"))
-        season = now.year if now.month >= 7 else now.year - 1
-
         run_id = self.context.get("run_id")
-
+        
+        # Emit run started
         EventBus.emit(
             Events.RUN_STARTED,
             {
                 "run_id": run_id,
-                "mode": "daily",
+                "mode": "daily_baseline",
                 "timestamp": now.isoformat(),
             },
         )
+        
+        # STEP 1: Backfill completed fixtures
+        logger.info("[BASELINE] Step 1: Backfilling completed fixtures...")
+        self._fetch_completed(now)
 
-        self._fetch_completed(now, season)
-
-        fixtures = self._fetch_upcoming(now, season)
-        self.fixture_count = len(fixtures)
-
-        for raw in fixtures:
-            self._process_fixture(raw, season)
-
-        self._run_predictions()
-
-        EventBus.emit(
-            Events.PREDICTIONS_GENERATED,
-            {
-                "run_id": run_id,
-                "fixture_count": self.fixture_count,
-                "market_count": len(self.markets),
-                "prediction_count": self.prediction_count,
-                "timestamp": now.isoformat(),
-            },
-        )
-
-        EventBus.emit(
-            Events.BETS_GENERATED,
-            {
-                "run_id": run_id,
-                "bets": [
-                    {
-                        "fixture_id": b["fixture_id"],
-                        "market": b["market"],
-                        "outcome": b["outcome"],
-                        "odds": b["odds"],
-                        "ev": b["ev"],
-                        "stake": b["stake"],
-                        "timestamp": b.get("timestamp", now.isoformat()),
-                    }
-                    for b in self.value_bets
-                ],
-            },
-        )
-
+        # STEP 2: Fetch upcoming fixtures
+        logger.info("[BASELINE] Step 2: Fetching upcoming fixtures...")
+        fixtures = self._fetch_upcoming(now)
+        self.upcoming_count = len(fixtures)
+        
+        # STEP 3: Validate DB consistency  
+        logger.info("[BASELINE] Step 3: Validating DB consistency...")
+        validation = self._validate_consistency(fixtures)
+        
+        # STEP 4: Force settlement baseline
+        logger.info("[BASELINE] Step 4: Forcing settlement baseline...")
+        self._force_settlement_baseline()
+        
+        # STEP 5: Emit baseline ready events
+        logger.info("[BASELINE] Step 5: Emitting baseline ready events...")
+        
+        EventBus.emit("BASELINE_READY", {
+            "run_id": run_id,
+            "fixtures_backfilled": self.fixtures_backfilled,
+            "upcoming_count": self.upcoming_count,
+            "settled_count": self.settled_count,
+            "validation": validation,
+            "timestamp": now.isoformat(),
+        })
+        
+        EventBus.emit("DATA_BACKFILL_COMPLETED", {
+            "run_id": run_id,
+            "backfilled": self.fixtures_backfilled,
+            "upcoming": self.upcoming_count,
+            "settled": self.settled_count,
+            "errors": self.errors,
+            "timestamp": now.isoformat(),
+        })
+        
+        # Emit run finished
         EventBus.emit(
             Events.RUN_FINISHED,
             {
                 "run_id": run_id,
-                "mode": "daily",
-                "total_bets": len(self.value_bets),
-                "total_ev": sum(b.get("ev", 0) for b in self.value_bets),
-                "errors": self.errors,
+                "mode": "daily_baseline",
+                "backfilled": self.fixtures_backfilled,
+                "upcoming": self.upcoming_count,
+                "settled": self.settled_count,
+                "validation_errors": validation.get("errors", []),
                 "timestamp": now.isoformat(),
             },
         )
-
-        logger.info(f"Pipeline complete. value_bets={len(self.value_bets)}")
-
-    def _fetch_completed(self, now, season):
-        logger.info("Fetching completed fixtures for settlement")
-
-        days_back = max(1, self.catchup_days or 1)
+        
+        logger.info(f"[BASELINE] Complete: {self.fixtures_backfilled} backfilled, {self.upcoming_count} upcoming, {self.settled_count} settled")
+        
+        if self.errors:
+            logger.warning(f"[BASELINE] Errors: {self.errors}")
+    
+    def _fetch_completed(self, now):
+        """Fetch and backfill completed fixtures."""
+        days_back = max(1, self.catchup_days)
 
         for league_id in self.league_ids:
+            season = self._league_season(league_id, now)
             try:
                 raw = self.client.get_fixtures(
                     league_id=league_id,
@@ -222,42 +213,34 @@ class DailyPipeline:
                     status="FT",
                 )
                 if raw:
-                    settled_count = self._save_completed(raw, season)
-                    if settled_count > 0:
-                        run_id = self.context.get("run_id")
-                        EventBus.emit(
-                            Events.BET_SETTLED,
-                            {
-                                "run_id": run_id,
-                                "settled_count": settled_count,
-                                "pnl_total": 0,
-                                "wins": 0,
-                                "losses": 0,
-                                "timestamp": now.isoformat(),
-                            },
-                        )
+                    count = self._save_completed(raw, season)
+                    self.fixtures_backfilled += count
+                    logger.info(f"[BASELINE] League {league_id}: {count} FT fixtures")
             except Exception as e:
-                self.errors.append(str(e))
-
+                error_msg = f"League {league_id}: {e}"
+                self.errors.append(error_msg)
+                logger.warning(f"[BASELINE] {error_msg}")
+    
     def _save_completed(self, raw, season):
+        """Save completed fixtures to DB."""
         count = 0
         for match in raw:
             fixture = match["fixture"]
             fid = fixture["id"]
-
+            
             with get_session() as s:
                 existing = s.execute(
                     select(Fixture).where(Fixture.id == fid)
                 ).scalar_one_or_none()
-
+                
                 if not existing:
                     continue
-
+                
                 goals = fixture.get("goals", {})
                 existing.goals_home = goals.get("home")
                 existing.goals_away = goals.get("away")
                 existing.status = "FT"
-
+                
                 if goals.get("home") is not None and goals.get("away") is not None:
                     if goals["home"] > goals["away"]:
                         existing.outcome = "H"
@@ -265,18 +248,18 @@ class DailyPipeline:
                         existing.outcome = "A"
                     else:
                         existing.outcome = "D"
-
+                
                 s.commit()
                 count += 1
-
+        
         return count
-
-    def _fetch_upcoming(self, now, season):
-        logger.info("Fetching upcoming fixtures")
-
-        fixtures = []
+    
+    def _fetch_upcoming(self, now):
+        """Fetch upcoming fixtures and upsert them into the DB."""
+        all_raw = []
 
         for league_id in self.league_ids:
+            season = self._league_season(league_id, now)
             try:
                 raw = self.client.get_fixtures(
                     league_id=league_id,
@@ -286,127 +269,185 @@ class DailyPipeline:
                     status="NS",
                 )
                 if raw:
-                    fixtures.extend(raw)
+                    all_raw.extend(raw)
             except Exception as e:
-                self.errors.append(str(e))
+                error_msg = f"Fetch upcoming league {league_id}: {e}"
+                self.errors.append(error_msg)
+                logger.warning(f"[BASELINE] {error_msg}")
 
-        return fixtures
+        saved = self._save_upcoming(all_raw)
+        logger.info(f"[BASELINE] Fetched {len(all_raw)} upcoming fixtures, upserted {saved}")
+        return all_raw
 
-    def _process_fixture(self, raw, season):
-        fixture = raw["fixture"]
-        teams = raw["teams"]
-
-        fixture_id = fixture["id"]
-
+    def _save_upcoming(self, raw_fixtures: list) -> int:
+        """Upsert upcoming NS fixtures into the Fixture table."""
+        from config.leagues import LEAGUES as _LEAGUES
+        saved = 0
         with get_session() as s:
-            self._ensure_fixture(s, raw, season)
-            self._fetch_odds(s, fixture_id)
+            _added_leagues: set = set()
+            _added_teams: set = set()
+            for match in raw_fixtures:
+                fix_info = match.get("fixture", {})
+                fid = fix_info.get("id")
+                if not fid:
+                    continue
 
-    def _run_predictions(self):
-        from scripts.make_predictions import make_predictions_for_fixture
+                teams = match.get("teams", {})
+                home_id = teams.get("home", {}).get("id")
+                away_id = teams.get("away", {}).get("id")
+                league_info = match.get("league", {})
+                league_id = league_info.get("id")
+                season = league_info.get("season")
 
+                if not all([home_id, away_id, league_id, season]):
+                    continue
+
+                # Ensure League row exists
+                if league_id not in _added_leagues and not s.get(League, league_id):
+                    meta = _LEAGUES.get(league_id, {})
+                    country_raw = league_info.get("country", "")
+                    country_str = country_raw if isinstance(country_raw, str) else (country_raw or {}).get("name", "")
+                    s.add(League(
+                        id=league_id,
+                        name=meta.get("name", league_info.get("name", str(league_id))),
+                        country=meta.get("country", country_str),
+                        tier=1,
+                    ))
+                    _added_leagues.add(league_id)
+
+                # Ensure Team rows exist
+                for tid, tdata in [(home_id, teams["home"]), (away_id, teams["away"])]:
+                    if tid not in _added_teams and not s.get(Team, tid):
+                        s.add(Team(
+                            id=tid,
+                            name=tdata.get("name", str(tid)),
+                            country="",
+                        ))
+                        _added_teams.add(tid)
+
+                date_str = fix_info.get("date")
+                fix_date = datetime.fromisoformat(date_str.replace("Z", "+00:00")).replace(tzinfo=None) if date_str else None
+
+                existing = s.get(Fixture, fid)
+                if existing:
+                    # Only update if still not started
+                    if existing.status in ("NS", None):
+                        existing.date = fix_date
+                        existing.status = "NS"
+                else:
+                    s.add(Fixture(
+                        id=fid,
+                        league_id=league_id,
+                        season=season,
+                        home_team_id=home_id,
+                        away_team_id=away_id,
+                        date=fix_date,
+                        status="NS",
+                    ))
+                    saved += 1
+
+            s.commit()
+        return saved
+    
+    def _validate_consistency(self, fixtures):
+        """Validate DB consistency."""
+        validation = {"errors": [], "warnings": []}
+        
         with get_session() as s:
-            fixtures = s.execute(
-                select(Fixture.id).where(Fixture.status.in_(["NS", "1H", "2H", "HT"]))
-            ).scalars().all()
+            # Check for fixtures missing odds
+            no_odds = s.execute(
+                select(func.count(Fixture.id))
+                .join(FixtureOdds, Fixture.id == FixtureOdds.fixture_id, isouter=True)
+                .where(FixtureOdds.id == None)
+                .where(Fixture.status == "NS")
+            ).scalar() or 0
+            
+            if no_odds > 0:
+                validation["warnings"].append(f"{no_odds} upcoming fixtures missing odds")
+            
+            # Check for stuck fixtures (not FT but should be)
+            stuck = s.execute(
+                select(func.count(Fixture.id))
+                .where(Fixture.date < datetime.now(ZoneInfo("UTC")))
+                .where(Fixture.status == "NS")
+            ).scalar() or 0
+            
+            if stuck > 10:
+                validation["warnings"].append(f"{stuck} old fixtures still in NS status")
+            
+            # Check for unsettled bets
+            unsettled = s.execute(
+                select(func.count(PlacedBet.id))
+                .where(PlacedBet.settled == False)
+            ).scalar() or 0
+            
+            if unsettled > 0:
+                validation["warnings"].append(f"{unsettled} bets still unsettled")
+        
+        return validation
+    
+    def _force_settlement_baseline(self):
+        """Settle bets and predictions for any finished fixtures."""
+        from src.settlement import settle_placed_bets, settle_predictions
 
-        for fid in fixtures:
-            with get_session() as s:
-                make_predictions_for_fixture(s, fid, self.dry_run, context=self.context)
-                self.prediction_count += 1
-
-    def _ensure_fixture(self, s, raw, season):
-        fixture = raw["fixture"]
-        teams = raw["teams"]
-
-        fid = fixture["id"]
-
-        if s.execute(select(Fixture).where(Fixture.id == fid)).scalar():
-            return
-
-        s.add(
-            Fixture(
-                id=fid,
-                league_id=raw["league"]["id"],
-                season=season,
-                home_team_id=teams["home"]["id"],
-                away_team_id=teams["away"]["id"],
-                date=datetime.fromisoformat(fixture["date"].replace("Z", "+00:00")),
-                status="NS",
-            )
-        )
-
-    def _fetch_odds(self, s, fixture_id):
         try:
-            odds = self.client.get_odds(fixture_id=fixture_id)
+            bets_settled, pnl, _ = settle_placed_bets()
         except Exception:
-            return
+            logger.exception("[BASELINE] settle_placed_bets failed")
+            bets_settled, pnl = 0, 0.0
 
-        existing = s.execute(
-            select(FixtureOdds).where(FixtureOdds.fixture_id == fixture_id)
-        ).scalar_one_or_none()
+        try:
+            preds_settled = settle_predictions()
+        except Exception:
+            logger.exception("[BASELINE] settle_predictions failed")
+            preds_settled = 0
 
-        if not existing:
-            odds_data = odds.get("bookmakers", [])
-            if odds_data:
-                bookmaker = odds_data[0]
-                b = bookmaker.get("bets", [])
-                for bet in b:
-                    bet_type = bet["name"]
-                    if "Home" in bet_type:
-                        o_home = bet["values"][0]["odd"] if len(bet["values"]) > 0 else None
-                        o_draw = bet["values"][1]["odd"] if len(bet["values"]) > 1 else None
-                        o_away = bet["values"][2]["odd"] if len(bet["values"]) > 2 else None
-                        s.add(
-                            FixtureOdds(
-                                fixture_id=fixture_id,
-                                bookmaker=bookmaker["name"],
-                                bet_type=bet_type,
-                                odd_home=float(o_home) if o_home else None,
-                                odd_draw=float(o_draw) if o_draw else None,
-                                odd_away=float(o_away) if o_away else None,
-                            )
-                        )
-        else:
-            odds_data = odds.get("bookmakers", [])
-            if odds_data:
-                bookmaker = odds_data[0]
-                b = bookmaker.get("bets", [])
-                for bet in b:
-                    bet_type = bet["name"]
-                    if "Home" in bet_type:
-                        o_home = bet["values"][0]["odd"] if len(bet["values"]) > 0 else None
-                        o_draw = bet["values"][1]["odd"] if len(bet["values"]) > 1 else None
-                        o_away = bet["values"][2]["odd"] if len(bet["values"]) > 2 else None
-                        if o_home:
-                            existing.odd_home = float(o_home)
-                        if o_draw:
-                            existing.odd_draw = float(o_draw)
-                        if o_away:
-                            existing.odd_away = float(o_away)
+        self.settled_count = bets_settled + preds_settled
+
+        if self.settled_count > 0:
+            logger.info(
+                "[BASELINE] Settled %d bets (P/L: %+.2f) and %d predictions",
+                bets_settled, pnl, preds_settled,
+            )
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--dry-run", action="store_true")
-    parser.add_argument("--leagues", type=str)
-    parser.add_argument("--markets", type=str)
-    parser.add_argument("--catchup", type=int, default=0)
+    import argparse
+    parser = argparse.ArgumentParser(description="Daily Baseline Pipeline - DATA ONLY")
+    parser.add_argument("--dry-run", action="store_true", help="Preview without changes")
+    parser.add_argument("--catchup-days", type=int, default=7, help="Days to backfill")
     args = parser.parse_args()
-
-    init_db()
-
-    league_ids = list(map(int, args.leagues.split(","))) if args.leagues else None
-    markets = args.markets.split(",") if args.markets else None
-
-    pipeline = DailyPipeline(
-        dry_run=args.dry_run,
-        league_ids=league_ids,
-        markets=markets,
-        catchup_days=args.catchup,
-    )
-
-    pipeline.run()
+    
+    from backend.experiment_tracker import get_tracker
+    from backend.runtime_mode import get_mode_name
+    from backend.run_context import create_run_context
+    
+    mode = get_mode_name()
+    tracker = get_tracker()
+    
+    run_id = None
+    context = None
+    
+    if mode in ["training", "dev"]:
+        run_id = tracker.start_run(runtime_mode=mode)
+        context = create_run_context(run_id, mode)
+        print(f"Started experiment run: {run_id}")
+    
+    try:
+        success, errors, duration = run_with_context(
+            run_id or "daily_baseline",
+            mode="daily_baseline",
+            dry_run=args.dry_run
+        )
+        print(f"Pipeline {'succeeded' if success else 'failed'}: {errors} errors in {duration:.1f}s")
+    except Exception as e:
+        print(f"Pipeline failed: {e}")
+        if run_id:
+            try:
+                tracker.finalize_run(run_id, status="failed")
+            except:
+                pass
+        raise
 
 
 if __name__ == "__main__":

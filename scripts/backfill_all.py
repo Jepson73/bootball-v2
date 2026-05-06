@@ -1,28 +1,32 @@
 #!/usr/bin/env python3
 """
-scripts/backfill_all_europe.py
+scripts/backfill_all.py
 
-Comprehensive backfill script for European leagues.
-Backfills fixtures, stats, events, standings, and odds.
+Backfills fixtures, stats, events, and standings for all PRIORITY_LEAGUE_IDS
+(or specific leagues via --leagues).  Historical odds are not available from
+the API and are skipped.
 
 Usage:
-    python scripts/backfill_all_europe.py --tier 1           # Just Tier 1
-    python scripts/backfill_all_europe.py --tier 2            # Tier 1 + 2
-    python scripts/backfill_all_europe.py --tier 3           # All tiers
-    python scripts/backfill_all_europe.py --dry-run           # Test without API
+    python scripts/backfill_all.py                                   # all leagues, all seasons
+    python scripts/backfill_all.py --seasons 2020                    # specific season
+    python scripts/backfill_all.py --leagues 188 --seasons 2021 2022 # single league
+    python scripts/backfill_all.py --dry-run                         # test without API calls
 """
 import argparse
 import logging
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from config.leagues import (
-    ALL_LEAGUE_IDS, TIER2_LEAGUE_IDS, TIER3_LEAGUE_IDS,
+    PRIORITY_LEAGUE_IDS,
     BACKFILL_SEASONS, LEAGUES
 )
 from config.settings import settings
-from src.ingestion.client import APIFootballClient, calls_remaining_today
+from src.ingestion.client import APIFootballClient, calls_remaining_today, calls_used_today
 from src.storage.db import get_session, init_db
 from src.storage.models import (
     Fixture, FixtureEvent, FixtureOdds, FixtureStats,
@@ -58,7 +62,6 @@ class EuropeanBackfiller:
                 id=league_id,
                 name=meta.get("name", str(league_id)),
                 country=meta.get("country", "Unknown"),
-                tier=meta.get("tier", 3),
             ))
     
     def _backfill_players(self, session, team_ids: set, season: int) -> None:
@@ -187,23 +190,39 @@ class EuropeanBackfiller:
             logger.warning("Low on API calls, stopping")
             return {"status": "skipped", "reason": "low_api_calls"}
         
+        # Skip if we already have a good number of fixtures for this season
+        with get_session() as _s:
+            existing_count = _s.execute(
+                select(Fixture)
+                .where(Fixture.league_id == league_id)
+                .where(Fixture.season == season)
+            ).scalars().all()
+            existing_ids = {f.id for f in existing_count}
+
         # Get all finished fixtures (1 call)
         raw_fixtures = self.client.get_fixtures(
             league_id=league_id,
             season=season,
             status="FT",
         )
-        
+
         if not raw_fixtures:
             logger.warning(f"No finished fixtures for {league_id} {season}")
             return {"status": "skipped", "reason": "no_fixtures"}
-        
+
         fixture_ids = [r["fixture"]["id"] for r in raw_fixtures]
-        logger.info(f"  Found {len(fixture_ids)} fixtures")
+        logger.info(f"  Found {len(fixture_ids)} fixtures ({len(existing_ids)} already in DB)")
+
+        # If all fixtures are already loaded, only fetch missing stats/odds
+        new_fixture_ids = [fid for fid in fixture_ids if fid not in existing_ids]
+        logger.info(f"  New fixtures to insert: {len(new_fixture_ids)}")
         
-        # Batch fetch full data (N/20 calls)
-        full_fixtures = self.client.get_fixtures_batch(fixture_ids)
-        self.stats["api_calls_used"] += len(full_fixtures) // 20 + 1
+        # Batch fetch only new fixtures (N/20 calls)
+        if new_fixture_ids:
+            full_fixtures = self.client.get_fixtures_batch(new_fixture_ids)
+        else:
+            full_fixtures = []
+            logger.info("  All fixtures already in DB, skipping batch fetch")
         
         # Insert data
         with get_session() as session:
@@ -264,13 +283,22 @@ class EuropeanBackfiller:
                             detail=ev.get("detail"),
                         ))
         
-        # Fetch stats for all fixtures (N calls)
+        # Fetch stats — skip fixtures that already have stats loaded
         if include_stats:
-            logger.info(f"  Fetching stats for {len(fixture_ids)} fixtures...")
-            for i, fid in enumerate(fixture_ids):
+            with get_session() as _s:
+                stats_have = set(
+                    row[0] for row in _s.execute(
+                        select(FixtureStats.fixture_id)
+                        .where(FixtureStats.fixture_id.in_(fixture_ids))
+                        .distinct()
+                    ).fetchall()
+                )
+            stats_needed = [fid for fid in fixture_ids if fid not in stats_have]
+            logger.info(f"  Fetching stats for {len(stats_needed)}/{len(fixture_ids)} fixtures (skipping {len(stats_have)} with existing stats)...")
+            for i, fid in enumerate(stats_needed):
                 if i % 50 == 0:
-                    logger.info(f"    Progress: {i}/{len(fixture_ids)}")
-                
+                    logger.info(f"    Progress: {i}/{len(stats_needed)}")
+
                 raw_stats = self.client.get_fixture_statistics(fid)
                 if raw_stats:
                     self._parse_and_store_stats(fid, raw_stats)
@@ -432,37 +460,62 @@ class EuropeanBackfiller:
                         goal_diff=entry.get("goalsDiff"),
                     ))
     
-    def run(self, tiers: list[int], seasons: list[int], include_odds: bool = True) -> None:
-        """Run backfill for specified tiers and seasons."""
-        logger.info(f"Starting backfill for tiers: {tiers}")
+    def run(
+        self,
+        seasons: list[int],
+        include_odds: bool = True,
+        start_from_league: int | None = None,
+        start_from_season: int | None = None,
+        leagues: list[int] | None = None,
+        stop_at_remaining: int = 30,
+    ) -> None:
+        """Backfill fixtures, stats, and standings for the given seasons.
+
+        leagues: specific league IDs to process. Defaults to PRIORITY_LEAGUE_IDS.
+        """
+        league_ids = list(leagues) if leagues else list(PRIORITY_LEAGUE_IDS)
+        logger.info(f"Backfilling {len(league_ids)} leagues × {len(seasons)} seasons")
+        logger.info(f"Leagues: {league_ids}")
         logger.info(f"Seasons: {seasons}")
         logger.info(f"Include odds: {include_odds}")
+        calls_at_start = calls_used_today()
+        logger.info(f"API calls used today: {calls_at_start} / {settings.api_calls_per_day}")
         logger.info(f"API calls remaining: {calls_remaining_today()}")
-        
+
         init_db()
-        
-        league_ids = []
-        if 1 in tiers:
-            league_ids.extend(ALL_LEAGUE_IDS)
-        if 2 in tiers:
-            league_ids.extend(TIER2_LEAGUE_IDS)
-        if 3 in tiers:
-            league_ids.extend(TIER3_LEAGUE_IDS)
-        
+
+        # Resume support: skip leagues before the resume point
+        if start_from_league is not None:
+            if start_from_league in league_ids:
+                idx = league_ids.index(start_from_league)
+                skipped = idx
+                league_ids = league_ids[idx:]
+                logger.info(f"Resuming from league {start_from_league} (skipped {skipped} leagues)")
+            else:
+                logger.warning(f"--start-from-league {start_from_league} not found in league list, starting from beginning")
+
         total = len(league_ids) * len(seasons)
         logger.info(f"Total jobs: {len(league_ids)} leagues × {len(seasons)} seasons = {total}")
-        
+
+        budget_exhausted = False
         for i, league_id in enumerate(league_ids):
-            for season in seasons:
-                logger.info(f"\n--- Progress: {i+1}/{len(league_ids)} leagues ---")
-                
-                if calls_remaining_today() < 30:
-                    logger.warning("API budget low, stopping")
+            for j, season in enumerate(seasons):
+                # Skip seasons before the resume point for the first league only
+                if start_from_league is not None and league_id == start_from_league:
+                    if start_from_season is not None and season < start_from_season:
+                        logger.info(f"Skipping {league_id} {season} (before resume season)")
+                        continue
+
+                logger.info(f"\n--- Progress: {i+1}/{len(league_ids)} leagues | calls used this run: {calls_used_today() - calls_at_start} ---")
+
+                if calls_remaining_today() < stop_at_remaining:
+                    logger.warning(f"API budget low ({calls_remaining_today()} remaining, threshold={stop_at_remaining}), stopping")
+                    budget_exhausted = True
                     break
-                
+
                 try:
                     result = self.backfill_league_season(
-                        league_id, season, 
+                        league_id, season,
                         include_odds=include_odds,
                         include_stats=True,
                     )
@@ -470,7 +523,12 @@ class EuropeanBackfiller:
                 except Exception as e:
                     logger.error(f"Error on {league_id} {season}: {e}")
                     continue
-        
+
+            if budget_exhausted:
+                logger.warning(f"Stopped at league_id={league_id} season={season} — resume with: --start-from-league {league_id} --start-from-season {season}")
+                break
+
+        calls_this_run = calls_used_today() - calls_at_start
         logger.info("\n" + "="*50)
         logger.info("BACKFILL COMPLETE")
         logger.info("="*50)
@@ -479,50 +537,122 @@ class EuropeanBackfiller:
         logger.info(f"Teams loaded: {self.stats['teams_loaded']}")
         logger.info(f"Stats loaded: {self.stats['stats_loaded']}")
         logger.info(f"Odds loaded: {self.stats['odds_loaded']}")
-        logger.info(f"API calls used: {self.stats['api_calls_used']}")
+        logger.info(f"API calls this run: {calls_this_run}")
+        logger.info(f"API calls used today total: {calls_used_today()} / {settings.api_calls_per_day}")
         logger.info(f"API calls remaining: {calls_remaining_today()}")
+
+        # Log completion to ingestion_log for process monitor
+        try:
+            from src.storage.db import get_session
+            from sqlalchemy import text as _text
+            summary = (f"leagues={self.stats['leagues_processed']} "
+                       f"fixtures={self.stats['fixtures_loaded']} "
+                       f"calls={calls_this_run}")
+            with get_session() as _s:
+                _s.execute(_text("""
+                    INSERT INTO ingestion_log (job_name, success, fixtures_updated, error_message)
+                    VALUES (:job, 1, :updated, :summary)
+                """), {"job": "backfill_all", "updated": self.stats['fixtures_loaded'], "summary": summary})
+                _s.commit()
+        except Exception:
+            pass
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Backfill European football data")
-    parser.add_argument(
-        "--tier", 
-        type=int, 
-        choices=[1, 2, 3],
-        default=1,
-        help="Tier level to backfill (1=Top5, 2=+Secondary, 3=+Cups)"
+    parser = argparse.ArgumentParser(
+        description="Backfill fixtures + stats for all PRIORITY_LEAGUE_IDS (or specific leagues).",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  # All priority leagues, all configured seasons (default)
+  python scripts/backfill_all.py
+
+  # Specific seasons only
+  python scripts/backfill_all.py --seasons 2020 2021
+
+  # Single league, specific seasons
+  python scripts/backfill_all.py --leagues 188 --seasons 2021 2022 2023
+
+  # Resume an interrupted run
+  python scripts/backfill_all.py --seasons 2020 --start-from-league 78
+"""
     )
     parser.add_argument(
         "--seasons",
         type=int,
         nargs="+",
         default=BACKFILL_SEASONS,
-        help="Seasons to backfill (e.g., 2020 2021 2022 2023 2024)"
+        help="Seasons to backfill (default: all BACKFILL_SEASONS from config)",
     )
     parser.add_argument(
-        "--no-odds",
+        "--leagues",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Specific league IDs to process (default: all PRIORITY_LEAGUE_IDS)",
+    )
+    parser.add_argument(
+        "--all-leagues",
         action="store_true",
-        default=True,  # Odds only exist for upcoming - skip by default
-        help="Skip odds data (not available for historical matches)"
+        help="Process all 1200+ leagues from config (overrides --leagues and PRIORITY_LEAGUE_IDS)",
+    )
+    parser.add_argument(
+        "--missing-only",
+        action="store_true",
+        help="Only process leagues that have zero fixtures in the DB",
     )
     parser.add_argument(
         "--dry-run",
         action="store_true",
-        help="Simulate without making API calls"
+        help="Simulate without making API calls",
+    )
+    parser.add_argument(
+        "--start-from-league",
+        type=int,
+        default=None,
+        help="Resume interrupted run: skip leagues before this ID",
+    )
+    parser.add_argument(
+        "--start-from-season",
+        type=int,
+        default=None,
+        help="For the resume league only: skip seasons before this year",
+    )
+    parser.add_argument(
+        "--stop-at-remaining",
+        type=int,
+        default=30,
+        help="Stop when API calls remaining drops below this value (default: 30)",
     )
     args = parser.parse_args()
-    
+
     if args.dry_run:
         logger.warning("DRY RUN MODE - No API calls will be made")
         settings.dry_run = True
-    
-    tiers = list(range(1, args.tier + 1))
-    
+
+    # Resolve league list
+    leagues_to_run = args.leagues
+    if args.all_leagues or args.missing_only:
+        from config.leagues import LEAGUES as ALL_LEAGUES
+        leagues_to_run = sorted(ALL_LEAGUES.keys())
+        if args.missing_only:
+            from src.storage.db import get_session as _get_session
+            from sqlalchemy import text as _text
+            from src.ingestion.init_db import init_db as _init_db
+            _init_db()
+            with _get_session() as _s:
+                in_db = {r[0] for r in _s.execute(_text("SELECT DISTINCT league_id FROM fixtures")).fetchall()}
+            leagues_to_run = [lid for lid in leagues_to_run if lid not in in_db]
+            logger.info(f"--missing-only: {len(leagues_to_run)} leagues have no fixtures in DB")
+
     backfiller = EuropeanBackfiller()
     backfiller.run(
-        tiers=tiers,
         seasons=args.seasons,
-        include_odds=not args.no_odds,
+        include_odds=False,  # Historical odds not available from API
+        start_from_league=args.start_from_league,
+        start_from_season=args.start_from_season,
+        leagues=leagues_to_run,
+        stop_at_remaining=args.stop_at_remaining,
     )
 
 

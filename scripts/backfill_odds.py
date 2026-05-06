@@ -6,7 +6,8 @@ Fetch odds for all fixtures that have predictions but no odds.
 Run this once to backfill historical data.
 """
 import sys
-sys.path.insert(0, '/opt/projects/bootball')
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from src.ingestion.client import APIFootballClient
 from src.storage.db import get_session

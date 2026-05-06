@@ -12,9 +12,10 @@ Usage:
 import argparse
 import logging
 import sys
+from pathlib import Path
 from datetime import datetime, timedelta, timezone
 
-sys.path.insert(0, '/opt/projects/bootball')
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select
 

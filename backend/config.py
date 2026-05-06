@@ -1,88 +1,90 @@
-import os
-import logging
-from dotenv import load_dotenv
+"""
+backend/config.py — backward-compat shim over config.settings.
 
-load_dotenv()
+All settings are now owned by config/settings.py (pydantic-settings).
+This module exposes a Config class with UPPER_CASE attributes so existing
+callers (backend/app.py etc.) continue to work without changes.
+
+DO NOT add new settings here — add them to config/settings.py instead.
+"""
+import logging
+import os
+
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
 
-def _validate_production_config():
-    """Validate production configuration for security."""
+def _validate_production_config() -> None:
+    """Fail loudly if production secrets are missing or weak."""
     env = os.getenv("FLASK_ENV", "development").lower()
-    is_production = env == "production"
-    
-    if not is_production:
+    if env != "production":
         return
-    
-    # Check SECRET_KEY
-    secret_key = os.getenv("SECRET_KEY", "")
-    if not secret_key or secret_key == "dev-secret-change-me" or len(secret_key) < 32:
+
+    if (
+        not settings.secret_key
+        or settings.secret_key == "dev-secret-change-me"
+        or len(settings.secret_key) < 32
+    ):
         raise ValueError(
-            "PRODUCTION SECURITY ERROR: SECRET_KEY must be set to a secure value "
-            "(minimum 32 characters) in production mode. "
+            "PRODUCTION SECURITY ERROR: SECRET_KEY must be ≥32 chars. "
             "Generate with: python -c \"import secrets; print(secrets.token_hex(32))\""
         )
-    
-    # Check BOOTBALL_PASSWORD
-    password = os.getenv("BOOTBALL_PASSWORD", "")
-    if not password or password == "changeme":
+
+    if not settings.bootball_password:
         raise ValueError(
-            "PRODUCTION SECURITY ERROR: BOOTBALL_PASSWORD must be set to a secure value "
-            "in production mode. Cannot use default 'changeme'."
+            "PRODUCTION SECURITY ERROR: BOOTBALL_PASSWORD must be set."
         )
 
 
-# Validate config at module load time
 _validate_production_config()
 
 
 class Config:
-    # ── Runtime Mode ───────────────────────────────────
-    RUNTIME_MODE = os.getenv("RUNTIME_MODE", "dev").lower()
-    
-    # ── Flask ───────────────────────────────────────────
-    SECRET_KEY = os.getenv("SECRET_KEY", "dev-secret-change-me")
-    DEBUG = os.getenv("FLASK_DEBUG", "0") == "1"
+    """Upper-case attribute proxy over pydantic Settings.
 
-    # ── Database ────────────────────────────────────────
-    DATABASE_PATH = os.getenv("DATABASE_PATH", "./data/football.db")
-    SCHEDULER_DB_PATH = os.getenv("SCHEDULER_DB_PATH", "./data/scheduler.db")
+    Evaluated once at class-definition time (module load), which is correct
+    because `settings` is also a module-level singleton built from env vars.
+    """
+    # ── Flask ───────────────────────────────────────────────
+    SECRET_KEY = settings.secret_key
+    DEBUG = settings.flask_debug
+    CORS_ORIGINS = [o.strip() for o in settings.cors_origins.split(",")]
 
-    # ── CORS ────────────────────────────────────────────
-    CORS_ORIGINS = os.getenv(
-        "CORS_ORIGINS", "http://localhost:3000,http://localhost:5173"
-    ).split(",")
+    # ── Database ────────────────────────────────────────────
+    DATABASE_PATH = settings.database_url
 
-    # ── api-football ────────────────────────────────────
-    API_FOOTBALL_KEY = os.getenv("API_FOOTBALL_KEY", "")
-    API_FOOTBALL_BASE_URL = os.getenv(
-        "API_FOOTBALL_BASE_URL", "https://v3.football.api-sports.io"
-    )
+    # ── API-Football ────────────────────────────────────────
+    API_FOOTBALL_KEY = settings.api_football_key
+    API_FOOTBALL_BASE_URL = settings.api_football_base_url
 
-    # ── Betting Bot ─────────────────────────────────────
-    BOT_ENABLED = os.getenv("BOT_ENABLED", "false").lower() == "true"
-    BOT_MAX_STAKE = float(os.getenv("BOT_MAX_STAKE", "50"))
-    BOT_MIN_EV = float(os.getenv("BOT_MIN_EV", "0.05"))
+    # ── Betting bot ─────────────────────────────────────────
+    BOT_ENABLED = settings.bot_enabled
+    BOT_MAX_STAKE = settings.bot_max_stake
+    BOT_MIN_EV = settings.bot_min_ev
 
-    # ── ML ──────────────────────────────────────────────
-    MODEL_DIR = os.getenv("MODEL_DIR", "./backend/models/saved")
-    MIN_CONFIDENCE_THRESHOLD = float(os.getenv("MIN_CONFIDENCE_THRESHOLD", "0.60"))
+    # ── Experiments ─────────────────────────────────────────
+    EXPERIMENT_MODE = settings.experiment_mode
+    EXPERIMENT_VARIANTS = settings.experiment_variants
 
-    # ── Scheduler ───────────────────────────────────────
-    SCHEDULER_ENABLED = os.getenv("SCHEDULER_ENABLED", "true").lower() == "true"
-    FETCH_FIXTURES_INTERVAL_HOURS = int(os.getenv("FETCH_FIXTURES_INTERVAL_HOURS", "6"))
-    FETCH_RESULTS_INTERVAL_HOURS = int(os.getenv("FETCH_RESULTS_INTERVAL_HOURS", "1"))
-    FETCH_ODDS_INTERVAL_HOURS = int(os.getenv("FETCH_ODDS_INTERVAL_HOURS", "2"))
-    PREDICTIONS_RUN_HOUR = int(os.getenv("PREDICTIONS_RUN_HOUR", "3"))
-    RETRAIN_DAY_OF_WEEK = os.getenv("RETRAIN_DAY_OF_WEEK", "mon")
-    RETRAIN_HOUR = int(os.getenv("RETRAIN_HOUR", "4"))
+    # ── ML ──────────────────────────────────────────────────
+    MODEL_DIR = settings.model_dir
+    MIN_CONFIDENCE_THRESHOLD = settings.min_confidence_threshold
 
-    # ── Logging ─────────────────────────────────────────
-    LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
-    LOG_DIR = os.getenv("LOG_DIR", "./logs")
-    LOG_MAX_BYTES = int(os.getenv("LOG_MAX_BYTES", "10485760"))
-    LOG_BACKUP_COUNT = int(os.getenv("LOG_BACKUP_COUNT", "5"))
+    # ── Scheduler ───────────────────────────────────────────
+    SCHEDULER_ENABLED = settings.scheduler_enabled
+    FETCH_FIXTURES_INTERVAL_HOURS = settings.fetch_fixtures_interval_hours
+    FETCH_RESULTS_INTERVAL_HOURS = settings.fetch_results_interval_hours
+    FETCH_ODDS_INTERVAL_HOURS = settings.fetch_odds_interval_hours
+    PREDICTIONS_RUN_HOUR = settings.predictions_run_hour
+    RETRAIN_DAY_OF_WEEK = settings.retrain_day_of_week
+    RETRAIN_HOUR = settings.retrain_hour
+
+    # ── Logging ─────────────────────────────────────────────
+    LOG_LEVEL = settings.log_level
+    LOG_DIR = settings.log_dir
+    LOG_MAX_BYTES = settings.log_max_bytes
+    LOG_BACKUP_COUNT = settings.log_backup_count
 
 
 class DevelopmentConfig(Config):
@@ -93,12 +95,13 @@ class ProductionConfig(Config):
     DEBUG = False
 
 
-config_map = {
+_config_map = {
     "development": DevelopmentConfig,
     "production": ProductionConfig,
 }
 
 
 def get_config():
+    """Return the Config class for the current FLASK_ENV."""
     env = os.getenv("FLASK_ENV", "development")
-    return config_map.get(env, DevelopmentConfig)
+    return _config_map.get(env, DevelopmentConfig)

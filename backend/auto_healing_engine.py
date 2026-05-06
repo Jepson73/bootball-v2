@@ -203,7 +203,7 @@ class SafeExecutionReRunner:
             except Exception as e:
                 action.success = False
                 action.error_message = str(e)
-                logger.error(f"Healing {plan.run_id}: {stage} failed: {e}")
+                logger.exception("Healing %s: %s failed", plan.run_id, stage)
             
             actions.append(action)
             self.healing_actions.append(action)
@@ -230,8 +230,8 @@ class SafeExecutionReRunner:
                         "error": action.error_message or "OK"
                     })
                 s.commit()
-        except Exception as e:
-            logger.error(f"Failed to log healing actions: {e}")
+        except Exception:
+            logger.exception("Failed to log healing actions for run %s", run_id)
     
     def get_healing_history(self) -> List[Dict]:
         """Get history of all healing actions."""
@@ -310,5 +310,5 @@ def run_auto_healing():
         return result
         
     except Exception as e:
-        logger.error(f"JOB: auto_heal_runs failed: {e}")
+        logger.exception("JOB: auto_heal_runs failed")
         return {"status": "error", "error": str(e)}

@@ -36,6 +36,8 @@ class AgentEvents(BaseEvents):
     # Run lifecycle
     RUN_STARTED = "run_started"
     RUN_COMPLETED = "run_completed"
+    RUN_FEEDBACK_COMPLETED = "run_feedback_completed"
+    PERFORMANCE_COMPUTED = "performance_computed"
 
 
 # Event payload schemas

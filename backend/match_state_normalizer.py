@@ -10,7 +10,7 @@ MATCH_STATES = {
     'UPCOMING': ['NS', 'NJS', 'TBD'],
     'LIVE': ['1H', '2H', 'HT', 'ET', 'LIVE', 'BT'],
     'HALFTIME': ['HT'],
-    'FINISHED': ['FT', 'FTm', 'AET', 'PEN', 'AWOD'],
+    'FINISHED': ['FT', 'AET', 'PEN', 'AWOD'],
     'ARCHIVED': ['ARCHIVED', 'CANC', 'POSP', 'ABAN', 'AWOA']
 }
 
@@ -87,7 +87,6 @@ class MatchStateNormalizer:
         
         status_map = {
             'FT': 'FT',
-            'FTm': 'FT',
             'AET': 'AET',
             'PEN': 'PEN',
             'HT': 'HT',
@@ -180,10 +179,10 @@ def get_matches_needing_state_update(session) -> List[int]:
     from sqlalchemy import text
     
     result = session.execute(text("""
-        SELECT id FROM fixtures 
+        SELECT id FROM fixtures
         WHERE status IN ('1H', '2H', 'HT', 'ET', 'BT', 'LIVE')
         AND (
-            updated_at < datetime('now', '-10 minutes')
+            fetched_at < datetime('now', '-10 minutes')
             OR elapsed >= 90
         )
     """)).fetchall()
@@ -204,11 +203,11 @@ def cleanup_finished_matches() -> Dict[str, Any]:
     
     with get_session() as session:
         stale_matches = session.execute(text("""
-            SELECT id, status, elapsed, updated_at 
-            FROM fixtures 
+            SELECT id, status, elapsed, fetched_at
+            FROM fixtures
             WHERE status IN ('1H', '2H', 'HT', 'ET', 'BT', 'LIVE')
             AND (
-                updated_at < datetime('now', '-10 minutes')
+                fetched_at < datetime('now', '-10 minutes')
                 OR elapsed >= 90
             )
         """)).fetchall()
@@ -216,28 +215,14 @@ def cleanup_finished_matches() -> Dict[str, Any]:
         transitioned = 0
         for row in stale_matches:
             session.execute(text("""
-                UPDATE fixtures SET status = 'FTm' WHERE id = :id
+                UPDATE fixtures SET status = 'FT' WHERE id = :id
             """), {"id": row[0]})
             transitioned += 1
-        
-        archived = 0
-        old_finished = session.execute(text("""
-            SELECT id FROM fixtures 
-            WHERE status = 'FTm'
-            AND updated_at < datetime('now', '-30 minutes')
-        """)).fetchall()
-        
-        for row in old_finished:
-            session.execute(text("""
-                UPDATE fixtures SET status = 'ARCHIVED' WHERE id = :id
-            """), {"id": row[0]})
-            archived += 1
-        
+
         session.commit()
-        
-        logger.info(f"Match cleanup complete: {transitioned} transitioned to FT, {archived} archived")
-        
+
+        logger.info(f"Match cleanup complete: {transitioned} transitioned to FT")
+
         return {
             "transitioned_to_ft": transitioned,
-            "archived": archived
         }

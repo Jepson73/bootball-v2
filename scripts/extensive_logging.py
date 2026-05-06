@@ -13,13 +13,14 @@ Usage:
 """
 import argparse
 import sys
+from pathlib import Path
 import os
 import pickle
 import logging
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-sys.path.insert(0, '/opt/projects/bootball')
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select
 import numpy as np

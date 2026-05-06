@@ -53,44 +53,77 @@ class ActionExecutor:
             logger.warning(f"No handler for action: {action.type}")
 
     def _handle_retrain_model(self, payload: dict) -> None:
-        """Execute model retraining."""
+        """Kick off model retraining via ModelRegistry in a background thread."""
         market = payload.get("market")
         reason = payload.get("reason", "decision_engine")
-        
-        logger.info(f"Executing RETRAIN_MODEL for market: {market}")
-        
-        # Emit retrain started event
-        self.event_bus.emit(Events.RUN_STARTED, {
-            "run_id": f"retrain-{market}",
-            "mode": "retrain",
+
+        logger.info("Executing RETRAIN_MODEL for market: %s (%s)", market, reason)
+
+        self.event_bus.emit(Events.MODEL_RETRAIN_STARTED, {
             "market": market,
             "reason": reason,
-            "timestamp": None
+            "summary": f"Retrain started: {market}",
         })
-        
-        # Trigger actual retraining
+
+        import threading
+        threading.Thread(
+            target=self._run_retrain_background,
+            args=(market, reason),
+            daemon=True,
+        ).start()
+
+    def _run_retrain_background(self, market: str, reason: str) -> None:
+        """Run full retrain (model + calibrator) via ModelRegistry and notify Discord."""
+        import json, os, urllib.request
+        from datetime import datetime as _dt
+
+        def _discord(embed: dict) -> None:
+            url = os.getenv("DISCORD_WEBHOOK_URL")
+            if not url:
+                return
+            try:
+                data = json.dumps({"embeds": [embed]}).encode()
+                req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"})
+                urllib.request.urlopen(req, timeout=10)
+            except Exception as exc:
+                logger.error("Discord notify failed: %s", exc)
+
         try:
-            from src.models.retrain_worker import get_retrain_worker
-            worker = get_retrain_worker()
-            job_id = worker.queue_retrain(market, {
-                "trigger": "decision_engine",
-                "reasons": [reason],
-                "context": payload.get("context", {})
+            from scripts.web_ui import _train_market_with_calibration
+            result = _train_market_with_calibration(market, reason=f"auto_{reason}")
+
+            label = result.get("version_label", "unknown")
+            brier = result.get("brier_score", 0) or 0
+
+            self.event_bus.emit(Events.MODEL_RETRAIN_COMPLETED, {
+                "market": market,
+                "version_label": label,
+                "brier_score": brier,
+                "summary": f"Retrain complete {market} → {label}",
             })
-            logger.info(f"Retrain job queued: {job_id}")
+
+            _discord({
+                "title": f"✅ RETRAIN COMPLETE: {market.upper()}",
+                "description": "Automatic retraining triggered by model degradation",
+                "color": 3066993,
+                "fields": [
+                    {"name": "Market", "value": market.upper(), "inline": True},
+                    {"name": "New Version", "value": f"`{label}`", "inline": True},
+                    {"name": "Brier Score", "value": f"{brier:.4f}", "inline": True},
+                    {"name": "Reason", "value": reason, "inline": False},
+                ],
+                "timestamp": _dt.utcnow().isoformat(),
+            })
+            logger.info("Auto-retrain complete: %s → %s (brier=%.4f)", market, label, brier)
+
         except Exception as e:
-            logger.error(f"Retrain failed: {e}")
-        
-        # Emit retrain finished event
-        self.event_bus.emit(Events.RUN_FINISHED, {
-            "run_id": f"retrain-{market}",
-            "mode": "retrain",
-            "market": market,
-            "total_bets": 0,
-            "total_ev": 0,
-            "errors": [],
-            "duration": 0
-        })
+            logger.exception("Auto-retrain failed for %s", market)
+            _discord({
+                "title": f"❌ RETRAIN FAILED: {market.upper()}",
+                "description": str(e),
+                "color": 15158332,
+                "timestamp": _dt.utcnow().isoformat(),
+            })
 
     def _handle_disable_market(self, payload: dict) -> None:
         """Disable a betting market."""

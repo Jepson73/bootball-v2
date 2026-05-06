@@ -46,8 +46,9 @@ class StateStore:
     def __init__(self):
         self.run_state = RunState()
         self.historical = HistoricalState()
-        self._current_bankroll: float = 10000.0
-        self._initial_bankroll: float = 10000.0
+        from config.settings import settings
+        self._current_bankroll: float = settings.initial_bankroll
+        self._initial_bankroll: float = settings.initial_bankroll
         
     def start_run(self, run_id: str) -> None:
         """Start a new run."""

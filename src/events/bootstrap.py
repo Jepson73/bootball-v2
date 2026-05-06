@@ -14,6 +14,8 @@ from src.events.consumers import (
     ModelTrendConsumer,
     ModelLifecycleConsumer,
 )
+from src.events.consumers.policy_consumer import PolicyConsumer
+from src.events.consumers.calibration_consumer import CalibrationConsumer
 from src.events.consumers.registry import registry
 
 logger = logging.getLogger(__name__)
@@ -26,12 +28,17 @@ def bootstrap_consumers() -> None:
     Call this once at application startup to wire up
     all consumers to the EventBus.
     """
+    from src.events.consumers.clve_consumer import CLVEConsumer
+    
     consumers = [
         DiscordConsumer(),
         BettingDashboardConsumer(),
         HealthDashboardConsumer(),
         ModelTrendConsumer(),
         ModelLifecycleConsumer(),
+        PolicyConsumer(),
+        CalibrationConsumer(),
+        CLVEConsumer(),
     ]
     
     for consumer in consumers:
