@@ -132,9 +132,9 @@ python scripts/backfill_cron.py
 python scripts/backfill_all.py --seasons 2023 2022 --stop-at-remaining 15000
 ```
 
-The 4am cron covers all 1,225 configured leagues for seasons 2019–2013, newest first.
+The 4am cron covers all 1,225 configured leagues for seasons 2025–2020, newest first.
 
----
+--- 
 
 ## Web UI Pages
 
