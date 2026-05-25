@@ -303,27 +303,35 @@ def _fit_calibrator_for_market(market: str):
         probs = np.array([r[0] for r in rows], dtype=float)
         outcomes = np.array([int(r[1]) for r in rows], dtype=float)
 
-        calibrator = IsotonicRegression(out_of_bounds="clip")
-        calibrator.fit(probs, outcomes)
+        # Chronological 80/20 split: fit on older data, evaluate on recent held-out.
+        # Using random split on time-ordered data would leak future into training.
+        split = int(len(probs) * 0.8)
+        train_p, eval_p = probs[:split], probs[split:]
+        train_o, eval_o = outcomes[:split], outcomes[split:]
 
-        cal_probs = np.clip(calibrator.predict(probs), 0.01, 0.99)
-        brier = float(np.mean((cal_probs - outcomes) ** 2))
+        calibrator = IsotonicRegression(out_of_bounds="clip")
+        calibrator.fit(train_p, train_o)
+
+        # Metrics on held-out eval set (out-of-sample)
+        eval_cal = np.clip(calibrator.predict(eval_p), 0.01, 0.99)
+        brier = float(np.mean((eval_cal - eval_o) ** 2))
 
         n_bins = 10
         bin_edges = np.linspace(0, 1, n_bins + 1)
         ece = 0.0
         for i in range(n_bins):
-            mask = (cal_probs >= bin_edges[i]) & (
-                cal_probs <= bin_edges[i + 1] if i == n_bins - 1 else cal_probs < bin_edges[i + 1]
+            mask = (eval_cal >= bin_edges[i]) & (
+                eval_cal <= bin_edges[i + 1] if i == n_bins - 1 else eval_cal < bin_edges[i + 1]
             )
             if np.sum(mask) == 0:
                 continue
-            ece += (np.sum(mask) / len(cal_probs)) * abs(np.mean(outcomes[mask]) - np.mean(cal_probs[mask]))
+            ece += (np.sum(mask) / len(eval_cal)) * abs(np.mean(eval_o[mask]) - np.mean(eval_cal[mask]))
 
         metrics = {
             "brier_score": brier,
             "ece": ece,
             "calibration_sample_size": len(rows),
+            "eval_sample_size": len(eval_p),
         }
         return calibrator, metrics
     except Exception:

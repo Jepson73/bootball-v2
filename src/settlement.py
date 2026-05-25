@@ -18,60 +18,75 @@ logger = logging.getLogger(__name__)
 
 def get_market_result(fixture: Fixture, market: str) -> str | None:
     """Determine actual result from fixture goals.
-    
-    For markets that can be determined before FT, returns the result.
-    For markets that require FT (like BTTS No), returns None until FT.
+
+    For irreversible early-settle outcomes (btts Yes, ou Over) returns the
+    result as soon as it is mathematically certain.  For all other outcomes
+    (h2h, Under, btts No) returns None unless the fixture is fully finished,
+    so no code path can accidentally settle these mid-game.
     """
     if fixture.goals_home is None or fixture.goals_away is None:
         return None
 
+    is_final = fixture.status in ["FT", "AET", "PEN"]
+    total = fixture.goals_home + fixture.goals_away
+
     if market == "h2h":
+        # h2h result can flip (goal overturned by VAR, etc.) — wait for FT
+        if not is_final:
+            return None
         if fixture.goals_home > fixture.goals_away:
             return "1"
         elif fixture.goals_home < fixture.goals_away:
             return "2"
         return "X"
 
-    total = fixture.goals_home + fixture.goals_away
-
     if market == "btts":
-        # BTTS Yes can be settled early once both have scored
-        # BTTS No must wait for FT
         if fixture.goals_home > 0 and fixture.goals_away > 0:
-            return "Yes"
-        elif fixture.status in ["FT", "AET", "PEN"]:
-            return "No"
-        return None  # Can't determine BTTS No until FT
-    elif market == "ou25":
-        return "Over" if total > 2.5 else "Under"
-    elif market == "ou15":
-        return "Over" if total > 1.5 else "Under"
+            return "Yes"   # irreversible — both teams have scored
+        if is_final:
+            return "No"    # game over without both scoring
+        return None        # still live, can't rule out btts Yes yet
+
+    if market == "ou25":
+        if total > 2.5:
+            return "Over"  # irreversible
+        if is_final:
+            return "Under"
+        return None        # still live, more goals possible
+
+    if market == "ou15":
+        if total > 1.5:
+            return "Over"  # irreversible
+        if is_final:
+            return "Under"
+        return None        # still live, more goals possible
 
     return None
 
 
-def can_settle_early(fixture: Fixture, market: str) -> bool:
-    """Check if a market outcome is mathematically certain before FT."""
-    if fixture.goals_home is None or fixture.goals_away is None:
-        return False
-    
+def can_settle_early(fixture: Fixture, market: str, outcome: str | None = None) -> bool:
+    """Check if a bet outcome is irreversibly determined before FT.
+
+    Only outcomes that cannot revert to a loss after VAR are eligible:
+    - Over outcomes (ou15/ou25): once the threshold is crossed it stays crossed
+    - btts Yes: once both teams have scored it cannot un-score
+    All Under, btts No, and h2h outcomes must wait for FT.
+    """
     if fixture.status in ["FT", "AET", "PEN"]:
         return True
-    
-    total = fixture.goals_home + fixture.goals_away
-    
-    if market == "btts":
-        # Both teams have scored - BTTS Yes is guaranteed
-        return fixture.goals_home > 0 and fixture.goals_away > 0
-    elif market == "ou25":
-        # Only "Over" is certain early; "Under" must wait for FT
-        return total > 2.5
-    elif market == "ou15":
-        return total > 1.5
-    elif market == "h2h":
-        # Can't determine winner until FT
+
+    if fixture.goals_home is None or fixture.goals_away is None:
         return False
-    
+
+    total = fixture.goals_home + fixture.goals_away
+
+    if market == "ou15":
+        return outcome == "Over" and total > 1.5
+    elif market == "ou25":
+        return outcome == "Over" and total > 2.5
+    elif market == "btts":
+        return outcome == "Yes" and fixture.goals_home > 0 and fixture.goals_away > 0
+
     return False
 
 
@@ -134,6 +149,71 @@ def update_live_fixture_statuses() -> int:
                     pass
         if updated > 0:
             s.commit()
+    return updated
+
+
+def update_pending_fixture_scores() -> int:
+    """Fetch live scores for all currently live matches globally (3 API calls).
+
+    Uses date+status queries (1H, 2H, HT) instead of per-fixture or per-league
+    lookups — those either require the paid 'ids' plan feature or consume 6000+
+    API calls per run.  This approach costs exactly 3 calls and returns every
+    live match on the planet.
+    """
+    client = APIFootballClient()
+    from datetime import date as _date
+    today = _date.today().strftime("%Y-%m-%d")
+
+    all_live: list[dict] = []
+    for status in ["1H", "2H", "HT", "ET", "BT", "P", "INT"]:
+        try:
+            raw = client.get_fixtures(date=today, status=status, force_refresh=True)
+            if raw:
+                all_live.extend(raw)
+        except Exception as e:
+            logger.warning("update_pending_fixture_scores: %s fetch error: %s", status, e)
+
+    if not all_live:
+        return 0
+
+    updated = 0
+    with get_session() as s:
+        for fix_data in all_live:
+            fix_info = fix_data.get("fixture", {})
+            fix_id = fix_info.get("id")
+            if not fix_id:
+                continue
+            fix = s.execute(select(Fixture).where(Fixture.id == fix_id)).scalar_one_or_none()
+            if not fix:
+                continue
+            goals = fix_data.get("goals", {})
+            new_status = fix_info.get("status", {}).get("short", "")
+            elapsed = fix_info.get("status", {}).get("elapsed")
+            changed = False
+            if new_status and new_status != fix.status:
+                fix.status = new_status
+                changed = True
+            if elapsed is not None and getattr(fix, "elapsed", None) != elapsed:
+                try:
+                    fix.elapsed = elapsed
+                    changed = True
+                except Exception:
+                    pass
+            for attr, val in [("goals_home", goals.get("home")), ("goals_away", goals.get("away"))]:
+                if val is not None and getattr(fix, attr) != val:
+                    setattr(fix, attr, val)
+                    changed = True
+            if changed:
+                try:
+                    fix.fetched_at = datetime.utcnow()
+                except Exception:
+                    pass
+                updated += 1
+
+        if updated > 0:
+            s.commit()
+
+    logger.info("update_pending_fixture_scores: updated %d fixtures (checked %d live globally)", updated, len(all_live))
     return updated
 
 
@@ -521,6 +601,7 @@ def settle_placed_bets(days: int | None = None) -> tuple[int, float, list[dict]]
 
         total_pnl = 0.0
         settled = 0
+        confirmations_updated = 0
         bet_details = []
 
         for bet in pending_bets:
@@ -528,20 +609,53 @@ def settle_placed_bets(days: int | None = None) -> tuple[int, float, list[dict]]
 
             if not fixture or fixture.goals_home is None or fixture.goals_away is None:
                 continue
-            
-            if not can_settle_early(fixture, bet.market):
-                continue
 
+            is_final = fixture.status in ["FT", "AET", "PEN"]
             result = get_market_result(fixture, bet.market)
 
             if result is None:
                 continue
 
-            bet.settled = True
-            bet.actual_result = result
-            bet.pnl = ((bet.odds - 1) * bet.stake) if str(bet.outcome).lower() == str(result).lower() else (-bet.stake)
-            bet.settled_at = datetime.utcnow()
-            bet.won = (str(bet.outcome).lower() == str(result).lower())
+            if is_final:
+                # Fixture is finished — settle immediately, no VAR window needed
+                bet.settled = True
+                bet.actual_result = result
+                bet.pnl = ((bet.odds - 1) * bet.stake) if str(bet.outcome).lower() == str(result).lower() else (-bet.stake)
+                bet.settled_at = datetime.utcnow()
+                bet.won = (str(bet.outcome).lower() == str(result).lower())
+                bet.settle_confirmations = 0
+                bet.settle_pending_result = None
+            elif can_settle_early(fixture, bet.market, bet.outcome):
+                # Outcome is irreversible mid-game — require 3 consecutive confirmations
+                # to guard against data latency or VAR reversals
+                if bet.settle_pending_result != result:
+                    # Result changed (or first observation) — reset counter
+                    bet.settle_pending_result = result
+                    bet.settle_confirmations = 1
+                    logger.debug("Bet %d: early settle candidate %s, confirmation 1/3", bet.id, result)
+                else:
+                    bet.settle_confirmations = (bet.settle_confirmations or 0) + 1
+                    logger.debug("Bet %d: early settle confirmation %d/3", bet.id, bet.settle_confirmations)
+
+                confirmations_updated += 1
+                if bet.settle_confirmations >= 3:
+                    bet.settled = True
+                    bet.actual_result = result
+                    bet.pnl = ((bet.odds - 1) * bet.stake) if str(bet.outcome).lower() == str(result).lower() else (-bet.stake)
+                    bet.settled_at = datetime.utcnow()
+                    bet.won = (str(bet.outcome).lower() == str(result).lower())
+                    bet.settle_confirmations = 0
+                    bet.settle_pending_result = None
+                    logger.info("Bet %d: settled early after 3 confirmations — %s", bet.id, result)
+                else:
+                    continue
+            else:
+                # Outcome cannot be settled early — reset any stale confirmation state
+                if bet.settle_confirmations or bet.settle_pending_result:
+                    bet.settle_confirmations = 0
+                    bet.settle_pending_result = None
+                    confirmations_updated += 1
+                continue
 
             total_pnl += bet.pnl
             settled += 1
@@ -565,9 +679,10 @@ def settle_placed_bets(days: int | None = None) -> tuple[int, float, list[dict]]
 
             logger.info(f"Bet {bet.id}: {bet.market} {bet.outcome} @ {bet.odds} → {result} | P/L: {bet.pnl:+.2f}")
 
-        if settled > 0:
+        if settled > 0 or confirmations_updated > 0:
             s.commit()
 
+        if settled > 0:
             round_id = pending_bets[0].round_id if pending_bets and len(pending_bets) > 0 else None
             if round_id:
                 from src.storage.models import BankrollRound
@@ -669,10 +784,8 @@ def fix_incorrect_settlements() -> int:
             if not fixture or fixture.goals_home is None or fixture.goals_away is None:
                 continue
 
-            # Allow correction for finished fixtures OR when the outcome is now
-            # mathematically certain (e.g. Over threshold crossed mid-game)
             is_final = fixture.status in ["FT", "AET", "PEN"]
-            if not is_final and not can_settle_early(fixture, bet.market):
+            if not is_final and not can_settle_early(fixture, bet.market, bet.outcome):
                 continue
 
             correct_result = get_market_result(fixture, bet.market)
@@ -709,7 +822,7 @@ def fix_incorrect_settlements() -> int:
                 continue
 
             is_final = fixture.status in ["FT", "AET", "PEN"]
-            if not is_final and not can_settle_early(fixture, pred.market):
+            if not is_final and not can_settle_early(fixture, pred.market, pred.predicted_outcome):
                 continue
 
             correct_result = get_market_result(fixture, pred.market)
@@ -729,6 +842,84 @@ def fix_incorrect_settlements() -> int:
         logger.info(f"[SETTLE] Corrected {pred_corrected} mis-settled predictions")
 
     return corrected + pred_corrected
+
+
+def recheck_early_loss_settlements(hours: int = 2) -> int:
+    """Force-re-fetch fixture scores for Over bets recently settled as LOSS.
+
+    The API sometimes briefly reports a game as FT with the wrong (low) score
+    while the match is still in progress.  When that happens:
+      1. update_pending_fixture_scores() accepts the bogus FT score.
+      2. settle_placed_bets() marks the Over bet as LOSS.
+      3. update_pending_fixture_scores() then skips the fixture (it's "FT").
+      4. The wrong result persists until the hourly job_fetch_results corrects it.
+
+    This function short-circuits step 3 by force-fetching fixture data for any
+    Over bet settled as LOSS in the last `hours` hours, so fix_incorrect_settlements()
+    can correct the record at the next live_settle tick (every 2 min).
+
+    Returns the number of fixtures whose score changed.
+    """
+    client = APIFootballClient()
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+
+    with get_session() as s:
+        fixture_ids = s.execute(
+            select(PlacedBet.fixture_id)
+            .where(PlacedBet.settled == True)
+            .where(PlacedBet.won == False)
+            .where(PlacedBet.market.in_(["ou15", "ou25"]))
+            .where(PlacedBet.outcome == "Over")
+            .where(PlacedBet.settled_at >= cutoff)
+            .distinct()
+        ).scalars().all()
+
+    if not fixture_ids:
+        return 0
+
+    logger.debug("recheck_early_loss_settlements: re-fetching %d fixture(s)", len(fixture_ids))
+
+    updated = 0
+    with get_session() as s:
+        for fix_id in fixture_ids:
+            try:
+                raw = client.get_fixtures(fixture_id=fix_id, force_refresh=True)
+                if not raw:
+                    continue
+                fix_data = raw[0]
+                fix_info = fix_data.get("fixture", {})
+                new_status = fix_info.get("status", {}).get("short", "")
+                goals = fix_data.get("goals", {})
+                new_home = goals.get("home")
+                new_away = goals.get("away")
+
+                fix = s.execute(select(Fixture).where(Fixture.id == fix_id)).scalar_one_or_none()
+                if not fix:
+                    continue
+
+                changed = False
+                if new_status and new_status != fix.status:
+                    fix.status = new_status
+                    changed = True
+                if new_home is not None and new_home != fix.goals_home:
+                    fix.goals_home = new_home
+                    changed = True
+                if new_away is not None and new_away != fix.goals_away:
+                    fix.goals_away = new_away
+                    changed = True
+                if changed:
+                    logger.info(
+                        "recheck_early_loss_settlements: fixture %d updated to %s-%s (%s)",
+                        fix_id, new_home, new_away, new_status,
+                    )
+                    updated += 1
+            except Exception as e:
+                logger.warning("recheck_early_loss_settlements: fixture %d error: %s", fix_id, e)
+
+        if updated > 0:
+            s.commit()
+
+    return updated
 
 
 def backfill_prediction_odds() -> int:
@@ -850,6 +1041,7 @@ def settle_predictions(days: int | None = None) -> int:
             .where(PredictionRecord.settled == False)
             .where(Fixture.goals_home.isnot(None))
             .where(Fixture.goals_away.isnot(None))
+            .where(Fixture.status.in_(["FT", "AET", "PEN"]))
         )
 
         if days is not None:
@@ -859,10 +1051,6 @@ def settle_predictions(days: int | None = None) -> int:
         unsettled = s.execute(query).all()
 
         for pred, fixture in unsettled:
-            # Check if we can determine the result now
-            if not can_settle_early(fixture, pred.market):
-                continue
-            
             actual = get_market_result(fixture, pred.market)
             if actual:
                 pred.actual_outcome = actual

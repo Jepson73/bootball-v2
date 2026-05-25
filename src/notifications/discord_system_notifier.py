@@ -80,10 +80,10 @@ _REMEDIATION = {
         "```"
     ),
     "risk_limit_breached": (
-        "**Risk limits have been exceeded — bets may be blocked.**\n"
+        "**Risk limits triggered — stakes throttled or bets blocked.**\n"
         f"Check the Risk page at {_WEB_URL}\n"
         "```bash\n"
-        "journalctl -u bootball-runtime.service -n 30 | grep RISK\n"
+        "journalctl -u bootball-runtime.service -n 30 | grep -E 'POLICY|RISK'\n"
         "```"
     ),
 }
@@ -383,6 +383,32 @@ def send_test_message():
         color=GREEN,
     )
     return _post(payload)
+
+
+def notify_sanity_check(new_issues: list[dict], resolved_issues: list[dict]):
+    """Send Discord notification for new and resolved sanity check issues."""
+    if not new_issues and not resolved_issues:
+        return
+
+    lines = []
+    if new_issues:
+        lines.append(f"**{len(new_issues)} new issue(s) detected:**")
+        for issue in new_issues[:10]:
+            lines.append(f"• `{issue['check_type']}` — {issue['detail'][:120]}")
+        if len(new_issues) > 10:
+            lines.append(f"  ...and {len(new_issues) - 10} more")
+
+    if resolved_issues:
+        if lines:
+            lines.append("")
+        lines.append(f"**{len(resolved_issues)} issue(s) resolved:**")
+        for issue in resolved_issues[:5]:
+            lines.append(f"✓ `{issue['check_type']}` — {issue['detail'][:120]}")
+
+    color = RED if new_issues else GREEN
+    title = "🔍 Sanity Check Alert" if new_issues else "✅ Sanity Check — Issues Resolved"
+    payload = _embed(title=title, description="\n".join(lines)[:3900], color=color)
+    _post_async(payload)
 
 
 def wire_to_event_bus():

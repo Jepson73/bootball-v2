@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# DEAD CODE — not called from live pipeline as of 2026-05-25
+# Kept for reference: run manually when adding new teams/leagues to populate flag URLs
 """
 Fetch team country and flags from API-Football and populate DB.
 

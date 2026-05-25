@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# DEAD CODE — not called from live pipeline as of 2026-05-25
+# Kept for reference: standalone manual diagnostic for model health and HMAC integrity checks
 """
 scripts/check_model.py
 

@@ -202,16 +202,17 @@ def cleanup_finished_matches() -> Dict[str, Any]:
     logger.info("Starting match state cleanup...")
     
     with get_session() as session:
+        # Only mark as FT if kickoff was > 130 minutes ago (90min + halftime + injury time).
+        # Do NOT use fetched_at (never updated by live score jobs) or elapsed >= 90
+        # (normal during injury time) — both cause premature FT transitions that
+        # trigger early settlement of Under/h2h/btts=No bets.
         stale_matches = session.execute(text("""
             SELECT id, status, elapsed, fetched_at
             FROM fixtures
             WHERE status IN ('1H', '2H', 'HT', 'ET', 'BT', 'LIVE')
-            AND (
-                fetched_at < datetime('now', '-10 minutes')
-                OR elapsed >= 90
-            )
+            AND date < datetime('now', '-130 minutes')
         """)).fetchall()
-        
+
         transitioned = 0
         for row in stale_matches:
             session.execute(text("""

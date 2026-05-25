@@ -228,7 +228,7 @@ class ModelRegistry:
                     reason_detail=f"Brier: {old_brier:.4f} -> {new_ver.brier_score:.4f}" if old_brier else reason,
                     brier_score_before=old_brier,
                     brier_score_after=new_ver.brier_score,
-                    triggered_by_drift=reason == "drift",
+                    triggered_by_drift="drift" in reason,
                 ))
             s.commit()
             new_id = new_ver.id  # read before session closes
@@ -306,16 +306,22 @@ class ModelRegistry:
             s.add(new_ver)
             s.flush()
 
-            prev_ece = active_dict.get("ece") or 0.0
+            trigger_ece = metrics.get("trigger_ece")
+            post_ece = new_ver.ece or 0.0
+            if trigger_ece is not None:
+                detail = f"Trigger ECE: {trigger_ece:.4f} → post-recal ECE: {post_ece:.4f} (eval n={metrics.get('eval_sample_size', '?')})"
+            else:
+                prev_ece = active_dict.get("ece") or 0.0
+                detail = f"ECE {prev_ece:.4f} → {post_ece:.4f}"
             s.add(RetrainEvent(
                 market=market,
                 old_version_id=old_id,
                 new_version_id=new_ver.id,
                 reason=reason,
-                reason_detail=f"Recalibrated: ECE {prev_ece:.4f} -> {new_ver.ece:.4f}",
+                reason_detail=detail,
                 brier_score_before=old_brier,
                 brier_score_after=new_ver.brier_score,
-                triggered_by_drift=False,
+                triggered_by_drift="drift" in reason,
             ))
             s.commit()
             new_id = new_ver.id
@@ -370,7 +376,15 @@ class ModelRegistry:
             archive = _archive_path(market, label)
             active = _active_path(market)
             if archive.exists():
-                shutil.copy2(archive, active)
+                from src.security.safe_load import safe_model_load, safe_model_save
+                payload = safe_model_load(str(archive))
+                if payload is not None:
+                    safe_model_save(payload, str(active))
+                else:
+                    # Archive has no sig yet (written before this fix); copy and re-sign
+                    payload = safe_model_load(str(archive), verify_hmac=False)
+                    if payload is not None:
+                        safe_model_save(payload, str(active))
                 logger.info("Activated %s %s — restored pkl from archive", market, label)
             else:
                 logger.warning("Activated %s %s in DB but archive pkl not found at %s", market, label, archive)
@@ -400,10 +414,10 @@ class ModelRegistry:
         active = _active_path(market)
         archive = _archive_path(market, label)
 
+        from src.security.safe_load import safe_model_save
         for path in (active, archive):
             path.parent.mkdir(parents=True, exist_ok=True)
-            with open(path, "wb") as f:
-                pickle.dump(payload, f)
+            safe_model_save(payload, str(path))
 
         logger.info("Saved artifacts for %s %s → %s + %s", market, label, active, archive)
 

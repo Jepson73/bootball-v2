@@ -1,3 +1,5 @@
+# DEAD CODE — not called from live pipeline as of 2026-05-25
+# Kept for reference: Dixon-Coles model with time decay; classical football prediction baseline
 # src/models/dixon_coles.py - Dixon-Coles with time decay
 """
 Dixon-Coles model implementation for football match prediction.

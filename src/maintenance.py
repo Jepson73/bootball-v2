@@ -108,7 +108,7 @@ _NO_STANDINGS_KEYWORDS = [
 ]
 
 
-def fix_orphaned_fixtures(season: int = 2025) -> list[dict]:
+def fix_orphaned_fixtures(season: int | None = None) -> list[dict]:
     """Fetch standings for leagues that have fixtures but no standing rows.
 
     'Orphaned' = non-cup league in fixtures table but absent from standings.
@@ -116,6 +116,10 @@ def fix_orphaned_fixtures(season: int = 2025) -> list[dict]:
     """
     from sqlalchemy.dialects.sqlite import insert as sqlite_insert
     from src.ingestion.client import APIFootballClient
+    from config.settings import get_settings
+
+    if season is None:
+        season = get_settings().current_season
 
     client = APIFootballClient()
     report = []
@@ -215,11 +219,15 @@ def fix_orphaned_fixtures(season: int = 2025) -> list[dict]:
 
 # ── 3. Combined maintenance run ───────────────────────────────────────────────
 
-def run_maintenance(days: int = 30, season: int = 2025) -> dict:
+def run_maintenance(days: int = 30, season: int | None = None) -> dict:
     """Run all maintenance tasks. Called each execution cycle.
 
     Returns a summary dict with counts and detail lists.
     """
+    from config.settings import get_settings
+    if season is None:
+        season = get_settings().current_season
+
     summary = {
         "ft_null_goals_fixed": 0,
         "ft_null_goals_detail": [],

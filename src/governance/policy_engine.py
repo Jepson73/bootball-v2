@@ -252,7 +252,7 @@ class CorrelationClusterConstraint(PolicyConstraint):
         self.correlation_pairs = {
             ("btts", "ou25"): 0.65,
             ("ou25", "ou15"): 0.70,
-            ("h2h", "btts"): 0.50,   # raised: in a balanced 4-mkt portfolio both will exceed 20%
+            ("h2h", "btts"): 0.50,
         }
         self.max_correlation = 0.70
     
@@ -267,9 +267,11 @@ class CorrelationClusterConstraint(PolicyConstraint):
         for (m1, m2), max_corr in self.correlation_pairs.items():
             e1 = exposure.get(m1, 0)
             e2 = exposure.get(m2, 0)
-            
-            # If both markets have high exposure, flag it
-            if e1 > 0.2 and e2 > 0.2:
+
+            # Higher correlation → lower tolerance: threshold = 1 - max_corr
+            # e.g. 0.70 corr → both must exceed 0.30; 0.50 corr → both must exceed 0.50
+            threshold = 1 - max_corr
+            if e1 > threshold and e2 > threshold:
                 violations.append(f"{m1}+{m2}")
         
         risk_score = len(violations) / 3.0 if violations else 0.0

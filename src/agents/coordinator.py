@@ -81,19 +81,20 @@ def _write_attribution(predictions: list, run_id: str) -> None:
                 if not record:
                     continue
 
-                prob = float(p.get("our_prob") or 0.5)
+                prob_raw = float(p.get("our_prob") or 0.5)
+                prob_cal = float(p.get("calibrated_prob") or prob_raw)
                 odds = float(p.get("odds") or 1.0)
 
                 attribution_engine.compute_attribution(
                     prediction_id=record.id,
                     fixture_id=fixture_id,
                     market=market,
-                    model_prob_raw=prob,
-                    calibration_prob=prob,
-                    league_adjusted_prob=prob,
-                    latent_adjusted_prob=prob,
-                    drift_adjusted_prob=prob,
-                    final_prob=prob,
+                    model_prob_raw=prob_raw,
+                    calibration_prob=prob_cal,
+                    league_adjusted_prob=prob_cal,
+                    latent_adjusted_prob=prob_cal,
+                    drift_adjusted_prob=prob_cal,
+                    final_prob=prob_cal,
                     odds_decimal=odds,
                 )
                 attribution_engine.save_to_database(record.id)
@@ -367,9 +368,14 @@ class AgentCoordinator:
                             .where(_PlacedBet.round_id == _round.id)
                             .where(_PlacedBet.settled == False)
                         ).scalar() or 0)
-                        _available = max(0.0, _round.initial_bankroll - _staked)
+                        _settled_pnl = float(_s.execute(
+                            select(_func.coalesce(_func.sum(_PlacedBet.pnl), 0))
+                            .where(_PlacedBet.round_id == _round.id)
+                            .where(_PlacedBet.settled == True)
+                        ).scalar() or 0)
+                        _available = max(0.0, _round.initial_bankroll + _settled_pnl - _staked)
                         self.state_store.update_bankroll(_available)
-                        logger.info(f"[COORDINATOR] Bankroll synced: initial={_round.initial_bankroll:.2f}, staked={_staked:.2f}, available={_available:.2f}")
+                        logger.info(f"[COORDINATOR] Bankroll synced: initial={_round.initial_bankroll:.2f}, settled_pnl={_settled_pnl:.2f}, staked={_staked:.2f}, available={_available:.2f}")
             except Exception as _e:
                 logger.warning(f"[COORDINATOR] Could not sync bankroll: {_e}")
 
@@ -565,9 +571,9 @@ class AgentCoordinator:
                 skipped_bets = 0
                 try:
                     from src.storage.db import get_session
-                    from src.storage.models import PlacedBet, BankrollRound
+                    from src.storage.models import PlacedBet, BankrollRound, PredictionRecord
                     from sqlalchemy import func
-                    
+
                     with get_session() as s:
                         # Get or create active round
                         round_row = s.execute(
@@ -593,32 +599,39 @@ class AgentCoordinator:
                         
                         # PRODUCTION-GRADE BANKROLL PROTECTION
                         initial_bankroll = round_row.initial_bankroll
-                        
+
                         # Query total already staked in this round (unsettled)
                         staked_result = s.execute(
                             select(func.coalesce(func.sum(PlacedBet.stake), 0))
                             .where(PlacedBet.round_id == round_row.id)
                             .where(PlacedBet.settled == False)
                         ).scalar()
-                        
+
+                        # Query settled P&L — losses reduce the available bankroll
+                        settled_pnl_result = s.execute(
+                            select(func.coalesce(func.sum(PlacedBet.pnl), 0))
+                            .where(PlacedBet.round_id == round_row.id)
+                            .where(PlacedBet.settled == True)
+                        ).scalar()
+
                         already_staked = float(staked_result or 0)
-                        available = initial_bankroll - already_staked
-                        
-                        logger.info(f"[COORDINATOR] Bankroll check: initial={initial_bankroll:.2f}, already_staked={already_staked:.2f}, available={available:.2f}")
-                        
+                        settled_pnl = float(settled_pnl_result or 0)
+                        available = max(0.0, initial_bankroll + settled_pnl - already_staked)
+
+                        logger.info(f"[COORDINATOR] Bankroll check: initial={initial_bankroll:.2f}, settled_pnl={settled_pnl:.2f}, already_staked={already_staked:.2f}, available={available:.2f}")
+
                         # Filter bets to only those within available bankroll
                         eligible_bets = []
                         for bet in portfolio:
                             stake = bet.get("stake", 0)
                             if stake <= 0:
                                 continue
-                            
+
                             if stake > available:
                                 logger.warning(f"[COORDINATOR] SKIP {bet.get('fixture_id')}/{bet.get('market')}: stake={stake:.2f} > available={available:.2f}")
                                 skipped_bets += 1
-                                available -= stake  # Count it as "would be" used
                                 continue
-                            
+
                             eligible_bets.append(bet)
                             available -= stake
                         
@@ -645,7 +658,16 @@ class AgentCoordinator:
                                 logger.info(f"[COORDINATOR] SKIP duplicate bet: {fixture_id}/{market}/{outcome}")
                                 skipped_bets += 1
                                 continue
-                            
+
+                            # Link to originating prediction record
+                            pred_rec = s.execute(
+                                select(PredictionRecord).where(
+                                    PredictionRecord.fixture_id == fixture_id,
+                                    PredictionRecord.market == market,
+                                    PredictionRecord.is_legacy == False,
+                                )
+                            ).scalar_one_or_none()
+
                             placed = PlacedBet(
                                 round_id=round_row.id,
                                 fixture_id=fixture_id,
@@ -654,10 +676,13 @@ class AgentCoordinator:
                                 stake=bet.get("stake", 0),
                                 odds=bet.get("odds", 0),
                                 our_prob=bet.get("our_prob", 0.5),
+                                calibrated_prob=bet.get("calibrated_prob"),
                                 ev=bet.get("ev", 0),
                                 kelly_fraction=bet.get("kelly", 0),
                                 run_id=_tracker_run_id,
+                                calibration_version_id=bet.get("calibration_version"),
                                 model_version_id=_active_model_ids.get(market),
+                                prediction_record_id=pred_rec.id if pred_rec else None,
                             )
                             s.add(placed)
                             saved_bets += 1
@@ -937,7 +962,8 @@ class AgentCoordinator:
                     outcomes.append({
                         "fixture_id": bet.fixture_id,
                         "market": bet.market,
-                        "predicted_prob": bet.our_prob,
+                        # Use VCL calibrated prob for drift tracking; fall back to raw if unavailable
+                        "predicted_prob": bet.calibrated_prob if bet.calibrated_prob is not None else bet.our_prob,
                         "actual_outcome": 1 if bet.pnl and bet.pnl > 0 else 0,
                         "odds": bet.odds,
                     })

@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# DEAD CODE — not called from live pipeline as of 2026-05-25
+# Kept for reference: player stats and injury ingestion; intended to be automated (see backfill_cron for pattern)
 """
 scripts/fetch_player_data.py
 

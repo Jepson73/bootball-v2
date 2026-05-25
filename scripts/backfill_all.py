@@ -14,19 +14,26 @@ Usage:
 """
 import argparse
 import logging
+import os
 import sys
 import time
 from datetime import datetime
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+os.chdir(_PROJECT_ROOT)
+sys.path.insert(0, str(_PROJECT_ROOT))
 
 from config.leagues import (
     PRIORITY_LEAGUE_IDS,
     BACKFILL_SEASONS, LEAGUES
 )
 from config.settings import settings
-from src.ingestion.client import APIFootballClient, calls_remaining_today, calls_used_today
+from src.ingestion.client import APIFootballClient, calls_used_today, get_api_status
+
+
+def _remaining() -> int:
+    return get_api_status()['remaining']
 from src.storage.db import get_session, init_db
 from src.storage.models import (
     Fixture, FixtureEvent, FixtureOdds, FixtureStats,
@@ -181,13 +188,14 @@ class EuropeanBackfiller:
         season: int,
         include_odds: bool = True,
         include_stats: bool = True,
+        stop_at_remaining: int = 15_000,
     ) -> dict:
         """Backfill a single league/season combination."""
         league_name = LEAGUES.get(league_id, {}).get("name", str(league_id))
         logger.info(f"Backfilling {league_name} {season}...")
-        
-        if calls_remaining_today() < 20:
-            logger.warning("Low on API calls, stopping")
+
+        if _remaining() < stop_at_remaining:
+            logger.warning("API quota below threshold, stopping")
             return {"status": "skipped", "reason": "low_api_calls"}
         
         # Skip if we already have a good number of fixtures for this season
@@ -296,6 +304,9 @@ class EuropeanBackfiller:
             stats_needed = [fid for fid in fixture_ids if fid not in stats_have]
             logger.info(f"  Fetching stats for {len(stats_needed)}/{len(fixture_ids)} fixtures (skipping {len(stats_have)} with existing stats)...")
             for i, fid in enumerate(stats_needed):
+                if _remaining() < stop_at_remaining:
+                    logger.warning("API quota below threshold mid-stats, stopping")
+                    return {"status": "quota_exhausted", "stats_progress": i, "total": len(stats_needed)}
                 if i % 50 == 0:
                     logger.info(f"    Progress: {i}/{len(stats_needed)}")
 
@@ -313,9 +324,12 @@ class EuropeanBackfiller:
             ]
             logger.info(f"  Fetching odds for {len(stored_fixture_ids)} fixtures...")
             for i, fid in enumerate(stored_fixture_ids):
+                if _remaining() < stop_at_remaining:
+                    logger.warning("API quota below threshold mid-odds, stopping")
+                    return {"status": "quota_exhausted", "odds_progress": i, "total": len(stored_fixture_ids)}
                 if i % 50 == 0:
                     logger.info(f"    Progress: {i}/{len(stored_fixture_ids)}")
-                
+
                 raw_odds = self.client.get_odds(fixture_id=fid, bet_type=1)
                 if raw_odds:
                     self._parse_and_store_odds(fid, raw_odds)
@@ -331,7 +345,7 @@ class EuropeanBackfiller:
         return {
             "status": "success",
             "fixtures": len(fixture_ids),
-            "api_calls_remaining": calls_remaining_today(),
+            "api_calls_remaining": _remaining(),
         }
     
     def _parse_and_store_stats(self, fixture_id: int, raw_stats: list) -> None:
@@ -480,7 +494,7 @@ class EuropeanBackfiller:
         logger.info(f"Include odds: {include_odds}")
         calls_at_start = calls_used_today()
         logger.info(f"API calls used today: {calls_at_start} / {settings.api_calls_per_day}")
-        logger.info(f"API calls remaining: {calls_remaining_today()}")
+        logger.info(f"API calls remaining: {_remaining()}")
 
         init_db()
 
@@ -508,8 +522,8 @@ class EuropeanBackfiller:
 
                 logger.info(f"\n--- Progress: {i+1}/{len(league_ids)} leagues | calls used this run: {calls_used_today() - calls_at_start} ---")
 
-                if calls_remaining_today() < stop_at_remaining:
-                    logger.warning(f"API budget low ({calls_remaining_today()} remaining, threshold={stop_at_remaining}), stopping")
+                if _remaining() < stop_at_remaining:
+                    logger.warning(f"API budget low ({_remaining()} remaining, threshold={stop_at_remaining}), stopping")
                     budget_exhausted = True
                     break
 
@@ -518,6 +532,7 @@ class EuropeanBackfiller:
                         league_id, season,
                         include_odds=include_odds,
                         include_stats=True,
+                        stop_at_remaining=stop_at_remaining,
                     )
                     logger.info(f"Result: {result}")
                 except Exception as e:
@@ -539,7 +554,7 @@ class EuropeanBackfiller:
         logger.info(f"Odds loaded: {self.stats['odds_loaded']}")
         logger.info(f"API calls this run: {calls_this_run}")
         logger.info(f"API calls used today total: {calls_used_today()} / {settings.api_calls_per_day}")
-        logger.info(f"API calls remaining: {calls_remaining_today()}")
+        logger.info(f"API calls remaining: {_remaining()}")
 
         # Log completion to ingestion_log for process monitor
         try:

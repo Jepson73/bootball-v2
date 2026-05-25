@@ -27,28 +27,38 @@ MARKET_OUTCOMES = {
 
 
 def build_features_h2h(home: Standing, away: Standing, baseline=None) -> np.ndarray:
-    """Build features for H2H (categorical outcome).
-
-    Must match trainer._build_features_h2h exactly (10 features).
-    """
+    """Build features for H2H (categorical outcome) — 9 features matching deployed LGBMClassifier models."""
+    h_gf = float(home.goals_for or 1)
+    h_ga = float(home.goals_against or 1)
+    a_gf = float(away.goals_for or 1)
+    a_ga = float(away.goals_against or 1)
     h_rank = float(home.rank or 15)
     a_rank = float(away.rank or 15)
-    h_gf   = float(home.goals_for or 1)
-    h_ga   = float(home.goals_against or 1)
-    a_gf   = float(away.goals_for or 1)
-    a_ga   = float(away.goals_against or 1)
+
+    if baseline:
+        avg_goals = baseline.avg_goals
+        home_adv = baseline.home_advantage
+        h_gf_n = (h_gf - avg_goals / 2 - home_adv / 2) / (avg_goals + 0.1)
+        a_gf_n = (a_gf - avg_goals / 2 + home_adv / 2) / (avg_goals + 0.1)
+        h_ga_n = (h_ga - avg_goals / 2 + home_adv / 2) / (avg_goals + 0.1)
+        a_ga_n = (a_ga - avg_goals / 2 - home_adv / 2) / (avg_goals + 0.1)
+        gd_home = (h_gf - h_ga - home_adv) / (avg_goals + 0.1)
+        gd_away = (a_gf - a_ga + home_adv) / (avg_goals + 0.1)
+    else:
+        h_gf_n, a_gf_n, h_ga_n, a_ga_n = h_gf, a_gf, h_ga, a_ga
+        gd_home = h_gf - h_ga
+        gd_away = a_gf - a_ga
 
     return np.array([[
         h_rank,
         a_rank,
-        a_rank - h_rank,                        # rank diff (away advantage if positive)
-        (h_gf - h_ga) - (a_gf - a_ga),         # goal-diff differential
-        h_gf + a_ga,                            # home attack vs away defence
-        a_gf + h_ga,                            # away attack vs home defence
-        h_gf,
-        a_gf,
-        h_ga,
-        a_ga,
+        gd_home,
+        gd_away,
+        h_gf_n,
+        a_gf_n,
+        h_ga_n,
+        a_ga_n,
+        float(abs(h_rank - a_rank)),
     ]])
 
 
@@ -247,10 +257,13 @@ def get_model_prediction(market: str, home_team_id: int, away_team_id: int, fixt
         else:
             return None
 
-        if calibrator:
+        # Only apply MarketCalibrator (has a .calibrate() method); skip raw IsotonicRegression
+        # objects embedded in older pkl files — they are fitted on a different scale and
+        # produce 0 for out-of-range inputs, breaking the probability distribution.
+        if calibrator and hasattr(calibrator, 'calibrate'):
             try:
                 for k in probs:
-                    probs[k] = max(0.01, min(0.99, calibrator.predict([probs[k]])[0]))
+                    probs[k] = calibrator.calibrate(probs[k]).calibrated_prob
             except Exception:
                 pass
 

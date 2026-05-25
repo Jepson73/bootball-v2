@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# DEAD CODE — not called from live pipeline as of 2026-05-25
+# Kept for reference: manual one-shot odds backfill for fixtures that have predictions but no odds
 """
 scripts/backfill_odds.py
 

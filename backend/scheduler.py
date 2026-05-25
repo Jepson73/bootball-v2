@@ -104,7 +104,7 @@ def is_job_allowed_in_mode(job_id: str) -> bool:
 
 
 def job_fetch_fixtures():
-    """Pull upcoming fixtures, upsert changes."""
+    """Pull upcoming fixtures, upsert changes, then seed odds for newly ingested fixtures."""
     if not _circuit_ok("fetch_fixtures"):
         return
     logger.info("JOB: fetch_fixtures starting")
@@ -120,6 +120,40 @@ def job_fetch_fixtures():
         _circuit_success("fetch_fixtures")
         success = True
         logger.info("JOB: fetch_fixtures completed")
+
+        # Immediately seed odds for fixtures that have none, so fetch_odds only refreshes
+        try:
+            from src.ingestion.client import APIFootballClient, calls_remaining_today
+            from scripts.odds_poll import find_fixtures_needing_odds, poll_and_update_odds
+
+            remaining = calls_remaining_today()
+            if remaining >= 50:
+                client = APIFootballClient()
+                with get_session() as s:
+                    # Only bootstrap bucket: fixtures with no odds and no predictions
+                    all_ids = find_fixtures_needing_odds(s)
+                    # Identify fixtures with no existing odds at all
+                    from src.storage.models import FixtureOdds
+                    from sqlalchemy import select as _select
+                    has_odds_ids = {
+                        r[0] for r in s.execute(
+                            _select(FixtureOdds.fixture_id).where(
+                                FixtureOdds.fixture_id.in_(all_ids)
+                            ).distinct()
+                        ).all()
+                    }
+                    no_odds_ids = [fid for fid in all_ids if fid not in has_odds_ids]
+                    max_seed = min(300, remaining // 3)
+                    seed_ids = no_odds_ids[:max_seed]
+                    if seed_ids:
+                        logger.info(f"JOB: fetch_fixtures — seeding odds for {len(seed_ids)} new fixtures")
+                        seeded = poll_and_update_odds(s, client, seed_ids)
+                        logger.info(f"JOB: fetch_fixtures — seeded {seeded} odds rows")
+            else:
+                logger.info("JOB: fetch_fixtures — skipping odds seed (low quota)")
+        except Exception as seed_err:
+            logger.warning(f"JOB: fetch_fixtures — odds seed failed (non-fatal): {seed_err}")
+
     except Exception as e:
         error_msg = str(e)
         _circuit_failure("fetch_fixtures")
@@ -133,6 +167,37 @@ def job_fetch_fixtures():
             s.commit()
     except Exception:
         logger.exception("JOB: fetch_fixtures — failed to write ingestion_log")
+
+
+def job_live_settle():
+    """Fetch live scores for fixtures with pending bets and attempt settlement.
+
+    Runs every 2 minutes. Lightweight: only polls the small set of fixtures
+    that actually have unsettled bets (typically 5-15), not all 1225 leagues.
+    Bets requiring early settlement need 3 consecutive confirmations before
+    committing, to absorb VAR delays.
+    """
+    from src.storage.db import get_session
+    from sqlalchemy import select, text
+
+    with get_session() as s:
+        pending_count = s.execute(
+            text("SELECT COUNT(*) FROM placed_bets WHERE settled = 0")
+        ).scalar()
+
+    if not pending_count:
+        return  # nothing to do
+
+    logger.debug("JOB: live_settle — %d pending bets, fetching live scores", pending_count)
+
+    try:
+        from src.settlement import update_pending_fixture_scores, settle_placed_bets
+        update_pending_fixture_scores()
+        settled, pnl, _ = settle_placed_bets()
+        if settled:
+            logger.info("JOB: live_settle settled %d bets, P/L: %+.2f", settled, pnl)
+    except Exception:
+        logger.exception("JOB: live_settle failed (non-fatal)")
 
 
 def job_fetch_results():
@@ -161,9 +226,8 @@ def job_fetch_results():
 
     # After fetching results, settle any pending bets whose fixtures are now FT
     try:
-        from src.settlement import fetch_and_update_fixtures, update_live_fixture_statuses, settle_all, backfill_missing_scores
+        from src.settlement import fetch_and_update_fixtures, settle_all, backfill_missing_scores
         fetch_and_update_fixtures(days=7)
-        update_live_fixture_statuses()
         backfill_missing_scores(days=14)
         result = settle_all()
         if result['bets_settled'] > 0 or result['predictions_settled'] > 0:
@@ -218,9 +282,9 @@ def job_fetch_odds():
             _circuit_success("fetch_odds")
             return
 
-        max_fixtures = min(200, remaining // 3)
+        max_fixtures = remaining // 3  # no arbitrary cap — quota is the only governor
         fixture_ids = fixture_ids[:max_fixtures]
-        logger.info(f"JOB: fetch_odds — polling {len(fixture_ids)} fixtures")
+        logger.info(f"JOB: fetch_odds — polling {len(fixture_ids)} fixtures (quota remaining: {remaining})")
 
         with get_session() as s:
             odds_updated = poll_and_update_odds(s, client, fixture_ids)
@@ -445,6 +509,21 @@ def job_run_continuous_cycle():
         raise
 
 
+def job_daily_sanity_check():
+    """Run the daily sanity check to detect season mismatches, stale model sigs, and coverage gaps."""
+    if not _circuit_ok("daily_sanity_check"):
+        return
+    logger.info("JOB: daily_sanity_check starting")
+    try:
+        from scripts.daily_sanity_check import main as run_sanity_check
+        run_sanity_check()
+        _circuit_success("daily_sanity_check")
+        logger.info("JOB: daily_sanity_check completed")
+    except Exception:
+        _circuit_failure("daily_sanity_check")
+        logger.exception("JOB: daily_sanity_check failed")
+
+
 def get_scheduler() -> BackgroundScheduler:
     """Create and configure the scheduler.
     
@@ -491,6 +570,8 @@ def get_scheduler() -> BackgroundScheduler:
         ("fetch_results", job_fetch_results, 'interval', {'hours': 1}),
         ("fetch_odds", job_fetch_odds, 'interval', {'hours': 1}),
         ("cleanup_matches", job_cleanup_matches, 'interval', {'minutes': 5}),
+        ("live_settle", job_live_settle, 'interval', {'minutes': 2}),
+        ("daily_sanity_check", job_daily_sanity_check, 'interval', {'hours': 24}),
     ]
     
     for job_id, job_func, trigger_type, trigger_args in auxiliary_jobs:

@@ -1,6 +1,6 @@
 # Bootball Refactor Audit — rep_red.md
-**Date:** 2026-05-06  
-**Scope:** Full codebase. No code changed.  
+**Date:** 2026-05-08 (updated; original audit 2026-05-06)  
+**Scope:** Full codebase. Priority items 1–7 completed.  
 **Legend:** 🔴 High / 🟡 Medium / 🟢 Low severity
 
 ---
@@ -8,6 +8,8 @@
 ## Executive Summary
 
 The codebase has grown through layered rewrites without retiring previous implementations. The result is six separate portfolio optimization paths, three copies of `get_market_result()`, two execution engines with overlapping names, a 8,106-line monolithic web file, and roughly 13 orphaned scripts. The live execution path itself is sound; the waste is accumulated alongside it.
+
+**2026-05-08 update:** All 🔴 and 🟡 priority items (1–7) have been completed. 9 dead scripts deleted, `self_optimizing_allocator.py` removed, web_ui.py h2h feature builder unified with `build_features_h2h()`, `scripts/maintenance.py` renamed to `scripts/diagnostics.py`. Items 8–12 remain in backlog.
 
 ---
 
@@ -129,14 +131,14 @@ Both track the current bankroll independently. The coordinator now syncs them (a
 
 ---
 
-### 2.7 🟢 Maintenance naming collision
+### 2.7 ~~🟢 Maintenance naming collision~~ ✅ FIXED (2026-05-08)
+
+`scripts/maintenance.py` renamed to `scripts/diagnostics.py`. Names are now distinct:
 
 | File | Purpose |
 |---|---|
 | `src/maintenance.py` | Automated cleanup — fixes null goals, orphaned fixtures (called by runtime) |
-| `scripts/maintenance.py` | Manual diagnostic — connectivity checks, backfill config validation |
-
-Not a true duplicate (different purposes) but identical names across different directories. A new developer reading a traceback will be confused about which file fired.
+| `scripts/diagnostics.py` | Manual diagnostic — connectivity checks, backfill config validation |
 
 ---
 
@@ -144,19 +146,21 @@ Not a true duplicate (different purposes) but identical names across different d
 
 These files have zero imports from any other project file and are not referenced in the scheduler. They can only be run manually and are not part of any documented workflow.
 
-### 3.1 🔴 Confirmed dead — remove
+### 3.1 ~~🔴 Confirmed dead — remove~~ ✅ DONE (2026-05-08)
 
-| File | Lines | Why dead |
+All 9 files deleted:
+
+| File | Lines | Why deleted |
 |---|---|---|
-| `scripts/settle_bets.py` | 327 | Uses `ValueBet` model (removed from DB); not called anywhere |
-| `scripts/daily_run_backup.py` | 413 | Explicit backup copy of `daily_run.py`; diverged (refs `ExperimentTracker` import that differs from main) |
-| `scripts/retrain_models_new.py` | 468 | Reimplements trainer; not imported or scheduled anywhere |
-| `scripts/train_multi_league.py` | 55 | Orphaned training script; zero external refs |
-| `scripts/extensive_logging.py` | ~400 | Debug helper; zero external refs |
-| `scripts/live_stats_collector.py` | ~330 | Uses `APIFootballClient` but not wired to scheduler or web UI |
-| `scripts/setup_db.py` | ~50 | One-time setup; superseded by `migrations/` |
-| `data/scheduler.py` | ~80 | Old APScheduler init code predating `backend/scheduler.py`; not imported |
-| `src/ingestion/scheduler.py` | 1 | Comment stub only: `# src/ingestion/scheduler.py - Daily operational pipeline` |
+| ~~`scripts/settle_bets.py`~~ | 327 | Used `ValueBet` model removed from DB; not called anywhere |
+| ~~`scripts/daily_run_backup.py`~~ | 413 | Explicit backup copy of `daily_run.py`; diverged |
+| ~~`scripts/retrain_models_new.py`~~ | 468 | Reimplements trainer; not imported or scheduled anywhere |
+| ~~`scripts/train_multi_league.py`~~ | 55 | Orphaned training script; zero external refs |
+| ~~`scripts/extensive_logging.py`~~ | ~400 | Debug helper; zero external refs |
+| ~~`scripts/live_stats_collector.py`~~ | ~330 | Not wired to scheduler or web UI |
+| ~~`scripts/setup_db.py`~~ | ~50 | One-time setup; superseded by `migrations/` |
+| ~~`data/scheduler.py`~~ | ~80 | Old APScheduler init; not imported |
+| ~~`src/ingestion/scheduler.py`~~ | 1 | Comment stub only |
 
 ### 3.2 🟡 Likely dead — verify before removing
 
@@ -211,9 +215,9 @@ The active model pipeline uses GradientBoostingClassifier trained in `src/models
 
 `lifecycle.py`, `drift_detector.py`, and `retrain_worker.py` are imported by `src/monitoring/monitoring_coordinator.py` — they are active but only fire if monitoring coordinator is running.
 
-### 4.4 🟡 `src/portfolio/self_optimizing_allocator.py`
+### 4.4 ~~🟡 `src/portfolio/self_optimizing_allocator.py`~~ ✅ DELETED (2026-05-08)
 
-214 lines. Defines `SelfOptimizingAllocator` and `get_self_optimizing_allocator()`. Zero imports from any other file. The similar `AdaptiveAllocator` in the same package is active.
+214 lines. Defined `SelfOptimizingAllocator` and `get_self_optimizing_allocator()`. Zero imports from any other file. Removed. `AdaptiveAllocator` in the same package remains active.
 
 ### 4.5 🟢 `src/backtesting/` — CLI-only
 
@@ -231,10 +235,10 @@ Two separate `Backfiller` class implementations. `src/ingestion/backfill.py` is 
 
 202 route functions in one file. The web UI directly imports from 40+ modules across `backend/`, `src/`, `config/`, and `scripts/`. It contains inline business logic (prediction fallback code, feature vector construction, model loading) that duplicates `src/betting/prediction.py` and `src/models/trainer.py`.
 
-The web UI has its own h2h feature builder (corrected in a previous session after mismatch) instead of calling `build_features_h2h()` from `src/betting/prediction.py`. Any future change to the feature schema must be applied in both places.
+~~The web UI has its own h2h feature builder instead of calling `build_features_h2h()` from `src/betting/prediction.py`.~~ **Fixed 2026-05-08** — web_ui.py now imports and calls `build_features_h2h()` directly.
 
-**Specific duplicates inside web_ui.py:**
-- Feature construction for predictions (lines ~3885–3898): duplicates `src/betting/prediction.py:build_features_h2h()`
+**Remaining duplicates inside web_ui.py:**
+- ~~Feature construction for predictions (lines ~3885–3898)~~ ✅ Fixed — now calls `build_features_h2h()`
 - Calibration trigger code (line 6604): calls `backend.execution_engine._fit_calibrator_for_market` — a private function
 - Round close logic (line 7705): duplicates `src/betting/round_manager.close_round_if_full()`
 
@@ -293,16 +297,16 @@ Settlement and execution engine have no automated tests despite being the highes
 
 ### 🔴 Do first (correctness risk)
 
-1. **Remove `scripts/settle_bets.py`** — broken (`ValueBet` import fails), not called, actively misleading.
-2. **Fix `src/alerts/handlers.py:191`** — imports `ValueBet` from `capital_allocator.py` as if it's a DB model; the import will crash in that handler path.
-3. **Confirm which bet placement path is live** — `auto_bet.py` direct writes vs coordinator path. If both fire, stakes could be double-placed.
+1. ✅ **Remove `scripts/settle_bets.py`** — deleted 2026-05-08.
+2. ✅ **`src/alerts/handlers.py:191` ValueBet import** — confirmed non-issue: `ValueBet` is a local dataclass at `capital_allocator.py:46`, not a DB model; import succeeds.
+3. ✅ **Confirm which bet placement path is live** — confirmed: only `AgentCoordinator.run_cycle()` fires. APScheduler no longer registers `run_betting_bot`. `auto_bet.py` is NOT in the live execution path.
 
 ### 🟡 Do next (maintainability)
 
-4. **Remove confirmed dead scripts** (§3.1): `daily_run_backup.py`, `retrain_models_new.py`, `train_multi_league.py`, `extensive_logging.py`, `live_stats_collector.py`, `setup_db.py`, `data/scheduler.py`, `src/ingestion/scheduler.py`.
-5. **Consolidate portfolio path** — remove `src/portfolio/self_optimizing_allocator.py` and audit whether `src/betting/portfolio_optimizer.py` (the standalone one) is still needed, or if its correlation-avoidance logic is now covered by `markowitz_optimizer.py`.
-6. **Move web_ui.py prediction fallback** — the inline feature builder should call `build_features_for_market()` from `src/betting/prediction.py`, not reimplement it.
-7. **Rename `scripts/maintenance.py`** → `scripts/diagnostics.py` to avoid confusion with `src/maintenance.py`.
+4. ✅ **Remove confirmed dead scripts** — all 9 deleted: `settle_bets.py`, `daily_run_backup.py`, `retrain_models_new.py`, `train_multi_league.py`, `extensive_logging.py`, `live_stats_collector.py`, `setup_db.py`, `data/scheduler.py`, `src/ingestion/scheduler.py`.
+5. ✅ **Consolidate portfolio path** — `src/portfolio/self_optimizing_allocator.py` deleted. `src/betting/portfolio_optimizer.py` retained (semi-active: not called by coordinator but has active callers elsewhere; consolidation deferred to backlog).
+6. ✅ **Move web_ui.py prediction fallback** — inline h2h feature builder replaced with `build_features_h2h()` call from `src/betting/prediction.py`.
+7. ✅ **Rename `scripts/maintenance.py`** → `scripts/diagnostics.py` — done.
 
 ### 🟢 Backlog (cleanup)
 
@@ -316,15 +320,15 @@ Settlement and execution engine have no automated tests despite being the highes
 
 ## 9. Metrics Summary
 
-| Metric | Count |
-|---|---|
-| Total project Python files (excl. venv) | ~220 |
-| Files in live execution path | ~45 |
-| Confirmed dead/orphaned scripts | 9 |
-| Likely dead scripts (verify) | 7 |
-| Duplicate logic sites | 6 |
-| Portfolio optimizer implementations | 6 (3 active, 1 semi, 1 orphaned, 1 fallback) |
-| Copies of `get_market_result()` | 3 |
-| Lines in web_ui.py | 8,106 |
-| Models defined but unused in live pipeline | 8 |
-| Settlement tested by automated tests | No |
+| Metric | Count | Change |
+|---|---|---|
+| Total project Python files (excl. venv) | ~210 | −10 (9 scripts + 1 allocator deleted) |
+| Files in live execution path | ~45 | unchanged |
+| Confirmed dead/orphaned scripts deleted | 9 | ✅ all removed |
+| Likely dead scripts (verify) | 7 | unchanged — backlog |
+| Duplicate logic sites | 5 | −1 (web_ui.py h2h feature builder unified) |
+| Portfolio optimizer implementations | 5 (3 active, 1 semi, 1 fallback) | −1 (orphaned allocator removed) |
+| Copies of `get_market_result()` | 2 | −1 (`settle_bets.py` removed) |
+| Lines in web_ui.py | ~8,090 | −16 (inline feature builder replaced) |
+| Models defined but unused in live pipeline | 8 | unchanged — backlog |
+| Settlement tested by automated tests | No | unchanged — backlog |

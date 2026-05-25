@@ -218,6 +218,8 @@ class PortfolioOptimizer:
                 continue
             if confidence < self.config.min_confidence:
                 continue
+            if c.get("odds", 0) < 1.6:
+                continue
             
             filtered.append(c)
         

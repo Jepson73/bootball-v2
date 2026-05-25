@@ -461,6 +461,9 @@ class LeagueCalibration(Base):
     to a calibrated probability for a specific league.  The comparison fields
     (brier_score_global vs brier_score) let us decide whether to activate the
     league-specific calibration or fall back to the global one.
+
+    league_id=NULL is the global calibration (L0000) — applies when no
+    league-specific calibration is active for a fixture's league.
     """
     __tablename__ = "league_calibrations"
     __table_args__ = (
@@ -469,7 +472,7 @@ class LeagueCalibration(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     market: Mapped[str] = mapped_column(String(20))
-    league_id: Mapped[int] = mapped_column(Integer, ForeignKey("leagues.id"))
+    league_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("leagues.id"), nullable=True)
 
     # Full version label e.g. "v01_c02_l0188"
     version_label: Mapped[str] = mapped_column(String(30))
@@ -491,7 +494,7 @@ class LeagueCalibration(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
-    league: Mapped["League"] = relationship("League", foreign_keys=[league_id])
+    league: Mapped["League | None"] = relationship("League", foreign_keys=[league_id])
 
 
 # ── Bankroll tracking ─────────────────────────────────────────────────────────
@@ -554,7 +557,8 @@ class PlacedBet(Base):
     fixture_id: Mapped[int] = mapped_column(ForeignKey("fixtures.id"))
     market: Mapped[str] = mapped_column(String(20))
     model_version_id: Mapped[int | None] = mapped_column(ForeignKey("model_versions.id"), nullable=True)
-    
+    prediction_record_id: Mapped[int | None] = mapped_column(ForeignKey("prediction_records.id"), nullable=True)
+
     run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     calibration_version_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     feature_pipeline_version: Mapped[str] = mapped_column(String(20), default="v1.0.0")
@@ -562,7 +566,8 @@ class PlacedBet(Base):
     outcome: Mapped[str] = mapped_column(String(10))
     stake: Mapped[float] = mapped_column(Float)
     odds: Mapped[float] = mapped_column(Float)
-    our_prob: Mapped[float] = mapped_column(Float)
+    our_prob: Mapped[float] = mapped_column(Float)          # raw Vxx — for C-calibration training
+    calibrated_prob: Mapped[float | None] = mapped_column(Float, nullable=True)  # VCL final
     ev: Mapped[float] = mapped_column(Float)
     kelly_fraction: Mapped[float] = mapped_column(Float)
 
@@ -574,9 +579,13 @@ class PlacedBet(Base):
     placed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime)
 
+    settle_confirmations: Mapped[int] = mapped_column(Integer, default=0)
+    settle_pending_result: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
     round: Mapped["BankrollRound"] = relationship("BankrollRound", foreign_keys=[round_id])
     fixture: Mapped["Fixture"] = relationship()
     model_version: Mapped["ModelVersion | None"] = relationship("ModelVersion", foreign_keys=[model_version_id])
+    prediction_record: Mapped["PredictionRecord | None"] = relationship("PredictionRecord", foreign_keys=[prediction_record_id])
 
 
 # ── User preferences (future multi-user ready) ─────────────────────────────────

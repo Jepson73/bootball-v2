@@ -19,6 +19,9 @@ from src.prediction.market_normalizer import normalize_market, normalize_market_
 from src.storage.db import get_session
 from src.storage.models import Fixture, FixtureOdds, PredictionRecord
 from src.betting.prediction import get_model_prediction
+from src.calibration.league_calibration_engine import LeagueCalibrationEngine
+
+_cal_engine = LeagueCalibrationEngine()
 
 logger = logging.getLogger(__name__)
 
@@ -252,10 +255,14 @@ class UnifiedPredictionService:
                     
                     best_outcome = max(model_probs.items(), key=lambda x: x[1])
                     raw_outcome = best_outcome[0]
-                    our_prob = best_outcome[1]
-                    
+                    our_prob = best_outcome[1]  # raw Vxx — stored for C-calibration training
+
                     normalized_outcome = normalize_market_pick(normalized_market, raw_outcome)
-                    
+
+                    # Apply VCL calibration: Lzzzz → L0000 → raw fallback
+                    league_id = getattr(fixture, 'league_id', None)  # None triggers L0000 fallback
+                    p_final, cal_version = _cal_engine.apply(normalized_market, league_id, our_prob)
+
                     odds, odds_snapshot = self._get_odds_for_market(fixture_id, normalized_market, normalized_outcome)
 
                     # Preliminary predictions are allowed when odds are unavailable.
@@ -263,10 +270,10 @@ class UnifiedPredictionService:
                     has_odds = odds is not None and odds >= 1.0
                     if has_odds:
                         implied_prob = 1.0 / odds
-                        ev = our_prob * odds - 1  # standard: E[profit per unit staked]
+                        ev = p_final * odds - 1  # EV uses calibrated probability
                         b = odds - 1
-                        q = 1 - our_prob
-                        kelly = max(0, (b * our_prob - q) / b) * 0.25 if b > 0 else 0
+                        q = 1 - p_final
+                        kelly = max(0, (b * p_final - q) / b) * 0.25 if b > 0 else 0
                     else:
                         odds = None
                         odds_snapshot = None
@@ -278,6 +285,7 @@ class UnifiedPredictionService:
                     predictions.append({
                         "prediction_id": prediction_id,
                         "fixture_id": fixture_id,
+                        "league_id": league_id,
                         "home_team_id": home_id,
                         "away_team_id": away_id,
                         "market": normalized_market,
@@ -285,7 +293,9 @@ class UnifiedPredictionService:
                         "raw_outcome": raw_outcome,
                         "odds": odds,
                         "odds_snapshot": odds_snapshot,
-                        "our_prob": our_prob,
+                        "our_prob": our_prob,           # raw Vxx preserved for C-training
+                        "calibrated_prob": p_final,     # VCL final — used for EV/Kelly/betting
+                        "calibration_version": cal_version,
                         "implied_prob": implied_prob if has_odds else None,
                         "predicted_probs": model_probs,
                         "ev": ev,
@@ -431,8 +441,12 @@ class UnifiedPredictionService:
                 record.run_id = run_id
                 record.is_legacy = False
 
-                # Apply league-specific calibration if available
-                if record.our_prob is not None:
+                # Use calibrated_prob from prediction dict if already applied upstream,
+                # otherwise apply here as fallback (e.g. legacy generate() path)
+                if pred.get("calibrated_prob") is not None:
+                    record.calibrated_prob = pred["calibrated_prob"]
+                    record.calibration_version_id = pred.get("calibration_version")
+                elif record.our_prob is not None:
                     fix = s.get(Fixture, fixture_id)
                     if fix and fix.league_id:
                         p_cal, cal_ver = _cal_engine.apply(market, fix.league_id, record.our_prob)

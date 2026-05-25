@@ -54,16 +54,24 @@ def _write_cache(key: str, data: dict) -> None:
 def _load_counter() -> dict:
     today = time.strftime("%Y-%m-%d")
     if COUNTER_FILE.exists():
-        c = json.loads(COUNTER_FILE.read_text())
-        if c.get("date") == today:
-            return c
+        try:
+            text = COUNTER_FILE.read_text().strip()
+            if text:
+                c = json.loads(text)
+                if c.get("date") == today:
+                    return c
+        except (json.JSONDecodeError, OSError):
+            pass  # truncated mid-write or corrupt — reset below
     return {"date": today, "count": 0}
 
 
 def _increment_counter() -> int:
     c = _load_counter()
     c["count"] += 1
-    COUNTER_FILE.write_text(json.dumps(c))
+    # Atomic write: write to temp then rename so readers never see a partial file
+    tmp = COUNTER_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(c))
+    tmp.replace(COUNTER_FILE)
     return c["count"]
 
 
@@ -73,6 +81,59 @@ def calls_used_today() -> int:
 
 def calls_remaining_today() -> int:
     return settings.api_calls_per_day - calls_used_today()
+
+
+_api_status_cache: dict = {"data": None, "fetched_at": 0.0}
+_API_STATUS_TTL = 120  # refresh real quota at most every 2 minutes
+
+
+def get_api_status() -> dict:
+    """Fetch real quota from the API /status endpoint (does not cost a call).
+
+    Returns dict with keys: plan, used, limit, remaining, active.
+    Falls back to local counter on failure.
+    Cached for 2 minutes so repeated calls don't spam the endpoint.
+    """
+    global _api_status_cache
+    now = time.monotonic()
+    if _api_status_cache["data"] and now - _api_status_cache["fetched_at"] < _API_STATUS_TTL:
+        return _api_status_cache["data"]
+
+    result: dict = {}
+    try:
+        session = requests.Session()
+        session.headers.update({"x-apisports-key": settings.api_football_key})
+        resp = session.get(
+            f"{settings.api_football_base_url}/status", timeout=10
+        )
+        resp.raise_for_status()
+        body = resp.json()
+        r = body.get("response", {})
+        sub = r.get("subscription", {})
+        req = r.get("requests", {})
+        result = {
+            "plan": sub.get("plan", "Unknown"),
+            "active": sub.get("active", False),
+            "used": req.get("current", 0),
+            "limit": req.get("limit_day", settings.api_calls_per_day),
+            "remaining": req.get("limit_day", settings.api_calls_per_day) - req.get("current", 0),
+            "source": "api",
+        }
+    except Exception as e:
+        logger.warning("get_api_status fallback to local counter: %s", e)
+        used = calls_used_today()
+        result = {
+            "plan": "Unknown",
+            "active": True,
+            "used": used,
+            "limit": settings.api_calls_per_day,
+            "remaining": settings.api_calls_per_day - used,
+            "source": "local",
+        }
+
+    _api_status_cache["data"] = result
+    _api_status_cache["fetched_at"] = now
+    return result
 
 
 class APIFootballClient:

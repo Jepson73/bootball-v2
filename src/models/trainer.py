@@ -87,19 +87,23 @@ def _get_team_stats(s, team_id: int, league_id: int) -> dict:
 
 
 def _build_features_h2h(home_stats: dict, away_stats: dict, league_id: int) -> list:
-    """Build features for 1X2 prediction."""
+    """Build features for 1X2 prediction — 9 features matching deployed LGBMClassifier models."""
+    h_gf = float(home_stats.get('goals_for', 1))
+    h_ga = float(home_stats.get('goals_against', 1))
+    a_gf = float(away_stats.get('goals_for', 1))
+    a_ga = float(away_stats.get('goals_against', 1))
+    h_rank = float(home_stats.get('rank', 15))
+    a_rank = float(away_stats.get('rank', 15))
     return [
-        float(home_stats.get('rank', 15)),
-        float(away_stats.get('rank', 15)),
-        float(away_stats.get('rank', 15) - home_stats.get('rank', 15)),
-        float((home_stats.get('goals_for', 1) - home_stats.get('goals_against', 1)) -
-              (away_stats.get('goals_for', 1) - away_stats.get('goals_against', 1))),
-        float(home_stats.get('goals_for', 1) + away_stats.get('goals_against', 1)),
-        float(away_stats.get('goals_for', 1) + home_stats.get('goals_against', 1)),
-        float(home_stats.get('goals_for', 1)),
-        float(away_stats.get('goals_for', 1)),
-        float(home_stats.get('goals_against', 1)),
-        float(away_stats.get('goals_against', 1)),
+        h_rank,
+        a_rank,
+        h_gf - h_ga,
+        a_gf - a_ga,
+        h_gf,
+        a_gf,
+        h_ga,
+        a_ga,
+        float(abs(h_rank - a_rank)),
     ]
 
 

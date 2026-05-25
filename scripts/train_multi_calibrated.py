@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# DEAD CODE — not called from live pipeline as of 2026-05-25
+# Kept for reference: pre-model-registry training approach (before ModelRegistry/versioning)
 """Train calibrated ML model on all leagues."""
 import sys
 from pathlib import Path

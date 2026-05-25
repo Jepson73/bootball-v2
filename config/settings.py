@@ -80,7 +80,7 @@ class Settings(BaseSettings):
         default_factory=lambda: [
             98,   # J1 League (Japan)
             253,  # MLS (USA)
-            1602, # MLS Next Pro (USA)
+            909,  # MLS Next Pro (USA)
             292,  # K League 1 (South Korea)
             71,   # Série A (Brazil)
             72,   # Série B (Brazil)
@@ -89,8 +89,9 @@ class Settings(BaseSettings):
             114,  # Superettan (Sweden)
             103,  # Eliteserien (Norway)
             104,  # 1. Division (Norway)
-            119,  # Superliga (Denmark)
-            120,  # 1. Division (Denmark)
+            422,  # Premier League (Barbados) — calendar year season observed in DB
+            # 119 and 120 (Danish Superliga / 1. Division) run Aug–May like European leagues
+            # — they use season=START_YEAR (e.g. 2025 for 2025/26), NOT current calendar year.
         ]
     )
 

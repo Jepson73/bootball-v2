@@ -11,12 +11,20 @@ Stops when either:
   - API calls remaining drops below STOP_AT_REMAINING
 """
 import logging
+import os
 import sys
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+# Ensure we always run from the project root so .env and relative paths resolve correctly.
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+os.chdir(_PROJECT_ROOT)
+sys.path.insert(0, str(_PROJECT_ROOT))
 
-from src.ingestion.client import calls_remaining_today
+from src.ingestion.client import get_api_status
+
+
+def _remaining() -> int:
+    return get_api_status()['remaining']
 from config.leagues import ALL_LEAGUE_IDS
 from src.storage.db import get_session
 from sqlalchemy import text
@@ -27,7 +35,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-STOP_AT_REMAINING = 15_000
+STOP_AT_REMAINING = 25_000
 # Seasons to work through, newest-first so recent history fills in first.
 TARGET_SEASONS = [2026, 2025, 2024, 2023, 2022, 2021]
 
@@ -47,12 +55,13 @@ def main():
     from src.storage.db import init_db
     init_db()
 
-    remaining = calls_remaining_today()
+    remaining = _remaining()
     logger.info(f"API calls remaining at start: {remaining}")
     logger.info(f"Total leagues to cover: {len(ALL_LEAGUE_IDS)}")
 
     if remaining < STOP_AT_REMAINING + 5_000:
         logger.info(f"Fewer than {STOP_AT_REMAINING + 5_000} calls available — skipping today's run")
+        _log_run(skipped=True, summary=f"skipped: only {remaining} calls remaining")
         return
 
     covered = _covered_pairs()
@@ -70,6 +79,7 @@ def main():
 
     if not seasons_to_run:
         logger.info("All target seasons fully covered — nothing to do")
+        _log_run(skipped=False, summary="all seasons already covered")
         return
 
     from scripts.backfill_all import EuropeanBackfiller
@@ -77,7 +87,7 @@ def main():
     backfiller = EuropeanBackfiller()
 
     for season, missing_leagues in seasons_to_run:
-        remaining = calls_remaining_today()
+        remaining = _remaining()
         if remaining < STOP_AT_REMAINING:
             logger.info(f"Budget threshold reached ({remaining} remaining) — stopping")
             break
@@ -90,14 +100,29 @@ def main():
             stop_at_remaining=STOP_AT_REMAINING,
         )
 
-        remaining = calls_remaining_today()
+        remaining = _remaining()
         logger.info(f"After season {season}: {remaining} calls remaining")
 
         if remaining < STOP_AT_REMAINING:
             logger.info("Budget threshold reached — stopping after this season")
             break
 
-    logger.info(f"Cron run complete. API calls remaining: {calls_remaining_today()}")
+    calls_end = _remaining()
+    logger.info(f"Cron run complete. API calls remaining: {calls_end}")
+
+    _log_run(skipped=False, summary=f"calls_remaining={calls_end}")
+
+
+def _log_run(skipped: bool, summary: str) -> None:
+    try:
+        with get_session() as s:
+            s.execute(text("""
+                INSERT INTO ingestion_log (job_name, success, fixtures_updated, error_message)
+                VALUES (:job, 1, 0, :summary)
+            """), {"job": "backfill_cron", "summary": summary})
+            s.commit()
+    except Exception as exc:
+        logger.warning(f"Failed to log run: {exc}")
 
 
 if __name__ == '__main__':

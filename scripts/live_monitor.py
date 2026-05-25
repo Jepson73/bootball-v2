@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# DEAD CODE — not called from live pipeline as of 2026-05-25
+# Kept for reference: in-play match monitoring and live Discord alerts; groundwork for future live betting feature
 """
 scripts/live_monitor.py
 

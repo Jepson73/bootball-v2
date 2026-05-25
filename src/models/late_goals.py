@@ -1,3 +1,5 @@
+# DEAD CODE — not called from live pipeline as of 2026-05-25
+# Kept for reference: late goal probability analysis; potential future BTTS/OU in-play extension
 """
 src/models/late_goals.py - Late goal analysis
 

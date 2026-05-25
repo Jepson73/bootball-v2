@@ -3,15 +3,21 @@ src/calibration/league_calibration_engine.py
 
 Per-league Platt-scaling calibration.
 
-For each (market, league_id) pair with enough settled history, fits a
-logistic regression on (logit(p_raw), y) to produce a league-specific
-calibration layer on top of the global model.
+Three-tier version system: VxxCyyLzzzz
+  - Vxx  : base model (retrained rarely)
+  - Cyy  : global calibration (real-time drift correction, league_id=0)
+  - Lzzzz: per-league calibration (seasonal, specific league_id)
+
+apply() resolution order:
+  1. Active league-specific calibration for the fixture's league_id
+  2. Active global calibration (L0000, league_id=0)
+  3. Raw p_raw fallback
 
 Version label format:  v{model_number:02d}_c{calibration_number:02d}_l{league_id:04d}
 
 Usage:
     engine = LeagueCalibrationEngine()
-    results = engine.fit_all()           # fit every qualifying league
+    results = engine.fit_all()           # fit every qualifying league + L0000 global
     p_cal = engine.apply("h2h", 39, 0.63)  # calibrate for Premier League
 """
 from __future__ import annotations
@@ -23,7 +29,7 @@ from typing import NamedTuple
 
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from src.storage.db import get_session
 from src.storage.models import Fixture, LeagueCalibration, ModelVersion, PredictionRecord
@@ -31,7 +37,7 @@ from src.storage.models import Fixture, LeagueCalibration, ModelVersion, Predict
 logger = logging.getLogger(__name__)
 
 # Minimum settled samples per (market, league) to attempt fitting
-MIN_SAMPLES = 100
+MIN_SAMPLES = 25
 # Fraction of samples reserved for hold-out evaluation (chronological tail)
 HOLDOUT_FRACTION = 0.20
 _EPSILON = 1e-7
@@ -95,15 +101,37 @@ class LeagueCalibrationEngine:
         # Get active ModelVersion per market for version labels
         version_map = self._active_versions()
 
+        # Fit L0000 global calibration first (all leagues combined, league_id=None).
+        # L0000 delta is vs raw — measures whether global calibration helps at all.
+        global_groups: dict[str, list] = {}
+        for (market, _league_id), samples in groups.items():
+            global_groups.setdefault(market, []).extend(samples)
+        global_results: dict[str, FitResult] = {}
+        for market, samples in global_groups.items():
+            if len(samples) >= MIN_SAMPLES:
+                result = self._fit_one(market, None, samples, version_map)
+                if result:
+                    self._save(result)
+                    results.append(result)
+                    global_results[market] = result
+                    logger.info(
+                        "Global cal (L0000) %s  bs=%.4f (Δ%+.4f vs raw)  activated=%s",
+                        result.version_label, result.brier_score,
+                        result.brier_improvement, result.activated
+                    )
+
+        # League-specific calibrations: delta is vs L0000 (not raw) so "positive" means
+        # the league cal genuinely beats the global fallback, not just uncalibrated output.
         for (market, league_id), samples in groups.items():
             if len(samples) < MIN_SAMPLES:
                 continue
-            result = self._fit_one(market, league_id, samples, version_map)
+            global_cal = global_results.get(market)
+            result = self._fit_one(market, league_id, samples, version_map, global_cal=global_cal)
             if result:
                 self._save(result)
                 results.append(result)
                 logger.info(
-                    "League cal %s league=%d  bs=%.4f (Δ%+.4f)  activated=%s",
+                    "League cal %s league=%d  bs=%.4f (Δ%+.4f vs L0000)  activated=%s",
                     result.version_label, league_id,
                     result.brier_score, result.brier_improvement, result.activated
                 )
@@ -113,9 +141,10 @@ class LeagueCalibrationEngine:
     def _fit_one(
         self,
         market: str,
-        league_id: int,
+        league_id: int | None,
         samples: list[tuple],
-        version_map: dict[str, ModelVersion | None],
+        version_map: dict[str, tuple[int, int]],
+        global_cal: "FitResult | None" = None,
     ) -> FitResult | None:
         samples.sort(key=lambda x: x[0])  # chronological
         n = len(samples)
@@ -143,13 +172,26 @@ class LeagueCalibrationEngine:
 
         p_test_cal = np.array([_sigmoid(slope * _logit(p) + intercept) for _, p, _ in test])
         bs_league = _brier(p_test_cal, y_test)
-        bs_global = _brier(p_test_raw, y_test)
-        improvement = bs_global - bs_league  # positive = better
 
-        mv = version_map.get(market)
-        model_num = mv.model_number if mv else 1
-        cal_num = mv.calibration_number if mv else 0
-        version_label = f"v{model_num:02d}_c{cal_num:02d}_l{league_id:04d}"
+        if global_cal is not None:
+            # League-specific: baseline is L0000 applied to this league's test set.
+            # Positive improvement means this league cal genuinely beats the global fallback.
+            p_test_baseline = np.array([
+                _sigmoid(global_cal.slope * _logit(p) + global_cal.intercept)
+                for _, p, _ in test
+            ])
+            bs_baseline = _brier(p_test_baseline, y_test)
+        else:
+            # L0000 itself: baseline is raw (uncalibrated) model output.
+            bs_baseline = _brier(p_test_raw, y_test)
+
+        improvement = bs_baseline - bs_league  # positive = beats baseline
+
+        model_num, cal_num = version_map.get(market, (1, 0))
+        league_suffix = "l0000" if league_id is None else f"l{league_id:04d}"
+        base_label = f"v{model_num:02d}_c{cal_num:02d}_{league_suffix}"
+        ww = self._next_iteration(market, league_id, base_label)
+        version_label = f"{base_label}_w{ww:02d}"
 
         activated = improvement > 0
 
@@ -160,11 +202,31 @@ class LeagueCalibrationEngine:
             slope=slope,
             intercept=intercept,
             brier_score=bs_league,
-            brier_score_global=bs_global,
+            brier_score_global=bs_baseline,  # raw for L0000; L0000-applied for league rows
             brier_improvement=improvement,
             sample_size=n,
             activated=activated,
         )
+
+    def _next_iteration(self, market: str, league_id: int | None, base_label: str) -> int:
+        """Return the next _ww iteration number for a (market, league_id, VxxCyy) base label.
+
+        Counts existing rows whose version_label starts with '{base_label}_w'.
+        Old-format rows (pre-ww, no _w suffix) are not counted.
+        """
+        with get_session() as s:
+            q = (
+                select(func.count())
+                .select_from(LeagueCalibration)
+                .where(LeagueCalibration.market == market)
+                .where(LeagueCalibration.version_label.like(f"{base_label}_w%"))
+            )
+            if league_id is None:
+                q = q.where(LeagueCalibration.league_id.is_(None))
+            else:
+                q = q.where(LeagueCalibration.league_id == league_id)
+            count = s.execute(q).scalar() or 0
+        return count + 1
 
     def _save(self, r: FitResult) -> None:
         with get_session() as s:
@@ -230,32 +292,68 @@ class LeagueCalibrationEngine:
 
     # ── Lookup / apply ────────────────────────────────────────────────────────
 
-    def get_calibration(self, market: str, league_id: int) -> LeagueCalibration | None:
-        """Return the active LeagueCalibration row, or None if not available."""
+    def get_calibration(self, market: str, league_id: int | None) -> tuple[float, float, str] | None:
+        """Return (slope, intercept, version_label) for active calibration, or None.
+
+        Pass league_id=None to query the global (L0000) calibration.
+        """
         with get_session() as s:
-            return s.execute(
+            q = (
                 select(LeagueCalibration)
                 .where(LeagueCalibration.market == market)
-                .where(LeagueCalibration.league_id == league_id)
                 .where(LeagueCalibration.is_active == True)
-            ).scalar_one_or_none()
+            )
+            if league_id is None:
+                q = q.where(LeagueCalibration.league_id.is_(None))
+            else:
+                q = q.where(LeagueCalibration.league_id == league_id)
+            row = s.execute(q).scalar_one_or_none()
+            if row is None:
+                return None
+            return (float(row.slope), float(row.intercept), row.version_label)
 
-    def apply(self, market: str, league_id: int, p_raw: float) -> tuple[float, str | None]:
-        """Apply league calibration if available; fall back to p_raw.
+    # Minimum sample size before trusting a league-specific calibration.
+    # Below this threshold, fall back to L0000 (global) calibration.
+    # L0000 always has thousands of samples and is safe to use unconditionally.
+    _MIN_LEAGUE_SAMPLES = 100
+
+    def apply(self, market: str, league_id: int | None, p_raw: float) -> tuple[float, str | None]:
+        """Apply calibration: league-specific → L0000 global → raw fallback.
+
+        Resolution order:
+          1. Active calibration for this league_id (Lzzzz) — only if sample_size >= _MIN_LEAGUE_SAMPLES
+          2. Active global calibration (L0000, league_id=None)
+          3. Raw p_raw
 
         Returns (calibrated_prob, version_label_or_None).
         """
-        cal = self.get_calibration(market, league_id)
+        if league_id is not None:
+            with get_session() as s:
+                q = (
+                    select(LeagueCalibration)
+                    .where(LeagueCalibration.market == market)
+                    .where(LeagueCalibration.is_active == True)
+                    .where(LeagueCalibration.league_id == league_id)
+                )
+                row = s.execute(q).scalar_one_or_none()
+                if row is not None and row.sample_size >= self._MIN_LEAGUE_SAMPLES:
+                    p_cal = _sigmoid(float(row.slope) * _logit(p_raw) + float(row.intercept))
+                    return p_cal, row.version_label
+                # Insufficient samples or no league cal — fall through to L0000
+
+        cal = self.get_calibration(market, None)  # L0000 global
         if cal is None:
             return p_raw, None
-        p_cal = _sigmoid(cal.slope * _logit(p_raw) + cal.intercept)
-        return p_cal, cal.version_label
+        slope, intercept, version_label = cal
+        p_cal = _sigmoid(slope * _logit(p_raw) + intercept)
+        return p_cal, version_label
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
-    def _active_versions(self) -> dict[str, ModelVersion | None]:
+    def _active_versions(self) -> dict[str, tuple[int, int]]:
+        """Return {market: (model_number, calibration_number)} for active versions."""
         with get_session() as s:
             rows = s.execute(
                 select(ModelVersion).where(ModelVersion.is_active == True)
             ).scalars().all()
-            return {mv.market: mv for mv in rows}
+            return {mv.market: (mv.model_number or 1, mv.calibration_number or 0) for mv in rows}

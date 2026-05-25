@@ -1,3 +1,5 @@
+# DEAD CODE — not called from live pipeline as of 2026-05-25
+# Kept for reference: half-time score prediction models; potential future HT/FT market support
 """
 src/models/halftime.py - Half-time prediction models
 

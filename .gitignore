@@ -29,6 +29,18 @@ backend/models/saved/
 logs/
 *.log
 
+# ── Generated reports (auto-produced at runtime) ───────
+reports/pipeline_trace_*.md
+reports/report_*.md
+reports/calibration/
+reports/closed_loop_validation_*.json
+
+# ── ML model HMAC signatures (machine-specific) ────────
+*.sig
+
+# ── Claude Code session data ────────────────────────────
+.claude/
+
 # ── Node / React ───────────────────────────────────────
 frontend/node_modules/
 frontend/dist/

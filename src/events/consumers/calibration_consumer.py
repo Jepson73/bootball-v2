@@ -101,6 +101,10 @@ class CalibrationConsumer(EventConsumer):
                 })
                 return
 
+            trigger_ece = payload.get("ece", 0)
+            post_ece = (cal_metrics or {}).get("ece", 0)
+            cal_metrics["trigger_ece"] = trigger_ece
+
             registry = get_model_registry()
             new_ver = registry.register_recalibration(
                 market, calibrator, metrics=cal_metrics, reason="auto_drift"
@@ -114,7 +118,8 @@ class CalibrationConsumer(EventConsumer):
                 "fields": [
                     {"name": "Market", "value": market.upper(), "inline": True},
                     {"name": "New Version", "value": f"`{label}`", "inline": True},
-                    {"name": "ECE", "value": f"{(cal_metrics or {}).get('ece', 0):.4f}", "inline": True},
+                    {"name": "Trigger ECE", "value": f"{trigger_ece:.4f}", "inline": True},
+                    {"name": "Post-recal ECE", "value": f"{post_ece:.4f}", "inline": True},
                     {"name": "Reason", "value": payload.get("reason", "drift"), "inline": False},
                 ],
                 "timestamp": payload.get("timestamp", ""),

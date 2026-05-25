@@ -32,8 +32,20 @@ from src.portfolio.state.portfolio_state import PortfolioState
 from src.portfolio.state.state_manager import get_state_manager
 from src.alerts.event_bus import event_bus, Events
 from src.agents.shared.events import AgentEvents
+from sqlalchemy import select
+from src.storage.db import get_session
+from src.storage.models import ModelVersion
 
 logger = logging.getLogger(__name__)
+
+# Calibration gate thresholds (based on model_versions metrics post-Platt scaling)
+_CAL_BRIER_SKIP = 0.30      # worse than near-random → drop market
+_CAL_BRIER_REDUCE = 0.26    # underperforming → EV × 0.5
+_CAL_ECE_SKIP = 0.15        # badly miscalibrated → drop market
+_CAL_ECE_REDUCE = 0.10      # moderately miscalibrated → EV × 0.5
+_CAL_MIN_SAMPLES = 100      # insufficient data → EV × 0.7, skip metric checks
+_CAL_SCALE_REDUCE = 0.5
+_CAL_SCALE_UNCERTAIN = 0.7
 
 
 @dataclass
@@ -150,9 +162,10 @@ class PortfolioEngine:
             return [], previous_state.copy()
         
         logger.info(f"[PORTFOLIO] Computing allocation for {len(predictions)} predictions")
-        
-        # Step 1: Prepare candidates
-        candidates = self._prepare_candidates(predictions)
+
+        # Step 1: Prepare candidates (with per-market calibration gate)
+        cal_scales = self._load_calibration_scales()
+        candidates = self._prepare_candidates(predictions, cal_scales)
         
         # Step 2: Apply learning weights from state
         if self.config.use_learning:
@@ -243,28 +256,82 @@ class PortfolioEngine:
         
         return new_state
     
-    def _prepare_candidates(self, predictions: List[dict]) -> List[dict]:
+    def _load_calibration_scales(self) -> dict[str, float]:
+        """Return per-market EV scale based on active model calibration quality.
+
+        0.0 = drop market entirely; <1.0 = reduce EV proportionally.
+        Falls back gracefully if the DB is unavailable.
+        """
+        scales: dict[str, float] = {}
+        try:
+            with get_session() as s:
+                rows = s.execute(
+                    select(ModelVersion).where(ModelVersion.is_active == True)
+                ).scalars().all()
+                for row in rows:
+                    n = row.calibration_sample_size or 0
+                    if n < _CAL_MIN_SAMPLES:
+                        # Not enough data to trust metrics — be conservative
+                        scales[row.market] = _CAL_SCALE_UNCERTAIN
+                        logger.info(
+                            f"[PORTFOLIO] {row.market} EV ×{_CAL_SCALE_UNCERTAIN:.0%}"
+                            f" — insufficient calibration data (n={n})"
+                        )
+                        continue
+
+                    if row.ece > _CAL_ECE_SKIP or row.brier_score > _CAL_BRIER_SKIP:
+                        scales[row.market] = 0.0
+                        logger.warning(
+                            f"[PORTFOLIO] {row.market} dropped by calibration gate"
+                            f" (ECE={row.ece:.4f}, Brier={row.brier_score:.4f})"
+                        )
+                    elif row.ece > _CAL_ECE_REDUCE or row.brier_score > _CAL_BRIER_REDUCE:
+                        scales[row.market] = _CAL_SCALE_REDUCE
+                        logger.info(
+                            f"[PORTFOLIO] {row.market} EV ×{_CAL_SCALE_REDUCE:.0%}"
+                            f" — degraded calibration (ECE={row.ece:.4f}, Brier={row.brier_score:.4f})"
+                        )
+                    else:
+                        scales[row.market] = 1.0
+        except Exception as e:
+            logger.warning(f"[PORTFOLIO] Calibration gate unavailable, proceeding unscaled: {e}")
+        return scales
+
+    def _prepare_candidates(self, predictions: List[dict], cal_scales: dict[str, float] = None) -> List[dict]:
         """Prepare candidates for optimization."""
+        if cal_scales is None:
+            cal_scales = {}
+
         candidates = []
-        
         for i, pred in enumerate(predictions):
             ev = pred.get("ev") or 0.0
             odds = pred.get("odds") or 0.0
             # Skip preliminary predictions (no odds) — they have no betting value yet.
             if not odds or ev <= 0:
                 continue
+            if odds < 1.6:
+                continue
+
+            market = pred.get("market", "h2h")
+            # Unknown markets default to uncertain (0.7); known markets use DB-derived scale
+            scale = cal_scales.get(market, _CAL_SCALE_UNCERTAIN)
+
+            if scale == 0.0:
+                logger.info(f"[PORTFOLIO] {market} candidate dropped by calibration gate")
+                continue
+
             candidates.append({
-                "id": f"pred_{i}_{pred.get('fixture_id')}_{pred.get('market')}",
+                "id": f"pred_{i}_{pred.get('fixture_id')}_{market}",
                 "fixture_id": pred.get("fixture_id", 0),
-                "market": pred.get("market", "h2h"),
+                "market": market,
                 "outcome": pred.get("outcome", ""),
                 "odds": odds,
                 "our_prob": pred.get("our_prob", 0.5),
-                "ev": ev,
-                "kelly": pred.get("kelly_fraction", pred.get("kelly", 0)),
+                "ev": ev * scale,      # optimizer reads ev — scale here
+                "kelly": pred.get("kelly_fraction", pred.get("kelly", 0)) * scale,
                 "correlation_key": f"fixture_{pred.get('fixture_id')}",
             })
-        
+
         return candidates
     
     def _apply_adaptive_weights(self, candidates: List[dict]) -> List[dict]:

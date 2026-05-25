@@ -39,82 +39,122 @@ logger = logging.getLogger(__name__)
 
 EV_THRESHOLD = 0.05
 KICKOFF_HOURS_AHEAD = 168  # 7 days — match the prediction window
+STALE_THRESHOLD_HOURS = 2.0   # Re-poll when odds are older than this
+NEAR_KICKOFF_HOURS = 6.0      # Unsettled-prediction bucket: only within this window
 
 
 def find_fixtures_needing_odds(s, league_ids=None):
-    """Find fixtures that need fresh odds polling.
+    """Find fixtures that need fresh odds polling, ordered by priority then kickoff date.
 
-    Priority:
-    1. Fixtures with pending placed bets
-    2. PredictionRecords with EV > threshold
-    3. Fixtures with unsettled predictions
-    4. Upcoming NS fixtures with no odds at all (bootstrap initial odds)
+    Priority (within each bucket, earlier kickoff wins):
+    1. Fixtures with pending placed bets (skip if polled within STALE_THRESHOLD_HOURS)
+    2. PredictionRecords with EV > threshold (skip if polled within STALE_THRESHOLD_HOURS)
+    3. Unsettled predictions within NEAR_KICKOFF_HOURS (skip if polled within STALE_THRESHOLD_HOURS)
+    4. Upcoming fixtures with no odds at all (bootstrap)
+
+    The staleness filter prevents re-polling ~1900 fixtures every hour — without it
+    steady-state odds polling would consume ~140k calls/day vs ~4k with the filter.
     """
     now = datetime.utcnow()
     cutoff = now + timedelta(hours=KICKOFF_HOURS_AHEAD)
+    stale_cutoff = now - timedelta(hours=STALE_THRESHOLD_HOURS)
+    near_kickoff_cutoff = now + timedelta(hours=NEAR_KICKOFF_HOURS)
 
-    query = select(Fixture).where(
+    # Fetch all candidate fixtures in date order in one query
+    fix_query = select(Fixture.id, Fixture.date).where(
         Fixture.date >= now,
         Fixture.date <= cutoff,
         Fixture.status.in_(['NS', '1H', '2H', 'HT', 'ET']),
     )
-
     if league_ids:
-        query = query.where(Fixture.league_id.in_(league_ids))
+        fix_query = fix_query.where(Fixture.league_id.in_(league_ids))
 
-    fixtures = s.execute(query.order_by(Fixture.date)).scalars().all()
+    candidate_rows = s.execute(fix_query.order_by(Fixture.date)).all()
+    if not candidate_rows:
+        return []
 
-    fixtures_needing = set()
-    fixtures_without_odds = []
+    all_ids = [r[0] for r in candidate_rows]
+    date_by_id = {r[0]: r[1] for r in candidate_rows}
 
-    for fix in fixtures:
-        pending_bets = s.execute(
-            select(func.count()).select_from(PlacedBet)
-            .where(PlacedBet.fixture_id == fix.id)
-            .where(PlacedBet.settled == False)
-        ).scalar() or 0
+    # Batch: fixtures with pending bets
+    pending_bet_ids = {
+        r[0] for r in s.execute(
+            select(PlacedBet.fixture_id)
+            .where(PlacedBet.fixture_id.in_(all_ids), PlacedBet.settled == False)
+            .distinct()
+        ).all()
+    }
 
-        if pending_bets > 0:
-            fixtures_needing.add(fix.id)
-            logger.debug(f"Fixture {fix.id}: {pending_bets} pending bets")
-            continue
+    # Batch: fixtures with high-EV unsettled predictions
+    high_ev_ids = {
+        r[0] for r in s.execute(
+            select(PredictionRecord.fixture_id)
+            .where(
+                PredictionRecord.fixture_id.in_(all_ids),
+                PredictionRecord.settled == False,
+                PredictionRecord.ev >= EV_THRESHOLD,
+            )
+            .distinct()
+        ).all()
+    }
 
-        high_ev_preds = s.execute(
-            select(func.count()).select_from(PredictionRecord)
-            .where(PredictionRecord.fixture_id == fix.id)
-            .where(PredictionRecord.settled == False)
-            .where(PredictionRecord.ev >= EV_THRESHOLD)
-        ).scalar() or 0
+    # Batch: fixtures with any unsettled predictions
+    unsettled_ids = {
+        r[0] for r in s.execute(
+            select(PredictionRecord.fixture_id)
+            .where(
+                PredictionRecord.fixture_id.in_(all_ids),
+                PredictionRecord.settled == False,
+            )
+            .distinct()
+        ).all()
+    }
 
-        if high_ev_preds > 0:
-            fixtures_needing.add(fix.id)
-            logger.debug(f"Fixture {fix.id}: {high_ev_preds} high-EV predictions")
-            continue
+    # Batch: fixtures that already have odds (exclude from bootstrap bucket)
+    has_odds_ids = {
+        r[0] for r in s.execute(
+            select(FixtureOdds.fixture_id)
+            .where(FixtureOdds.fixture_id.in_(all_ids))
+            .distinct()
+        ).all()
+    }
 
-        unsettled_preds = s.execute(
-            select(func.count()).select_from(PredictionRecord)
-            .where(PredictionRecord.fixture_id == fix.id)
-            .where(PredictionRecord.settled == False)
-        ).scalar() or 0
+    # Batch: fixtures polled within STALE_THRESHOLD_HOURS (skip these in priority buckets)
+    recently_polled_ids = {
+        r[0] for r in s.execute(
+            select(FixtureOdds.fixture_id)
+            .where(
+                FixtureOdds.fixture_id.in_(all_ids),
+                FixtureOdds.fetched_at > stale_cutoff,
+            )
+            .distinct()
+        ).all()
+    }
 
-        if unsettled_preds > 0:
-            fixtures_needing.add(fix.id)
-            logger.debug(f"Fixture {fix.id}: {unsettled_preds} unsettled predictions")
-            continue
+    # Assign each fixture to its highest-priority bucket
+    buckets = {1: [], 2: [], 3: [], 4: []}
+    for fix_id in all_ids:  # already date-ordered
+        kickoff = date_by_id[fix_id]
+        recently = fix_id in recently_polled_ids
 
-        # Bootstrap: add fixtures with no odds yet (lowest priority)
-        has_odds = s.execute(
-            select(func.count()).select_from(FixtureOdds)
-            .where(FixtureOdds.fixture_id == fix.id)
-        ).scalar() or 0
+        if fix_id in pending_bet_ids:
+            if not recently:
+                buckets[1].append(fix_id)
+        elif fix_id in high_ev_ids:
+            if not recently:
+                buckets[2].append(fix_id)
+        elif fix_id in unsettled_ids:
+            if kickoff <= near_kickoff_cutoff and not recently:
+                buckets[3].append(fix_id)
+        elif fix_id not in has_odds_ids:
+            buckets[4].append(fix_id)
 
-        if has_odds == 0:
-            fixtures_without_odds.append(fix.id)
-
-    # Fill remaining capacity with no-odds fixtures (ordered by kickoff proximity)
-    fixtures_needing.update(fixtures_without_odds)
-
-    return list(fixtures_needing)
+    result = buckets[1] + buckets[2] + buckets[3] + buckets[4]
+    logger.info(
+        f"[ODDS] fixtures needing poll: pending_bets={len(buckets[1])} "
+        f"high_ev={len(buckets[2])} unsettled_near_ko={len(buckets[3])} bootstrap={len(buckets[4])}"
+    )
+    return result
 
 
 def poll_and_update_odds(s, client, fixture_ids, dry_run=False):
@@ -405,14 +445,11 @@ def main():
         logger.info("No fixtures need odds polling")
         return
 
-    fixture_ids = fixture_ids[:args.max_fixtures]
-    logger.info(f"Polling odds for {len(fixture_ids)} fixtures")
-
-    estimated_calls = len(fixture_ids) * 3
-    if remaining < estimated_calls:
-        logger.warning(f"Only {remaining} calls remaining, need ~{estimated_calls}")
-        fixture_ids = fixture_ids[:remaining // 3]
-        logger.info(f"Reduced to {len(fixture_ids)} fixtures")
+    # Cap by CLI flag first, then by remaining quota — no other hard limit
+    if args.max_fixtures:
+        fixture_ids = fixture_ids[:args.max_fixtures]
+    fixture_ids = fixture_ids[:remaining // 3]
+    logger.info(f"Polling odds for {len(fixture_ids)} fixtures (quota remaining: {remaining})")
 
     with get_session() as s:
         updated_odds = poll_and_update_odds(s, client, fixture_ids, args.dry_run)

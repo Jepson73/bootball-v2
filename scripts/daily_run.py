@@ -157,9 +157,13 @@ class DailyBaselinePipeline:
         # STEP 4: Force settlement baseline
         logger.info("[BASELINE] Step 4: Forcing settlement baseline...")
         self._force_settlement_baseline()
-        
-        # STEP 5: Emit baseline ready events
-        logger.info("[BASELINE] Step 5: Emitting baseline ready events...")
+
+        # STEP 5: Refresh standings for active leagues
+        logger.info("[BASELINE] Step 5: Refreshing league standings...")
+        self._fetch_standings(now)
+
+        # STEP 6: Emit baseline ready events
+        logger.info("[BASELINE] Step 6: Emitting baseline ready events...")
         
         EventBus.emit("BASELINE_READY", {
             "run_id": run_id,
@@ -386,6 +390,118 @@ class DailyBaselinePipeline:
         
         return validation
     
+    def _fetch_standings(self, now: datetime) -> int:
+        """Refresh standings for leagues with upcoming fixtures whose data is stale (>12h).
+
+        Scoped to leagues with fixtures in the next 7 days to keep API cost low
+        (~30-60 calls per run in steady state). Uses force_refresh=True so the
+        live API value replaces any cached response.
+        """
+        from sqlalchemy import text as sa_text
+        from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+        from src.storage.models import Standing
+
+        with get_session() as s:
+            rows = s.execute(sa_text("""
+                SELECT DISTINCT f.league_id FROM fixtures f
+                WHERE f.date >= datetime('now')
+                  AND f.date <= datetime('now', '+7 days')
+                  AND f.status = 'NS'
+                  AND NOT EXISTS (
+                      SELECT 1 FROM standings s2
+                      WHERE s2.league_id = f.league_id
+                        AND s2.fetched_at >= datetime('now', '-12 hours')
+                  )
+                ORDER BY f.league_id
+            """)).fetchall()
+
+        league_ids = [r[0] for r in rows]
+        if not league_ids:
+            logger.info("[BASELINE] Standings up to date for all active leagues")
+            return 0
+
+        logger.info("[BASELINE] Refreshing standings for %d leagues", len(league_ids))
+        updated = err = 0
+
+        for lid in league_ids:
+            season = self._league_season(lid, now)
+            try:
+                raw_entries = self.client.get("standings", {"league": lid, "season": season}, force_refresh=True)
+            except Exception as e:
+                logger.warning("[BASELINE] Standings fetch failed league=%d: %s", lid, e)
+                err += 1
+                continue
+
+            team_rows = []
+            for item in raw_entries:
+                if not isinstance(item, dict):
+                    continue
+                if "rank" in item and "team" in item:
+                    team_rows.append(item)
+                elif "league" in item:
+                    for group in item["league"].get("standings", []):
+                        if isinstance(group, list):
+                            team_rows.extend(group)
+
+            if not team_rows:
+                continue
+
+            rows_to_insert = []
+            for entry in team_rows:
+                team = entry.get("team", {})
+                team_id = team.get("id")
+                if not team_id:
+                    continue
+                all_ = entry.get("all", {})
+                goals = all_.get("goals", {})
+                rows_to_insert.append({
+                    "league_id":     lid,
+                    "season":        season,
+                    "team_id":       team_id,
+                    "team_name":     team.get("name", ""),
+                    "rank":          entry.get("rank"),
+                    "points":        entry.get("points"),
+                    "played":        all_.get("played"),
+                    "won":           all_.get("win"),
+                    "drawn":         all_.get("draw"),
+                    "lost":          all_.get("lose"),
+                    "goals_for":     goals.get("for"),
+                    "goals_against": goals.get("against"),
+                    "goal_diff":     entry.get("goalsDiff"),
+                    "fetched_at":    datetime.utcnow(),
+                })
+
+            if not rows_to_insert:
+                continue
+
+            try:
+                with get_session() as s:
+                    stmt = sqlite_insert(Standing).values(rows_to_insert)
+                    stmt = stmt.on_conflict_do_update(
+                        index_elements=["league_id", "season", "team_id"],
+                        set_={
+                            "team_name":     stmt.excluded.team_name,
+                            "rank":          stmt.excluded.rank,
+                            "points":        stmt.excluded.points,
+                            "played":        stmt.excluded.played,
+                            "won":           stmt.excluded.won,
+                            "drawn":         stmt.excluded.drawn,
+                            "lost":          stmt.excluded.lost,
+                            "goals_for":     stmt.excluded.goals_for,
+                            "goals_against": stmt.excluded.goals_against,
+                            "goal_diff":     stmt.excluded.goal_diff,
+                            "fetched_at":    stmt.excluded.fetched_at,
+                        },
+                    )
+                    s.execute(stmt)
+                updated += 1
+            except Exception as e:
+                logger.warning("[BASELINE] Standings DB write failed league=%d: %s", lid, e)
+                err += 1
+
+        logger.info("[BASELINE] Standings refreshed: %d ok, %d err", updated, err)
+        return updated
+
     def _force_settlement_baseline(self):
         """Settle bets and predictions for any finished fixtures."""
         from src.settlement import settle_placed_bets, settle_predictions
