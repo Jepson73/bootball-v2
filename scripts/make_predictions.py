@@ -2,12 +2,15 @@
 """
 scripts/make_predictions.py
 
-Make predictions for fixtures that have odds.
-Can be called from daily_run (after fixture fetch) or odds_poll (after odds update).
+Generate predictions for all upcoming fixtures (7-day window).
+Predictions are always generated regardless of odds availability — the model needs them.
+EV/edge/odds fields are populated only when bookmaker odds exist.
+
+Called from cron after daily_run and odds_poll.
 
 Usage:
-    python scripts/make_predictions.py              # Run for all fixtures needing predictions
-    python scripts/make_predictions.py --dry-run   # Preview without changes
+    python scripts/make_predictions.py              # All fixtures in 7-day window
+    python scripts/make_predictions.py --dry-run   # Preview without writing
     python scripts/make_predictions.py --fixture 12345  # Specific fixture only
 """
 import argparse
@@ -18,13 +21,10 @@ from datetime import datetime
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from sqlalchemy import select, func
+from sqlalchemy import select
 
 from src.storage.db import get_session, init_db
-from src.storage.models import Fixture, FixtureOdds, PredictionRecord, ModelVersion
-from src.betting.prediction import get_model_prediction
-from src.betting.ev import expected_value
-from src.models.calibrator import calibrate_prediction
+from src.storage.models import Fixture
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,80 +50,75 @@ MARKETS = ["h2h", "btts", "ou25", "ou15"]
 
 
 def make_predictions_for_fixture(s, fixture_id: int, dry_run: bool = False, context: "RunContext | None" = None) -> int:
-    """Make predictions for a single fixture if odds exist."""
+    """Make predictions for a single fixture. Predictions are always generated for the model;
+    EV/edge/odds fields are populated only when bookmaker odds are available."""
     from backend.run_context import require_run_context
     from backend.execution_engine import enforce_execution_boundary
-    
+
     enforce_execution_boundary()
     require_run_context(context, "make_predictions_for_fixture")
-    
+
     fixture = s.execute(
         select(Fixture).where(Fixture.id == fixture_id)
     ).scalar_one_or_none()
-    
+
     if not fixture:
         logger.warning(f"Fixture {fixture_id} not found")
         return 0
-    
+
     home_id = fixture.home_team_id
     away_id = fixture.away_team_id
-    home_name = f"Team {home_id}"  # Will be replaced if needed
-    away_name = f"Team {away_id}"
-    
+
     predictions_made = 0
-    
+
     for market in MARKETS:
         bet_type = MARKET_BET_TYPE_MAP.get(market, market)
-        
-        # Check if odds exist for this market
-        odds_row = s.execute(
-            select(FixtureOdds).where(
-                FixtureOdds.fixture_id == fixture_id,
-                FixtureOdds.bet_type == bet_type,
-            )
-        ).scalars().first()
-        
-        if not odds_row:
-            logger.debug(f"  {market}: No odds available")
-            continue
-        
-        # Get model prediction
+
+        # Get model prediction — always required, regardless of odds availability
         model_probs = get_model_prediction(market, home_id, away_id)
         if model_probs is None:
-            logger.warning(f"  {market}: prediction failed")
+            logger.debug(f"  {market}: model prediction unavailable (no standings data)")
             continue
-        
+
         # Get best outcome
         best_outcome = max(model_probs.items(), key=lambda x: x[1])
         predicted_outcome = best_outcome[0]
         prob = best_outcome[1]
-        
+
         # Sweet spot logic
         sweet_spot = False
         if market == "btts" and best_outcome[0] == "Yes":
             sweet_spot = True
         elif market in ("ou25", "ou15") and best_outcome[0] == "Over":
             sweet_spot = True
-        
-        # Get odds for predicted outcome
-        market_fields = MARKET_FIELD_MAP.get(market, {})
-        odd_value = market_fields.get(predicted_outcome)
-        odds_decimal = getattr(odds_row, odd_value, None) if odd_value else None
-        
-        # Calculate EV, implied prob, edge
+
+        # Calibrate probability regardless of odds
+        calibration = calibrate_prediction(market, prob)
+        calibrated_prob = calibration.calibrated_prob
+
+        # Enrich with odds if available
+        odds_row = s.execute(
+            select(FixtureOdds).where(
+                FixtureOdds.fixture_id == fixture_id,
+                FixtureOdds.bet_type == bet_type,
+            )
+        ).scalars().first()
+
         ev = None
-        calibrated_prob = prob
         implied_prob = None
         edge = None
+        odds_decimal = None
         bookmaker = None
-        
-        if odds_decimal and odds_decimal > 0:
-            calibration = calibrate_prediction(market, prob)
-            calibrated_prob = calibration.calibrated_prob
-            ev = expected_value(calibrated_prob, odds_decimal)
-            implied_prob = 1.0 / odds_decimal
-            edge = (calibrated_prob - implied_prob) * 100
-            bookmaker = odds_row.bookmaker
+
+        if odds_row:
+            market_fields = MARKET_FIELD_MAP.get(market, {})
+            odd_value = market_fields.get(predicted_outcome)
+            odds_decimal = getattr(odds_row, odd_value, None) if odd_value else None
+            if odds_decimal and odds_decimal > 0:
+                ev = expected_value(calibrated_prob, odds_decimal)
+                implied_prob = 1.0 / odds_decimal
+                edge = (calibrated_prob - implied_prob) * 100
+                bookmaker = odds_row.bookmaker
         
         # Get active model version
         active_version = s.execute(
@@ -180,63 +175,70 @@ def make_predictions_for_fixture(s, fixture_id: int, dry_run: bool = False, cont
 
 
 def find_fixtures_needing_predictions(s) -> list[int]:
-    """Find fixtures that need predictions (have odds but no prediction or missing odds data)."""
+    """Return all upcoming and live fixtures within 7 days.
+    Predictions are generated for every fixture the model can score — odds are not required."""
+    from datetime import timedelta
     now = datetime.utcnow()
-    cutoff = now.replace(hour=23, minute=59, second=59)
-    
-    # Fixtures that are upcoming or live, and have some odds but may need predictions
-    fixtures = s.execute(
+    cutoff = now + timedelta(days=7)
+
+    return s.execute(
         select(Fixture.id)
+        .where(Fixture.date >= now)
         .where(Fixture.date <= cutoff)
         .where(Fixture.status.in_(['NS', '1H', '2H', 'HT', 'ET']))
+        .order_by(Fixture.date)
     ).scalars().all()
-    
-    result = []
-    for fix_id in fixtures:
-        # Check if we have odds for at least one market
-        odds_count = s.execute(
-            select(func.count(FixtureOdds.id))
-            .where(FixtureOdds.fixture_id == fix_id)
-        ).scalar() or 0
-        
-        if odds_count > 0:
-            result.append(fix_id)
-    
-    return result
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Make predictions for fixtures with odds")
-    parser.add_argument('--dry-run', action='store_true', help='Preview without changes')
+    parser = argparse.ArgumentParser(description="Generate predictions for all upcoming fixtures")
+    parser.add_argument('--dry-run', action='store_true', help='Preview without writing to DB')
     parser.add_argument('--fixture', type=int, help='Specific fixture ID to process')
-    parser.add_argument('--limit', type=int, default=50, help='Max fixtures to process')
     args = parser.parse_args()
-    
+
     init_db()
-    
+
     with get_session() as s:
         if args.fixture:
             fixture_ids = [args.fixture]
         else:
             fixture_ids = find_fixtures_needing_predictions(s)
-    
+
     if not fixture_ids:
         logger.info("No fixtures need predictions")
         return
-    
-    fixture_ids = fixture_ids[:args.limit]
+
     logger.info(f"Processing {len(fixture_ids)} fixtures...")
-    
-    total_predictions = 0
-    for fix_id in fixture_ids:
-        with get_session() as s:
-            logger.info(f"Processing fixture {fix_id}...")
-            count = make_predictions_for_fixture(s, fix_id, args.dry_run)
-            if not args.dry_run:
-                s.commit()
-            total_predictions += count
-    
-    logger.info(f"Done! Made {total_predictions} predictions")
+
+    # Load fixture objects needed by UnifiedPredictionService
+    from src.storage.models import Fixture as FixtureModel
+    with get_session() as s:
+        fixtures = s.execute(
+            select(FixtureModel).where(FixtureModel.id.in_(fixture_ids))
+        ).scalars().all()
+
+        class _Stub:
+            def __init__(self, f):
+                self.id = f.id
+                self.home_team_id = f.home_team_id
+                self.away_team_id = f.away_team_id
+                self.league_id = f.league_id
+                self.date = f.date
+                self.status = f.status
+
+        stubs = [_Stub(f) for f in fixtures]
+
+    from src.prediction.unified_prediction_service import UnifiedPredictionService
+    service = UnifiedPredictionService()
+    predictions = service.generate_with_fixture_data(stubs)
+
+    if args.dry_run:
+        logger.info(f"[DRY RUN] Would save {len(predictions)} predictions")
+        for p in predictions[:10]:
+            logger.info(f"  fixture={p['fixture_id']} market={p['market']} outcome={p['outcome']} prob={p['our_prob']:.2%} odds={p.get('odds')} ev={p.get('ev')}")
+    else:
+        saved = service.save_predictions(predictions)
+        logger.info(f"Done — {len(predictions)} predictions generated, {len(saved)} saved/updated")
 
 
 if __name__ == "__main__":

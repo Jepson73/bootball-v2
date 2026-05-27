@@ -89,21 +89,34 @@ class ExecutionEngine:
         self._job_handlers[JobType.FETCH_ODDS] = self._run_fetch_odds
     
     def _run_daily_predictions(self, context: "RunContext") -> Dict[str, Any]:
-        """Execute daily predictions pipeline."""
-        from scripts.make_predictions import find_fixtures_needing_predictions, make_predictions_for_fixture
+        """Execute daily predictions pipeline via UnifiedPredictionService."""
+        from scripts.make_predictions import find_fixtures_needing_predictions
+        from src.storage.models import Fixture as _Fixture
         from src.storage.db import get_session
+        from sqlalchemy import select as _select
+        from src.prediction.unified_prediction_service import UnifiedPredictionService
 
-        total = 0
         with get_session() as s:
             fixture_ids = find_fixtures_needing_predictions(s)
+            fixtures = s.execute(_select(_Fixture).where(_Fixture.id.in_(fixture_ids))).scalars().all()
 
-        for fix_id in fixture_ids[:100]:
-            with get_session() as s:
-                count = make_predictions_for_fixture(s, fix_id, dry_run=False, context=context)
-                s.commit()
-                total += count
+            class _Stub:
+                def __init__(self, f):
+                    self.id = f.id
+                    self.home_team_id = f.home_team_id
+                    self.away_team_id = f.away_team_id
+                    self.league_id = f.league_id
+                    self.date = f.date
+                    self.status = f.status
 
-        return {"predictions_completed": True, "predictions_made": total, "fixtures_processed": len(fixture_ids[:100])}
+            stubs = [_Stub(f) for f in fixtures]
+
+        service = UnifiedPredictionService()
+        run_id = context.run_id if context else None
+        predictions = service.generate_with_fixture_data(stubs)
+        saved = service.save_predictions(predictions, run_id=run_id)
+
+        return {"predictions_completed": True, "predictions_made": len(predictions), "fixtures_processed": len(fixture_ids)}
     
     def _run_betting_pipeline(self, context: "RunContext") -> Dict[str, Any]:
         """Execute betting pipeline."""

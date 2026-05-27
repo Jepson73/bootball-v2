@@ -4125,7 +4125,14 @@ def api_predictions():
     cache = get_prediction_cache()
 
     with get_session() as s:
-        query = select(Fixture).where(Fixture.date >= now).where(Fixture.date <= end).where(Fixture.status == 'NS')
+        # Only show fixtures where bookmaker odds exist — this is the page users act on
+        from sqlalchemy import exists as _exists
+        _has_odds = _exists().where(FixtureOdds.fixture_id == Fixture.id)
+        query = (select(Fixture)
+                 .where(Fixture.date >= now)
+                 .where(Fixture.date <= end)
+                 .where(Fixture.status == 'NS')
+                 .where(_has_odds))
         if league_filter:
             query = query.where(Fixture.league_id == int(league_filter))
         fixtures = s.execute(query.order_by(Fixture.date)).scalars().all()
@@ -4135,7 +4142,7 @@ def api_predictions():
         cache_misses = 0
         model_errors = {}
 
-        for fix in fixtures[:100]:
+        for fix in fixtures:
             league_name = LEAGUE_NAMES.get(fix.league_id, '')
             home = TEAM_NAMES.get(fix.home_team_id, str(fix.home_team_id))
             away = TEAM_NAMES.get(fix.away_team_id, str(fix.away_team_id))

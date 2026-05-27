@@ -78,18 +78,58 @@ class Settings(BaseSettings):
     # NOTE: A-League (188) runs Oct–May so uses the European convention (current_year - 1).
     calendar_year_leagues: list[int] = Field(
         default_factory=lambda: [
+            # East Asia
             98,   # J1 League (Japan)
+            99,   # J2/J3 League (Japan)
+            292,  # K League 1 (South Korea)
+            293,  # K League 2 (South Korea)
+            340,  # V.League 1 (Vietnam)
+            # North America
             253,  # MLS (USA)
             909,  # MLS Next Pro (USA)
-            292,  # K League 1 (South Korea)
-            71,   # Série A (Brazil)
-            72,   # Série B (Brazil)
-            76,   # Série D (Brazil)
+            # Brazil
+            71,   # Série A
+            72,   # Série B
+            76,   # Série D
+            # Scandinavia
             113,  # Allsvenskan (Sweden)
             114,  # Superettan (Sweden)
             103,  # Eliteserien (Norway)
             104,  # 1. Division (Norway)
-            422,  # Premier League (Barbados) — calendar year season observed in DB
+            # South America
+            128,  # Liga Profesional Argentina
+            129,  # Primera Nacional (Argentina)
+            239,  # Primera A (Colombia)
+            240,  # Primera B (Colombia)
+            265,  # Primera División (Chile)
+            266,  # Primera B (Chile)
+            242,  # Liga Pro (Ecuador)
+            281,  # Primera División (Peru)
+            268,  # Primera División (Uruguay)
+            299,  # Primera División (Venezuela)
+            250,  # División Profesional (Paraguay)
+            # Europe — calendar year competitions
+            357,  # Premier Division (Ireland)
+            358,  # First Division (Ireland)
+            164,  # Úrvalsdeild (Iceland)
+            244,  # Veikkausliiga (Finland)
+            245,  # Ykkönen (Finland)
+            116,  # Premier League (Belarus)
+            362,  # A Lyga (Lithuania)
+            365,  # Virsliga (Latvia)
+            329,  # Meistriliiga (Estonia)
+            389,  # Premier League (Kazakhstan)
+            369,  # Super League (Uzbekistan)
+            # Africa
+            399,  # NPFL (Nigeria)
+            # China
+            169,  # Super League
+            170,  # League One
+            171,  # FA Cup
+            929,  # League Two
+            972,  # Super Cup
+            # Other
+            422,  # Premier League (Barbados)
             # 119 and 120 (Danish Superliga / 1. Division) run Aug–May like European leagues
             # — they use season=START_YEAR (e.g. 2025 for 2025/26), NOT current calendar year.
         ]
