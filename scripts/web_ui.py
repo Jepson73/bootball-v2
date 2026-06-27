@@ -5417,6 +5417,13 @@ def admin_page():
             <div id="systemStatus">Loading...</div>
         </div>
     </div>
+    <div class="col">
+        <div class="card">
+            <div class="card-title">Closing Line Value (CLV)</div>
+            <p style="color:#8b949e;font-size:12px;margin:0 0 10px;">Same-day signal: did the market move toward our price after we bet (positive = beat the close = real edge) or away (negative = likely model error)? Captured near kickoff for open bets.</p>
+            <div id="clvSummary">Loading...</div>
+        </div>
+    </div>
 </div>
 
 <div id="adminMsg" class="msg" style="display:none;"></div>
@@ -5828,7 +5835,11 @@ fetch('/api/admin/system_status', {credentials: 'include'})
         var qColor = qPct > 50 ? '#3fb950' : qPct > 20 ? '#d29922' : '#f85149';
         var qSource = q.source === 'api' ? '' : ' <span style="color:#484f58;font-size:10px;">(local)</span>';
         var qPlan = q.plan ? ' (' + q.plan + ')' : '';
+        var botBanner = d.bot_enabled
+            ? '<div style="color:#3fb950;">Betting: <strong>ENABLED</strong> — bets are being placed</div>'
+            : '<div style="background:#3d2a0a;border:1px solid #d29922;border-radius:6px;padding:6px 10px;margin-bottom:8px;color:#d29922;">⏸ Betting <strong>PAUSED</strong> (bot_enabled=False) — predictions still generate for analysis/CLV, but no new bets are placed</div>';
         document.getElementById('systemStatus').innerHTML =
+            botBanner +
             '<div>API Quota' + qPlan + ': <strong style="color:' + qColor + '">' + qRemaining.toLocaleString() + ' / ' + qLimit.toLocaleString() + '</strong> remaining' + qSource + '</div>' +
             '<div style="color:#8b949e;font-size:11px;">Used today: ' + qUsed.toLocaleString() + '</div>' +
             '<div>DB Fixtures: <strong>' + (d.fixture_count || 0) + '</strong></div>' +
@@ -5836,6 +5847,29 @@ fetch('/api/admin/system_status', {credentials: 'include'})
     })
     .catch(() => {
         document.getElementById('systemStatus').innerHTML = '<div style="color:#f85149;">Please login</div>';
+    });
+
+fetch('/api/clv/summary', {credentials: 'include'})
+    .then(r => r.json())
+    .then(d => {
+        const el = document.getElementById('clvSummary');
+        const o = d.overall || {};
+        if (!o.n) {
+            el.innerHTML = '<div style="color:#8b949e;">No closing lines captured yet — populates as open bets approach kickoff.</div>';
+            return;
+        }
+        const avgColor = (o.avg_clv_pct || 0) > 0 ? '#3fb950' : '#f85149';
+        let html = '<div>Overall: <strong style="color:' + avgColor + '">' + (o.avg_clv_pct > 0 ? '+' : '') + o.avg_clv_pct + '%</strong> avg CLV over <strong>' + o.n + '</strong> bet(s), <strong>' + o.pct_positive + '%</strong> beat the close</div>';
+        html += '<table style="margin-top:8px;font-size:12px;"><thead><tr><th>Market</th><th>N</th><th>Avg CLV</th><th>% Beat Close</th></tr></thead><tbody>';
+        (d.by_market || []).forEach(m => {
+            const c = (m.avg_clv_pct || 0) > 0 ? '#3fb950' : '#f85149';
+            html += '<tr><td>' + m.market + '</td><td>' + m.n + '</td><td style="color:' + c + '">' + (m.avg_clv_pct > 0 ? '+' : '') + m.avg_clv_pct + '%</td><td>' + m.pct_positive + '%</td></tr>';
+        });
+        html += '</tbody></table>';
+        el.innerHTML = html;
+    })
+    .catch(() => {
+        document.getElementById('clvSummary').innerHTML = '<div style="color:#8b949e;">—</div>';
     });
 
 // Load model stats on page load
@@ -6249,14 +6283,18 @@ def api_admin_maintenance():
             '%europa league%', '%concacaf%', '%conmebol%', '%libertador%',
             '%sudamerican%', '%saff%', '%eaff%', '%asean%', '%youth league%',
         ]
-        from sqlalchemy import and_
+        from sqlalchemy import and_, text as _text
         exclude_filter = and_(*[~League.name.ilike(p) for p in _no_standings])
         league_standings_subq = select(Standing.league_id).distinct()
-        league_has_standings = select(League.id).where(exclude_filter)
+        # Leagues maintenance has already examined (any outcome — fixed, no
+        # data available, structurally no standings) are "handled": they
+        # shouldn't keep counting as orphaned just because no rows landed.
+        checked_subq = select(_text("league_id")).select_from(_text("league_standings_check"))
         orphaned = s.execute(
             select(func.count(func.distinct(Fixture.league_id)))
             .join(League, Fixture.league_id == League.id)
             .where(Fixture.league_id.notin_(league_standings_subq))
+            .where(Fixture.league_id.notin_(checked_subq))
             .where(exclude_filter)
         ).scalar() or 0
         results['orphaned_fixtures'] = orphaned
@@ -6524,6 +6562,7 @@ def _train_market_with_calibration(market: str, reason: str = 'manual') -> dict:
 @require_auth
 def api_admin_system_status():
     from src.ingestion.client import get_api_status
+    from config.settings import settings as _settings
     with get_session() as s:
         fixture_count = s.execute(select(func.count()).select_from(Fixture)).scalar() or 0
 
@@ -6533,6 +6572,7 @@ def api_admin_system_status():
         'api_quota': quota,
         'fixture_count': fixture_count,
         'last_daily_run': 'Check logs',
+        'bot_enabled': bool(_settings.bot_enabled),
     })
 
 
@@ -7298,6 +7338,57 @@ def api_league_performance():
     return jsonify(rows)
 
 
+@app.route('/api/clv/summary', methods=['GET'])
+@require_auth
+def api_clv_summary():
+    """Closing Line Value summary — overall and by market.
+
+    CLV (positive = beat the closing line = the market moved toward your
+    price after you bet — a same-day signal that an "edge" was real, vs.
+    waiting weeks for matches to settle). Captured near-kickoff by
+    scripts/odds_poll.py::capture_closing_lines for open placed bets.
+    Only includes bets where a closing line was actually captured
+    (clv_pct IS NOT NULL) — most bets won't have one yet until they
+    pass through their near-kickoff window.
+    """
+    with get_session() as s:
+        rows = s.execute(
+            select(
+                PlacedBet.market,
+                func.count(PlacedBet.id).label("n"),
+                func.avg(PlacedBet.clv_pct).label("avg_clv"),
+                func.sum(case((PlacedBet.clv_pct > 0, 1), else_=0)).label("positive"),
+            )
+            .where(PlacedBet.clv_pct.isnot(None))
+            .group_by(PlacedBet.market)
+        ).all()
+
+    by_market = [
+        {
+            "market": r.market,
+            "n": r.n,
+            "avg_clv_pct": round(r.avg_clv * 100, 2) if r.avg_clv is not None else None,
+            "pct_positive": round(r.positive / r.n * 100, 1) if r.n else None,
+        }
+        for r in rows
+    ]
+    total_n = sum(r["n"] for r in by_market)
+    total_positive = sum(round(r["pct_positive"] / 100 * r["n"]) for r in by_market if r["pct_positive"] is not None)
+    overall_avg = (
+        sum(r["avg_clv_pct"] * r["n"] for r in by_market if r["avg_clv_pct"] is not None) / total_n
+        if total_n else None
+    )
+
+    return jsonify({
+        "overall": {
+            "n": total_n,
+            "avg_clv_pct": round(overall_avg, 2) if overall_avg is not None else None,
+            "pct_positive": round(total_positive / total_n * 100, 1) if total_n else None,
+        },
+        "by_market": by_market,
+    })
+
+
 # =============================================================================
 # API: Unified Observability (Backwards Compatible Wrappers)
 # =============================================================================
@@ -7800,6 +7891,7 @@ def api_system_processes():
         'fetch_odds':          'every 1 h',
         'cleanup_matches':     'every 5 min',
         'betting_pipeline':    'every 20 min',
+        'maintenance':         'every cycle (~20 min)',
         'backfill_all':        'manual',
         'backfill_cron':       'daily 06:00 UTC',
     }
@@ -7810,6 +7902,7 @@ def api_system_processes():
         'fetch_odds':          'Poll fresh odds, recalculate EV',
         'cleanup_matches':     'Archive stale live matches',
         'betting_pipeline':    'Prediction + portfolio execution cycle (20 min)',
+        'maintenance':         'Backfill missing FT scores & orphaned-league standings (runs at end of each cycle)',
         'backfill_all':        'Historical data backfill (manually started)',
         'backfill_cron':       'Daily automated backfill of all 1225 leagues',
     }
@@ -7941,6 +8034,14 @@ def api_system_processes():
         pass
 
     # ── Merge into unified job list ──────────────────────────────────────────
+    def _parse_dt(s):
+        if not s:
+            return None
+        try:
+            return _dt.fromisoformat(s.replace(' ', 'T'))
+        except ValueError:
+            return None
+
     all_job_ids = set(SCHEDULE_LABELS.keys()) | set(exec_history.keys()) | set(ingestion_history.keys())
     jobs = []
     for job_id in sorted(all_job_ids):
@@ -7948,12 +8049,28 @@ def api_system_processes():
         ex = exec_history.get(job_id, {})
         ing = ingestion_history.get(job_id, {})
 
-        last_run = ex.get('last_start') or ing.get('last_run')
-        last_status = ex.get('last_status') or ('success' if ing.get('success') else ('failed' if ing else None))
-        last_error = ex.get('last_error') or ing.get('error')
         _ing_updated = ing.get('fixtures_updated', 0) if ing else 0
         _ing_summary = (f"{_ing_updated} updated" if _ing_updated else ing.get('error')) if ing else None
-        last_summary = ex.get('last_summary') or _ing_summary
+        _ing_status = ('success' if ing.get('success') else 'failed') if ing else None
+
+        # A job can be logged through either execution_logs (ExecutionEngine
+        # dispatch) or ingestion_log (direct runtime/scheduler writes) — and a
+        # job's code path can change over time, leaving stale rows behind in
+        # whichever table it no longer writes to. Trust whichever source has
+        # the more recent completed run rather than always favoring one table,
+        # so an old "failed"/"blocked" row can't permanently shadow a fresh
+        # success (or vice versa).
+        ex_ts, ing_ts = _parse_dt(ex.get('last_start')), _parse_dt(ing.get('last_run'))
+        if ex_ts and (not ing_ts or ex_ts >= ing_ts):
+            last_run = ex.get('last_start')
+            last_status = ex.get('last_status')
+            last_error = ex.get('last_error')
+            last_summary = ex.get('last_summary') or _ing_summary
+        else:
+            last_run = ing.get('last_run')
+            last_status = _ing_status
+            last_error = ing.get('error')
+            last_summary = _ing_summary
         is_running = job_id in exec_running_now
         if job_id == 'backfill_all':
             is_running = backfill_running
@@ -7973,9 +8090,11 @@ def api_system_processes():
             'last_summary': last_summary,
         })
 
+    from config.settings import settings as _settings
     return jsonify({
         'jobs': jobs,
         'runtime': {'pid': runtime_pid, 'alive': runtime_alive},
+        'bot_enabled': bool(_settings.bot_enabled),
         'as_of': now_ts.strftime('%Y-%m-%d %H:%M:%S'),
     })
 
@@ -7987,6 +8106,7 @@ def processes_page():
 <h1>Process Monitor</h1>
 <div style="display:flex;align-items:center;gap:16px;margin-bottom:16px;">
     <span id="runtimeBadge" style="padding:4px 12px;border-radius:4px;font-size:0.85em;">...</span>
+    <span id="botEnabledBadge" style="padding:4px 12px;border-radius:4px;font-size:0.85em;">...</span>
     <span style="color:#8b949e;font-size:0.85em;">As of: <span id="asOf">—</span></span>
     <button class="btn btn-secondary" onclick="loadProcesses()" style="margin-left:auto;">Refresh</button>
 </div>
@@ -8026,6 +8146,17 @@ function loadProcesses() {
                 badge.textContent = 'ExecutionRuntime NOT running';
                 badge.style.background = '#4a1515';
                 badge.style.color = '#f85149';
+            }
+
+            const botBadge = document.getElementById('botEnabledBadge');
+            if (d.bot_enabled) {
+                botBadge.textContent = 'Betting ENABLED — placing real (simulated) bets';
+                botBadge.style.background = '#1a4731';
+                botBadge.style.color = '#3fb950';
+            } else {
+                botBadge.textContent = '⏸ Betting PAUSED — analysis-only (predictions still generate, no bets placed)';
+                botBadge.style.background = '#3d2a0a';
+                botBadge.style.color = '#d29922';
             }
 
             const tbody = document.getElementById('processBody');

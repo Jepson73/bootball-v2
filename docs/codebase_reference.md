@@ -42,7 +42,7 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 │   └── storage/       SQLAlchemy ORM models and DB session factory
 ├── config/            Settings, leagues, markets, drift thresholds
 ├── scripts/           Executable scripts and CLI utilities
-├── frontend/          React/Vite web UI
+├── frontend/          Static assets and legacy React scaffold (inactive — UI is served by Flask via render_template_string)
 ├── tests/             Pytest test suites
 ├── migrations/        Database migration scripts
 ├── data/              Runtime data: DB, trained models, logs
@@ -58,8 +58,8 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 | Command | Purpose |
 |---------|---------|
 | `python scripts/web_ui.py` | **Primary** — Flask UI + embedded APScheduler on port 5000 |
+| `python backend/runtime/execution_runtime.py` | Core execution process — runs `AgentCoordinator.run_cycle()` every 20 minutes |
 | `python backend/app.py` | Alternative Flask entry point |
-| `python scripts/setup_db.py` | Initialize empty database |
 | `python scripts/migrate.py` | Run database schema migrations |
 | `python scripts/backfill_all.py --seasons 2023 2022` | Backfill historical data |
 | `python src/cli/backtest.py` | Historical strategy simulation |
@@ -68,16 +68,19 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 ### Startup Sequence
 
 ```
-1. app.py / web_ui.py loaded
+1. scripts/web_ui.py loaded (Flask + APScheduler)
 2. config/settings.py initializes from .env (Pydantic)
 3. RuntimeModeManager loads RUNTIME_MODE
 4. Database initialized (src/storage/db.py)
-5. APScheduler starts (backend/scheduler.py)
-6. Jobs scheduled: fetch_fixtures (6h), fetch_results (1h),
-   fetch_odds (2h), run_predictions (daily), retrain_models (weekly),
-   run_betting_bot (continuous via AgentCoordinator)
-7. Flask routes exposed (/predictions, /betting, /admin, ...)
-8. Event bus initialized (src/alerts/event_bus.py)
+5. APScheduler starts (backend/scheduler.py) — 6 auxiliary jobs only:
+     fetch_fixtures (6h), fetch_results (1h), fetch_odds (1h),
+     cleanup_matches (5m), live_settle (2m), daily_sanity_check (24h)
+6. Flask routes exposed (/predictions, /betting, /admin, ...)
+7. Event bus initialized (src/alerts/event_bus.py)
+
+Core execution (predictions → bets) runs separately:
+  backend/runtime/execution_runtime.py → AgentCoordinator.run_cycle()
+  (every 20 minutes, as a separate process)
 ```
 
 ---
@@ -113,18 +116,30 @@ Unified runtime mode enforcement.
 
 ### `backend/scheduler.py`
 
-APScheduler job definitions and circuit breaker.
+APScheduler auxiliary job definitions and circuit breaker.
 
-- 11 `job_*()` functions (fetch_fixtures, fetch_odds, run_predictions, retrain_models, etc.)
+- **6 registered auxiliary jobs:** `job_fetch_fixtures` (6h), `job_fetch_results` (1h), `job_fetch_odds` (1h), `job_cleanup_matches` (5m), `job_live_settle` (2m), `job_daily_sanity_check` (24h)
+- 4 additional `job_*()` functions are defined but **not registered** in APScheduler: `job_auto_heal_runs`, `job_retrain_models`, `job_run_betting_bot`, `job_run_continuous_cycle` — these are superseded by `ExecutionRuntime`
 - `_circuit_ok()` / `_circuit_failure()` — fault-tolerant job execution
 - `is_job_allowed_in_mode()` — mode-based job filtering
 
+### `backend/runtime/execution_runtime.py`
+
+Core execution loop — the single spine driving predictions and bet placement.
+
+- Runs as a separate process from the Flask web UI
+- Calls `AgentCoordinator.run_cycle()` every 1200 seconds (20 minutes)
+- `RuntimeLock` enforces single-instance operation (prevents concurrent cycles)
+- Heartbeat watchdog updates every 60s during sleep
+- This is the entry point for all betting activity; APScheduler only handles data-fetch auxiliary jobs
+
 ### `backend/execution_engine.py`
 
-Central execution dispatcher (singleton).
+Legacy job dispatcher (singleton) — largely superseded by `ExecutionRuntime`.
 
 - `JobType`, `ExecutionStatus` — enums
-- `ExecutionEngine.execute()` — only valid entry point for job execution; validates pipeline contracts
+- `ExecutionEngine.execute()` — routes scheduler jobs to handlers
+- Note: still imported by some scripts; the live betting path bypasses this entirely in favour of `AgentCoordinator.run_cycle()` via `ExecutionRuntime`
 
 ### `backend/experiment_tracker.py`
 
@@ -184,27 +199,40 @@ Key models:
 
 Pipeline stages:
 ```
-Predictor agent → Risk manager → Execution strategist → Portfolio engine → Policy engine → Execution
+Predictor → Risk Manager → Execution Strategist → Portfolio Engine
+  → Adversary (stress test) → Policy Engine → Save Bets
+  → Feedback Loop → CLVE validation
 ```
 
-- `AgentCoordinator.run(fixtures, run_context)` — main entrypoint
+- `AgentCoordinator.run_cycle()` — primary entrypoint called by `ExecutionRuntime` every 20 minutes
+- `AgentCoordinator.run()` — thin wrapper that delegates to `run_cycle()`
 - `_write_attribution()` — writes causal attribution for each decision
 
 ### `src/prediction/unified_prediction_service.py`
 
 Single source of truth for all predictions.
 
-- `UnifiedPredictionService.generate(fixture, markets, run_context)`
+- `UnifiedPredictionService.generate(fixtures=None)` — generic prediction entry point
+- `UnifiedPredictionService.generate_with_fixture_data(fixture_objects)` — primary method called by coordinator; takes pre-loaded fixture ORM objects
+- Applies `LeagueCalibrationEngine.apply()` to calibrate raw model probabilities before returning
 - Standardizes prediction format; emits `PREDICTION_CREATED` events
+
+### `src/betting/portfolio/portfolio_engine.py`
+
+**Primary capital allocation orchestrator** — called directly by `AgentCoordinator`.
+
+- Delegates QP solving to `markowitz_optimizer.py` (primary, SCS solver) with `cvxpy_optimizer.py` as fallback
+- `_apply_learning_weights()` — applies market performance weights from `AdaptiveAllocator`
+- `_enforce_market_caps()` — enforces per-market concentration limit (default 60%)
 
 ### `src/betting/portfolio_optimizer.py`
 
-Global capital allocation across markets.
+Legacy allocation module — **not called by coordinator**; semi-active.
 
 - `PortfolioConfig` — diversification limits, correlation caps, max concentration
 - `CandidateBet` — raw bet candidate with EV and Kelly fraction
 - `OptimizedBet` — final bet with allocated stake
-- Markowitz mean-variance optimization; correlation-aware filtering
+- Implements Markowitz mean-variance optimization and correlation-aware filtering independently of the primary portfolio engine path above
 
 ### `src/betting/kelly.py`
 
@@ -248,10 +276,23 @@ Per-market model training.
 
 ### `src/models/calibrator.py`
 
-Probability calibration.
+Probability calibration (per-model, single-tier).
 
 - `Calibrator` / `PlattCalibrator` — Platt scaling (logistic regression on raw outputs)
 - `get_calibration_cache(market)` — caches calibration parameters
+
+### `src/calibration/league_calibration_engine.py`
+
+Three-tier, per-league Platt-scaling calibration system.
+
+- `LeagueCalibrationEngine.fit_all()` — fits calibration for every `(market, league_id)` pair with ≥25 settled samples; also fits L0000 global calibration
+- `LeagueCalibrationEngine.apply(market, league_id, p_raw)` — resolution order:
+  1. League-specific calibration (if ≥100 samples)
+  2. Global (L0000) calibration
+  3. Raw probability fallback
+- Version label format: `v{model:02d}_c{cal:02d}_l{league:04d}_w{iteration:02d}`
+  - L0000 = global calibration (league_id=NULL in DB)
+  - League-specific baseline is compared against L0000 output (not raw) — positive improvement means the league cal genuinely beats global
 
 ### `src/governance/policy_engine.py`
 
@@ -301,37 +342,45 @@ System-wide event pub/sub (singleton).
 
 ```
 API-Football
-  ↓  job_fetch_fixtures / job_fetch_odds
+  ↓  job_fetch_fixtures / job_fetch_odds  (APScheduler auxiliary)
 fixtures, fixture_odds tables
-  ↓  run_continuous_cycle → AgentCoordinator.run()
-UnifiedPredictionService.generate()       →  prediction_records table
-  ↓  PortfolioOptimizer.optimize()
+  ↓  ExecutionRuntime → AgentCoordinator.run_cycle()  (every 20 min)
+UnifiedPredictionService.generate_with_fixture_data()  →  prediction_records table
+  ↓  PortfolioEngine.optimize()  (Markowitz via markowitz_optimizer.py)
 CandidateBet → OptimizedBet
   ↓  PolicyEngine.validate()
-Approved bets                             →  placed_bets table
-  ↓  job_fetch_results
+Approved bets                                          →  placed_bets table
+  ↓  job_fetch_results / job_live_settle  (APScheduler auxiliary)
 fixtures.goals_home / goals_away updated
   ↓  settlement.settle_all()
 placed_bets.settled_at, .result, .pnl
-  ↓  calibration feedback loop
-model retrain triggered if drift detected
+  ↓  LeagueCalibrationEngine.fit_all()  (calibration feedback loop)
+league_calibrations table updated; drift may trigger model retrain
 ```
 
 ### Model Lifecycle
 
 ```
-retrain_models_new.py (scheduler)
-  ↓  Trainer.train_market()
+AgentCoordinator (when drift detected or training mode)
+  ↓  src/models/trainer.py → Trainer.train_market()
 GradientBoostingClassifier.fit(X, y)
   ↓  safe_model_save()
-data/models/model_{market}_v{N}.pkl  (HMAC signed)
+data/models/model_{market}_v{N}.pkl  (HMAC signed + .sig sidecar)
   ↓  ModelRegistry.register_retrain()
-model_versions table  (is_active = False)
+model_versions table  (is_active = False, version_label = "v{N:02d}_c00")
   ↓  ModelRegistry.activate()
-data/model_{market}.pkl  ← active symlink/copy
-  ↓  Prediction pipeline
-get_model_prediction()  uses data/model_{market}.pkl
+data/model_{market}.pkl  ← active copy
+  ↓  LeagueCalibrationEngine.fit_all()  (Platt-scaling per league)
+league_calibrations table  (version_label = "v{N:02d}_c{C:02d}_l{league:04d}_w{W:02d}")
+  ↓  UnifiedPredictionService.generate_with_fixture_data()
+LeagueCalibrationEngine.apply() applies: league-specific → L0000 global → raw fallback
 ```
+
+**Model version label format:** `v{model:02d}_c{cal:02d}_l{league:04d}_w{iteration:02d}`
+- `v`: base model number (increments on retrain)
+- `c`: global calibration number (increments on recalibration)
+- `l`: league id (L0000 = global calibration)
+- `w`: iteration number within this (model, cal, league) combination
 
 ### Runtime Mode Guard Flow
 
@@ -364,7 +413,7 @@ All markets use `GradientBoostingClassifier` with Platt calibration. Features in
 
 | Pattern | Where Used |
 |---------|-----------|
-| Singleton | `RuntimeModeManager`, `ExperimentTracker`, `ExecutionEngine`, `ModelRegistry`, `event_bus` |
+| Singleton | `RuntimeModeManager`, `ExperimentTracker`, `ExecutionEngine`, `ModelRegistry`, `event_bus`, `LeagueCalibrationEngine` |
 | Context Manager | `get_session()` for DB transactions |
 | Decorator | `@mode_guard()`, `@require_training_or_dev()` for mode authorization |
 | Factory | `create_app()`, `get_model_registry()`, `get_bankroll_manager()` |
@@ -407,31 +456,34 @@ Key test files:
 
 ## Runtime Modes Quick Reference
 
-| Mode | Betting | Training | Live Data | Use Case |
-|------|---------|----------|-----------|---------|
-| `DEV` | Simulated | Allowed | Mock | Local development |
-| `TRAINING` | Blocked | Allowed | Real | Model training runs |
-| `LIVE` | Real stakes | Blocked | Real | Production |
-| `LIVE_EVAL` | Simulated | Blocked | Real | Shadow mode / paper trading |
-| `BACKTEST` | Simulated | Blocked | Historical | Strategy evaluation |
+`allow_execution()` returns True for DEV, LIVE, and TRAINING. `allow_mutations()` (model training) returns True for DEV and TRAINING only.
+
+| Mode | `allow_execution()` | `allow_mutations()` | Use Case |
+|------|---------------------|---------------------|---------|
+| `DEV` | Yes (real bets) | Yes | Default — full pipeline including live betting |
+| `TRAINING` | Yes | Yes | Force retrain without restricting execution |
+| `LIVE` | Yes (real bets) | No | Production — models frozen |
+| `LIVE_EVAL` | No | No | Shadow / evaluation mode — predictions only |
+| `BACKTEST` | No | No | Offline strategy evaluation on historical data |
 
 ---
 
 ## Scripts Quick Reference
 
-| Script | Purpose |
-|--------|---------|
-| `scripts/web_ui.py` | **Main entry point** — Flask + scheduler |
-| `scripts/daily_run.py` | Data pipeline only (no prediction/betting) |
-| `scripts/backfill_all.py` | Historical data ingestion |
-| `scripts/backfill_cron.py` | Nightly incremental backfill (4am) |
-| `scripts/make_predictions.py` | Generate predictions for upcoming fixtures |
-| `scripts/odds_poll.py` | Poll odds; recalculate EV |
-| `scripts/retrain_models_new.py` | Retrain all market models |
-| `scripts/settle_bets.py` | Manual bet settlement |
-| `scripts/migrate.py` | Database schema migration |
-| `scripts/setup_db.py` | Initialize empty database |
-| `scripts/check_model.py` | Inspect trained model metadata |
-| `scripts/evaluate_model.py` | Evaluate model on holdout data |
-| `scripts/live_monitor.py` | Watch live matches in real-time |
-| `scripts/send_alerts.py` | Test Discord notifications |
+| Script | Purpose | Status |
+|--------|---------|--------|
+| `scripts/web_ui.py` | **Main entry point** — Flask + APScheduler (auxiliary jobs only) | Active |
+| `scripts/run_continuous_cycle.py` | Core execution pipeline — called by `ExecutionRuntime` | Active |
+| `scripts/daily_run.py` | Data pipeline only (no prediction/betting) | Active |
+| `scripts/backfill_all.py` | Historical data ingestion (multi-season) | Active |
+| `scripts/backfill_cron.py` | Nightly incremental backfill (4am cron) | Active |
+| `scripts/backfill_odds.py` | Odds-specific backfill | Active |
+| `scripts/backfill_standings.py` | Standings-specific backfill | Active |
+| `scripts/make_predictions.py` | Manual prediction generation | Active |
+| `scripts/odds_poll.py` | Poll odds; recalculate EV | Active |
+| `scripts/migrate.py` | Database schema migration runner | Active |
+| `scripts/check_model.py` | Inspect trained model metadata | Diagnostic tool |
+| `scripts/diagnostics.py` | Connectivity checks, backfill config validation | Diagnostic tool |
+| `scripts/daily_sanity_check.py` | Sanity checks run by scheduler | Active |
+| `scripts/auto_bet.py` | Legacy betting pipeline — **DEPRECATED** (not in live path) | Dead — kept for reference |
+| `scripts/live_monitor.py` | Watch live matches in real-time | Likely dead |

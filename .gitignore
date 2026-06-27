@@ -61,3 +61,15 @@ htmlcov/
 coverage.xml
 .env.bak
 session-ses_*.md
+
+# ── Analysis pipeline caches (regenerable — see AUDIT_V2.md §7) ────────────
+# feature_cache/: run scripts/analysis/walk_forward_backtest_v4.py
+# weather_cache/: run scripts/analysis/phase5_wave2.py (Open-Meteo, no API key)
+# dc_cache/:      run scripts/analysis/dixon_coles_backtest.py
+# understat_cache/: run scripts/analysis/phase7_xg_analysis.py
+# fdco_cache/:    run scripts/analysis/fdco_backfill.py (downloads from football-data.co.uk)
+scripts/analysis/feature_cache/
+scripts/analysis/weather_cache/
+scripts/analysis/dc_cache/
+scripts/analysis/understat_cache/
+scripts/analysis/fdco_cache/

@@ -316,6 +316,28 @@ class ExecutionRuntime:
         except Exception as e:
             logger.warning(f"Could not write cycle to ingestion_log: {e}")
 
+    def _log_maintenance_to_db(self, summary: dict | None, success: bool, error: str | None):
+        """Write maintenance run result to ingestion_log so the process monitor can see it."""
+        try:
+            from src.storage.db import get_session
+            from sqlalchemy import text as _text
+            if summary:
+                scores = summary.get("ft_null_goals_fixed", 0)
+                leagues = summary.get("orphaned_leagues_fixed", 0)
+                skipped = summary.get("orphaned_leagues_skipped", 0)
+                total = scores + leagues
+                detail = f"scores_fixed={scores} leagues_fixed={leagues} leagues_skipped={skipped}"
+            else:
+                total = 0
+                detail = error
+            with get_session() as s:
+                s.execute(_text(
+                    "INSERT INTO ingestion_log (job_name, success, fixtures_updated, error_message) VALUES (:job, :success, :updated, :error)"
+                ), {"job": "maintenance", "success": int(success), "updated": total, "error": detail})
+                s.commit()
+        except Exception as e:
+            logger.warning(f"Could not write maintenance run to ingestion_log: {e}")
+
     def _start_scheduler(self):
         """Start the APScheduler for auxiliary data jobs (fixtures, results, odds, cleanup)."""
         try:
@@ -338,9 +360,11 @@ class ExecutionRuntime:
         """Run maintenance (score backfill, orphan fix) then settle bets and predictions."""
         try:
             from src.maintenance import run_maintenance
-            run_maintenance(days=30)
+            summary = run_maintenance(days=30)
+            self._log_maintenance_to_db(summary, success=True, error=None)
         except Exception as e:
             logger.warning(f"Maintenance failed (non-fatal): {e}")
+            self._log_maintenance_to_db(None, success=False, error=str(e))
 
         try:
             from src.settlement import settle_placed_bets, settle_predictions

@@ -565,8 +565,18 @@ class AgentCoordinator:
             total_stake = sum(b["stake"] for b in portfolio)
             expected_return = sum(b["expected_return"] for b in portfolio)
             
-            # Save bets to database for dashboard display
-            if portfolio and total_stake > 0:
+            # Save bets to database for dashboard display — gated by the bot_enabled kill
+            # switch. Prediction generation and portfolio computation always run (needed to
+            # keep calibration data and CLV measurement flowing); only persistence of
+            # PlacedBet rows (and the bankroll consumption that follows from them) is paused.
+            from config.settings import settings as _bet_settings
+            if portfolio and total_stake > 0 and not _bet_settings.bot_enabled:
+                logger.warning(
+                    f"[COORDINATOR] Betting PAUSED (bot_enabled=False) — would have placed "
+                    f"{len(portfolio)} bets totaling {total_stake:.2f} SEK "
+                    f"(expected_return={expected_return:.2f}) — not persisted"
+                )
+            elif portfolio and total_stake > 0:
                 saved_bets = 0
                 skipped_bets = 0
                 try:

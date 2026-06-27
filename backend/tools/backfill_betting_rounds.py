@@ -108,7 +108,8 @@ def backfill_betting_rounds():
             total_wins = sum(1 for b in settled_bets if b['pnl'] and b['pnl'] > 0)
             
             end_time = bet_list[-1]['placed_at']
-            roi_pct = (total_pnl / total_staked * 100) if total_staked > 0 else 0
+            # Return on bankroll, matching the live formula (round_manager.py / auto_bet.py).
+            roi_pct = (total_pnl / DEFAULT_INITIAL_BANKROLL * 100) if DEFAULT_INITIAL_BANKROLL > 0 else 0
             
             s.execute(text("""
                 INSERT INTO bankroll_rounds 

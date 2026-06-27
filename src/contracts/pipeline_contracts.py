@@ -299,9 +299,9 @@ class ContractValidator:
     @staticmethod
     def validate_risk_input(portfolio: list, risk: dict) -> dict:
         """Validate risk input."""
-        if not portfolio:
-            raise ContractValidationError("CONTRACT FAILURE: No portfolio for risk evaluation")
-        
+        if portfolio is None:
+            raise ContractValidationError("CONTRACT FAILURE: portfolio is None for risk evaluation")
+
         if risk is None:
             raise ContractValidationError("CONTRACT FAILURE: risk is None")
         

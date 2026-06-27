@@ -258,7 +258,10 @@ def archive_round(round: BankrollRound, session, reason: str):
     round.total_wins = sum(1 for b in settled if b.won)
     round.total_staked = sum(b.stake for b in settled)
     round.total_pnl = sum(b.pnl or 0 for b in settled)
-    round.roi_pct = (round.total_pnl / round.total_staked * 100) if round.total_staked > 0 else 0
+    # Return on bankroll (matches BettingState.roi and the history-table display),
+    # not pnl/turnover "yield" — the latter reads as a wildly different number for
+    # the same round once capital gets recycled across many bets.
+    round.roi_pct = (round.total_pnl / round.initial_bankroll * 100) if round.initial_bankroll > 0 else 0
     round.reason = reason
 
     logger.info(f"Archived round #{round.round_number}: {reason}, "
@@ -763,7 +766,7 @@ if __name__ == "__main__":
             context = None
             
             if mode in ['training', 'dev']:
-                run_id = tracker.start_run(mode=mode)
+                run_id = tracker.start_run(runtime_mode=mode)
                 context = create_run_context(run_id, mode)
                 print(f"Started experiment run: {run_id}")
             

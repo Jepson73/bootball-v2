@@ -78,6 +78,14 @@ class MarkowitzConfig:
     max_total_exposure: float = 0.25
     max_market_exposure_pct: float = 0.08
     use_correlation_engine: bool = True
+    # Ceiling applied to EV before it drives stake sizing (mu / fallback weights).
+    # Investigation (2026-06) found predicted-EV-40%+ bets were empirically the
+    # WORST performers (-8.1% ROI) — an extreme EV reading is a sign the model
+    # disagrees wildly with an efficient market, not a sign of a great bet. Without
+    # a cap, those same wildly-overconfident predictions get the largest stakes,
+    # amplifying the adverse-selection problem. The raw `ev` is still stored and
+    # displayed for transparency — only the sizing input is capped.
+    ev_sizing_cap: float = 0.15
 
 
 class MarkowitzOptimizer:
@@ -157,8 +165,13 @@ class MarkowitzOptimizer:
         return result
     
     def _build_return_vector(self, bets: list[BetCandidate]) -> np.ndarray:
-        """Build expected return vector from EV values."""
-        return np.array([b.ev for b in bets])
+        """Build expected return vector from EV values, capped for sizing.
+
+        Raw EV is winsorized at `ev_sizing_cap` before driving the optimizer's
+        objective/fallback weights — see MarkowitzConfig.ev_sizing_cap for why.
+        """
+        raw = np.array([b.ev for b in bets])
+        return np.clip(raw, None, self.config.ev_sizing_cap)
     
     def _volatility(self, bet: BetCandidate) -> float:
         """Compute volatility estimate for a bet."""
@@ -282,14 +295,16 @@ class MarkowitzOptimizer:
         mu: np.ndarray,
         bankroll: float
     ) -> OptimizationResult:
-        """Fallback: proportional to EV. PRODUCTION-GRADE: computes proper covariance."""
+        """Fallback: proportional to (capped) EV. PRODUCTION-GRADE: computes proper covariance."""
         n = len(bets)
         weights = np.zeros(n)
-        
+
+        # Use the capped mu (not raw bet.ev) so an extreme EV reading can't
+        # dominate sizing here either — see MarkowitzConfig.ev_sizing_cap.
         ev_sum = max(sum(mu), 0.01)
         for i, bet in enumerate(bets):
-            if bet.ev > 0.02:
-                weights[i] = (bet.ev / ev_sum) * self.config.max_total_exposure
+            if mu[i] > 0.02:
+                weights[i] = (mu[i] / ev_sum) * self.config.max_total_exposure
                 weights[i] = min(weights[i], self.config.max_bet_pct)
         
         weight_sum = weights.sum()

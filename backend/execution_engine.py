@@ -77,7 +77,6 @@ class ExecutionEngine:
     
     def _register_jobs(self):
         """Register all job handlers."""
-        from scripts.daily_run import DailyPipeline
         from scripts.auto_bet import run_pipeline
         
         self._job_handlers[JobType.DAILY_PREDICTIONS] = self._run_daily_predictions
@@ -185,7 +184,10 @@ class ExecutionEngine:
 
     def _run_fetch_odds(self, context: "RunContext") -> Dict[str, Any]:
         """Fetch odds from API."""
-        from scripts.odds_poll import find_fixtures_needing_odds, poll_and_update_odds, recalculate_prediction_ev
+        from scripts.odds_poll import (
+            find_fixtures_needing_odds, poll_and_update_odds,
+            recalculate_prediction_ev, capture_closing_lines,
+        )
         from src.storage.db import get_session
         from src.ingestion.client import APIFootballClient, calls_remaining_today
 
@@ -198,6 +200,7 @@ class ExecutionEngine:
             fixture_ids = find_fixtures_needing_odds(s)
             updated = poll_and_update_odds(s, client, fixture_ids[:50])
             recalculate_prediction_ev(s, fixture_ids[:50])
+            capture_closing_lines(s, fixture_ids[:50])
         return {"odds_fetched": True, "fixtures_updated": updated}
     
     def run_job(self, job_name: str, context: "RunContext") -> Dict[str, Any]:
@@ -262,27 +265,46 @@ class ExecutionEngine:
             self._log_execution(exec_log)
     
     def _log_execution(self, log: ExecutionLog):
-        """Log execution to database."""
+        """Write or update the execution log row.
+
+        First call (log.id is None) inserts the 'running' row and remembers its id;
+        the later completion call updates that same row in place rather than
+        inserting a second one — otherwise every run leaves an orphaned 'running'
+        row with no end_time behind.
+        """
         from src.storage.db import get_session
         from sqlalchemy import text
-        from datetime import datetime
-        
+
         try:
             with get_session() as sess:
-                sess.execute(text("""
-                    INSERT INTO execution_logs 
-                    (job_name, run_id, context_mode, start_time, end_time, status, error_message, result_summary)
-                    VALUES (:job, :run_id, :mode, :start, :end, :status, :error, :result)
-                """), {
-                    'job': log.job_name,
-                    'run_id': log.run_id,
-                    'mode': log.context_mode,
-                    'start': log.start_time.isoformat() if log.start_time else None,
-                    'end': log.end_time.isoformat() if log.end_time else None,
-                    'status': log.status,
-                    'error': log.error_message,
-                    'result': log.result_summary
-                })
+                if log.id is None:
+                    result = sess.execute(text("""
+                        INSERT INTO execution_logs
+                        (job_name, run_id, context_mode, start_time, end_time, status, error_message, result_summary)
+                        VALUES (:job, :run_id, :mode, :start, :end, :status, :error, :result)
+                    """), {
+                        'job': log.job_name,
+                        'run_id': log.run_id,
+                        'mode': log.context_mode,
+                        'start': log.start_time.isoformat() if log.start_time else None,
+                        'end': log.end_time.isoformat() if log.end_time else None,
+                        'status': log.status,
+                        'error': log.error_message,
+                        'result': log.result_summary
+                    })
+                    log.id = result.lastrowid
+                else:
+                    sess.execute(text("""
+                        UPDATE execution_logs
+                        SET end_time = :end, status = :status, error_message = :error, result_summary = :result
+                        WHERE id = :id
+                    """), {
+                        'id': log.id,
+                        'end': log.end_time.isoformat() if log.end_time else None,
+                        'status': log.status,
+                        'error': log.error_message,
+                        'result': log.result_summary
+                    })
                 sess.commit()
         except Exception as e:
             logger.warning(f"Failed to log execution: {e}")

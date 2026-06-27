@@ -20,10 +20,16 @@ from src.storage.db import get_session
 from src.storage.models import Fixture, FixtureOdds, PredictionRecord
 from src.betting.prediction import get_model_prediction
 from src.calibration.league_calibration_engine import LeagueCalibrationEngine
+from src.calibration.market_blend import blend_with_market
 
 _cal_engine = LeagueCalibrationEngine()
 
 logger = logging.getLogger(__name__)
+
+# Versioning tuple constants — update these when any of the four layers changes.
+# These tag every prediction_records row so provenance is always recoverable.
+FEATURE_PIPELINE_VERSION = "v1.0.0"   # standings-only (9 features); bump to v2.0.0 with Wave 1
+BLEND_VERSION            = "v1.0"     # blend_with_market(MODEL_WEIGHT=0.35, Shin); None = no blend
 
 
 class UnifiedPredictionService:
@@ -216,9 +222,45 @@ class UnifiedPredictionService:
                 snapshot = {"odds": odds_value, "bookmaker": rows[0].bookmaker if rows else None}
             
             odds_snapshot = json.dumps(snapshot) if snapshot else None
-            
+
             return odds_value, odds_snapshot
-    
+
+    _MARKET_OUTCOME_FIELDS = {
+        "h2h": {"1": "odd_home", "X": "odd_draw", "2": "odd_away"},
+        "btts": {"Yes": "odd_btts_yes", "No": "odd_btts_no"},
+        "ou25": {"Over": "odd_over", "Under": "odd_under"},
+        "ou15": {"Over": "odd_over15", "Under": "odd_under15"},
+    }
+
+    def _get_market_odds_set(self, fixture_id: int, market: str) -> Optional[dict[str, float]]:
+        """Get decimal odds for ALL mutually-exclusive outcomes of a market.
+
+        Needed to de-vig via Shin's method (src/betting/shin.py), which
+        requires the full set of odds, not a single outcome's price.
+        Returns None if any outcome's odds are missing.
+        """
+        from sqlalchemy import select
+
+        fields = self._MARKET_OUTCOME_FIELDS.get(market)
+        if not fields:
+            return None
+
+        with get_session() as s:
+            rows = s.execute(
+                select(FixtureOdds).where(FixtureOdds.fixture_id == fixture_id)
+            ).scalars().all()
+
+        if not rows:
+            return None
+
+        result = {}
+        for label, field in fields.items():
+            value = max([getattr(r, field) for r in rows if getattr(r, field)], default=None)
+            if value is None:
+                return None
+            result[label] = value
+        return result
+
     def generate_with_fixture_data(self, fixture_objects: list) -> list[dict]:
         """
         Generate predictions with full fixture objects.
@@ -268,12 +310,23 @@ class UnifiedPredictionService:
                     # Preliminary predictions are allowed when odds are unavailable.
                     # ev and kelly are None/0 so the portfolio engine naturally skips them.
                     has_odds = odds is not None and odds >= 1.0
+                    p_blended = p_final
+                    p_market = None
                     if has_odds:
                         implied_prob = 1.0 / odds
-                        ev = p_final * odds - 1  # EV uses calibrated probability
+
+                        # Shrink toward the de-vigged market-implied probability before
+                        # computing EV/Kelly — the market was shown to be far closer to
+                        # the true outcome rate than our "calibrated" probability across
+                        # every market. p_final is preserved separately for comparison.
+                        market_odds = self._get_market_odds_set(fixture_id, normalized_market)
+                        if market_odds:
+                            p_blended, p_market = blend_with_market(p_final, market_odds, normalized_outcome)
+
+                        ev = p_blended * odds - 1  # EV uses market-blended probability
                         b = odds - 1
-                        q = 1 - p_final
-                        kelly = max(0, (b * p_final - q) / b) * 0.25 if b > 0 else 0
+                        q = 1 - p_blended
+                        kelly = max(0, (b * p_blended - q) / b) * 0.25 if b > 0 else 0
                     else:
                         odds = None
                         odds_snapshot = None
@@ -294,14 +347,19 @@ class UnifiedPredictionService:
                         "odds": odds,
                         "odds_snapshot": odds_snapshot,
                         "our_prob": our_prob,           # raw Vxx preserved for C-training
-                        "calibrated_prob": p_final,     # VCL final — used for EV/Kelly/betting
+                        "calibrated_prob": p_final,     # VCL output — kept for comparison
                         "calibration_version": cal_version,
+                        "market_prob": p_market,        # de-vigged (Shin) market-implied prob
+                        "blended_prob": p_blended,      # final — used for EV/Kelly/betting
                         "implied_prob": implied_prob if has_odds else None,
                         "predicted_probs": model_probs,
                         "ev": ev,
                         "kelly": kelly,
                         "preliminary": not has_odds,
                         "timestamp": datetime.utcnow().isoformat(),
+                        # Versioning tuple — identifies exact code stack that produced this prediction
+                        "feature_pipeline_version": FEATURE_PIPELINE_VERSION,
+                        "blend_version": BLEND_VERSION if (has_odds and p_market is not None) else None,
                     })
                     
                 except Exception as e:
@@ -440,6 +498,15 @@ class UnifiedPredictionService:
                 record.ev = pred.get("ev")
                 record.run_id = run_id
                 record.is_legacy = False
+
+                record.market_prob = pred.get("market_prob")
+                record.blended_prob = pred.get("blended_prob")
+
+                # Versioning tuple — written explicitly so no row relies on column defaults
+                if pred.get("feature_pipeline_version"):
+                    record.feature_pipeline_version = pred["feature_pipeline_version"]
+                if pred.get("blend_version") is not None or "blend_version" in pred:
+                    record.blend_version = pred.get("blend_version")
 
                 # Use calibrated_prob from prediction dict if already applied upstream,
                 # otherwise apply here as fallback (e.g. legacy generate() path)

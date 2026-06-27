@@ -1,188 +1,126 @@
-# Bootball
+# Bootball V2 — Research Record
 
-Autonomous football betting intelligence platform. Generates calibrated match predictions across four markets, allocates capital using a portfolio engine, tracks accuracy, and improves through a closed-loop feedback cycle.
+**Status: Research archive. Not a deployable betting system.**
 
----
+This repository documents a seven-phase systematic investigation into whether public football data can generate profitable edge on h2h (1X2), BTTS, and over/under markets against retail bookmakers.
 
-## What It Does
-
-1. **Ingests** fixtures, results, odds, and standings from the API-Football (api-sports.io) data feed across 1,225+ leagues
-2. **Predicts** outcomes for h2h (1X2), btts, ou25, and ou15 markets using per-market GradientBoosting classifiers calibrated with Platt scaling
-3. **Allocates** capital across predictions using Markowitz portfolio optimisation + fractional Kelly sizing
-4. **Enforces** risk policy constraints (correlation limits, exposure concentration) before any bet is placed
-5. **Settles** results automatically when matches finish, updates model accuracy metrics
-6. **Improves** over time through league-specific calibration that activates once enough settled data exists per (market, league) pair
-
-Everything runs continuously via a scheduler. The web UI at port 5000 provides full visibility and control.
+**Start here:** [`scripts/analysis/AUDIT_V2.md`](scripts/analysis/AUDIT_V2.md) — the consolidated verdict across all phases.
 
 ---
 
-## Quick Start
+## What This Repository Contains
+
+Two things that are kept together because they inform each other:
+
+**1. The production system** (`src/`, `backend/`, `scripts/`, `config/`)  
+A working autonomous betting pipeline: data ingestion from API-Football, LightGBM + Dixon-Coles prediction models, Markowitz portfolio allocation, fractional Kelly sizing, settlement, and per-league Platt calibration. The system was running live during the research period (Apr–Jun 2026, 448 bets placed).
+
+**2. The research investigation** (`scripts/analysis/`)  
+Seven phases of walk-forward backtesting using 20,658 historical fixtures (2019–2026) across eight European leagues. Each phase tested a specific model lever against a pre-registered profitability bar. See [AUDIT_V2.md](scripts/analysis/AUDIT_V2.md) for the full verdict.
+
+---
+
+## What Was Found
+
+The short version (see [AUDIT_V2.md](scripts/analysis/AUDIT_V2.md) for the full decomposition):
+
+- The prediction engine generates **real directional signal** — the Dixon-Coles + xG model achieves statistically significant positive Closing-Line Value on h2h markets (+0.5% without xG, ~+2% with xG). This is evidence the model identifies genuine mispricing direction.
+- **No phase produced profitable realized ROI** against the pre-registered bar (95% CI > 0 in ≥2 windows). The fundamental gap is ~10pp: market margin (~5.5% at B365) plus a selection penalty (4–16pp) far exceed the current CLV signal.
+- Levers exhausted (Wave 1 rolling features, Dixon-Coles, weather, league regime, odds ceilings) are documented in the audit's Confirmed Dead table. Levers remaining (strength-adjusted xG, exchange access, market-structure timing) are in the Genuinely Untested table.
+- The research record's purpose is to make the stopping/continuing decision in Phase 8 evidence-based rather than open-ended.
+
+---
+
+## Phase Summary
+
+| Phase | Lever | Key outcome |
+|-------|-------|-------------|
+| 1a | Baseline (9-feat LightGBM, raw probabilities) | −3.5% ROI; EV filter passes ~100% of bets (formula bug) |
+| 1b–1d | Calibration + formula fix + Shin market blend | −1.4% ROI [−8.1%,+4.9%]; first honest baseline |
+| 2 | +20 rolling form / H2H / league features | −8.5% to −9.4% h2h ROI; significantly worse than baseline |
+| 3 | Dixon-Coles bivariate Poisson goal model | −7.7% to −10.6% h2h ROI; CLV slightly better than LightGBM |
+| 4/4b | Odds ceiling + overround + bias hunt | No segment or filter passes bar; FLB trap confirmed |
+| 5T1 | CLV analysis | **h2h CLV +0.55% (CI > 0, both windows)** — first genuinely positive signal |
+| 5T2 | Weather + referee features | Referee significant but ±1.5pp effect; no EV improvement |
+| 6 | CLV decomposition + edge gap quantification | Gap = margin 5.5pp + selection penalty 4–6pp ≈ 10pp vs B365 |
+| 7 | xG from Understat (EPL/Serie A/La Liga) | CLV doubles to ~+2%; EV ROI unstable across windows; bar not met |
+
+---
+
+## Data and Licensing
+
+**What is included in this repo:**
+- All Python analysis scripts (`scripts/analysis/*.py`)
+- All phase reports (`scripts/analysis/v2_phase*_report.md` through `v7_xg_report.md`)
+- The consolidated audit (`scripts/analysis/AUDIT_V2.md`)
+- Result JSON files documenting numerical findings
+- The production system source code
+
+**What is excluded (gitignored, regenerable):**
+- All SQLite databases (`*.db`) including the production `data/football.db` and analysis `historical_odds.db`
+- Analysis cache directories (`feature_cache/`, `weather_cache/`, `dc_cache/`, `understat_cache/`, `fdco_cache/`) — see [AUDIT_V2.md §7](scripts/analysis/AUDIT_V2.md) for regeneration instructions
+- API credentials (`.env`) — see `.env.example` for the required variables
+- Trained ML models (`*.pkl`)
+
+**Third-party data notices:**
+- **football-data.co.uk** odds (used in Phases 1d–7): Free for personal use; not redistributed in this repo. Run `scripts/analysis/fdco_backfill.py` to regenerate.
+- **Understat xG** (Phase 7): Scraped via `understatapi` at 0.8 req/s. Redistribution status unconfirmed; not included. Run `scripts/analysis/phase7_xg_analysis.py` to regenerate.
+- **API-Football** fixture data: Requires a paid API-Football key. The production database is not redistributed.
+
+---
+
+## Running the Analysis
+
+To reproduce any phase, regenerate the relevant caches first:
 
 ```bash
 # Install dependencies
 pip install -r requirements.txt
 
-# Configure
-cp .env.example .env
-# Edit .env — minimum required: API_FOOTBALL_KEY, BOOTBALL_PASSWORD, DISCORD_WEBHOOK_URL
+# Set DB path
+export DATABASE_PATH=./data/football.db   # requires local copy of production DB
 
-# Run database migrations
-python scripts/migrate.py
+# Phase 1d — fdco odds backfill (downloads from football-data.co.uk, free)
+python scripts/analysis/fdco_backfill.py
 
-# Start
-python scripts/web_ui.py
-# → http://localhost:5000
+# Phase 2 — Wave 1 walk-forward backtest (generates feature_cache/)
+python scripts/analysis/walk_forward_backtest_v4.py
+
+# Phase 3 — Dixon-Coles (generates dc_cache/)
+python scripts/analysis/dixon_coles_backtest.py
+
+# Phase 5 T2 — Weather + referee (generates weather_cache/, ~639 API calls, free)
+python scripts/analysis/phase5_wave2.py
+
+# Phase 6 — Combined
+python scripts/analysis/phase6_combined.py
+
+# Phase 7 — xG from Understat (generates understat_cache/, ~110 scrape calls at 0.8/s)
+python scripts/analysis/phase7_xg_analysis.py
 ```
 
----
-
-## Architecture in One Diagram
-
-```
-api-sports.io
-     │
-     ▼
-┌────────────────────────────────────────────────────────────────┐
-│  APScheduler (embedded in web_ui.py)                           │
-│                                                                  │
-│  fetch_fixtures (6h) ─── fetch_odds (2h) ─── fetch_results (1h)│
-│         │                      │                     │          │
-│         └──────────────────────┴─────────────────────┘          │
-│                                │                                 │
-│                                ▼                                 │
-│                    AgentCoordinator cycle                        │
-│                                │                                 │
-│         ┌──────────────────────┼──────────────────────┐         │
-│         ▼                      ▼                      ▼         │
-│  PredictionService      PortfolioEngine        PolicyEngine     │
-│  (4 markets × N        (Markowitz + Kelly)    (constraints)     │
-│   fixtures)                    │                      │         │
-│         │                      └──────────────────────┘         │
-│         │                                │                       │
-│         ▼                                ▼                       │
-│   prediction_records              placed_bets                   │
-│                                          │                       │
-│                               settlement (auto)                  │
-│                                          │                       │
-│                               league calibration                 │
-└────────────────────────────────────────────────────────────────┘
-     │
-     ▼
-Flask web UI — Predictions / Betting / Tracking / Admin / Runs
-```
+Results are written to the corresponding `*_results.json` files and phase report `.md` files in `scripts/analysis/`.
 
 ---
 
-## Configuration
+## Running the Production System
 
-All settings are read from `.env` via `config/settings.py` (pydantic-settings). No hardcoded values.
-
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `API_FOOTBALL_KEY` | Yes | api-sports.io key (x-apisports-key header) |
-| `BOOTBALL_PASSWORD` | Yes | Web UI login password |
-| `DISCORD_WEBHOOK_URL` | Recommended | Discord channel webhook for notifications |
-| `RUNTIME_MODE` | No | `dev` (default) / `training` / `live` / `live_eval` |
-| `DATABASE_URL` | No | Default: `sqlite:///data/football.db` |
-| `BOT_MIN_EV` | No | Minimum EV threshold for bet selection (default: 0.05) |
-| `BOT_MAX_STAKE` | No | Max single bet stake in SEK (default: 50.0) |
-| `FETCH_FIXTURES_INTERVAL_HOURS` | No | Default: 6 |
-| `FETCH_RESULTS_INTERVAL_HOURS` | No | Default: 1 |
-| `FETCH_ODDS_INTERVAL_HOURS` | No | Default: 2 |
-| `TIMEZONE` | No | Display timezone (default: `Europe/Stockholm`) |
-
----
-
-## Runtime Modes
-
-Controlled via `/settings/system` in the UI or `RUNTIME_MODE` env var.
-
-| Mode | Betting | Retraining | Predictions | Use When |
-|------|---------|-----------|-------------|----------|
-| `dev` | ✅ | ✅ | ✅ | Default — full pipeline, data collection phase |
-| `training` | ❌ | ✅ | ✅ | Force retrain cycle without live betting |
-| `live` | ✅ | ❌ | ✅ | Production — models frozen, strict policies |
-| `live_eval` | ❌ | ❌ | ✅ | Evaluation snapshot — measure frozen model accuracy |
-
----
-
-## Markets
-
-| Market | Picks | Model Features |
-|--------|-------|----------------|
-| `h2h` | 1 (home win), X (draw), 2 (away win) | Rank, goal difference, attack vs defence matchup |
-| `btts` | Yes, No | Attack correlation, defensive weakness ratios |
-| `ou25` | Over, Under | Expected total goals, variance proxy, league baseline |
-| `ou15` | Over, Under | Same as ou25 with 1.5 threshold |
-
-Features are computed from `standings` table (rank, goals_for, goals_against) and normalised against per-league baselines where available.
-
----
-
-## Backfilling Historical Data
-
-Historical match data is needed to train the models. A cron job runs nightly at 4am to continue filling in past seasons:
+The production pipeline is included as context for the research, not as a recommended deployment. If you want to run it:
 
 ```bash
-# Manual backfill (will stop at 15,000 API calls remaining)
-python scripts/backfill_cron.py
+cp .env.example .env
+# Set: API_FOOTBALL_KEY, BOOTBALL_PASSWORD, DISCORD_WEBHOOK_URL
 
-# Or backfill a specific league/season directly
-python scripts/backfill_all.py --seasons 2023 2022 --stop-at-remaining 15000
+python scripts/migrate.py     # apply all DB migrations
+python scripts/web_ui.py      # Flask app + scheduler at http://localhost:5000
 ```
 
-The 4am cron covers all 1,225 configured leagues for seasons 2025–2020, newest first.
-
---- 
-
-## Web UI Pages
-
-| URL | Purpose |
-|-----|---------|
-| `/` | Home — navigation |
-| `/predictions` | Live predictions with EV, market/league filters |
-| `/betting` | Bankroll, pending bets, round history |
-| `/tracking` | Prediction accuracy, calibration, win rate |
-| `/admin` | Model training, system status, manual settlement |
-| `/runs` | Experiment run explorer |
-| `/runs/health` | Pipeline health dashboard (auto-refreshes) |
-| `/settings/system` | Runtime mode control |
-| `/settings/governance` | Layer attribution and ablation analysis |
-| `/settings/architecture` | Architecture evolution proposals |
-
-See `docs/operator_manual.md` for a full walkthrough of every control.
-
----
-
-## Model Security
-
-Trained models are saved with HMAC-SHA256 signatures using `src/security/safe_load.py`. Loading a model that was saved without the signature (e.g. plain `pickle.dump`) will fail. Always use `safe_model_save` / `safe_model_load`.
-
----
-
-## Key Files
-
-| Path | Purpose |
-|------|---------|
-| `scripts/web_ui.py` | Flask app + embedded scheduler — the single entry point |
-| `src/agents/coordinator.py` | Multi-agent pipeline: predictions → portfolio → execution |
-| `src/betting/prediction.py` | Feature building and model inference |
-| `src/models/trainer.py` | Model training (GradientBoostingClassifier) |
-| `src/betting/portfolio/portfolio_engine.py` | Markowitz + Kelly capital allocation |
-| `src/governance/policy_engine.py` | Risk constraints (correlation, concentration) |
-| `src/settlement.py` | Result fetching, bet settlement, score backfill |
-| `src/betting/league_normalizer.py` | Per-league baseline statistics |
-| `backend/runtime_mode.py` | Mode enforcement singleton |
-| `backend/scheduler.py` | APScheduler job definitions |
-| `config/settings.py` | All configuration via pydantic-settings |
-| `config/leagues.py` | ALL_LEAGUE_IDS (1,225 leagues) |
-| `scripts/backfill_cron.py` | Nightly historical data backfill |
+The betting bot is **disabled by default** (`BOT_ENABLED=false` in `.env.example`). Do not enable it without reading the audit first — the research found no statistically significant edge at current model maturity.
 
 ---
 
 ## Further Reading
 
-- `docs/operator_manual.md` — full UI walkthrough, Discord notification guide, when-to-intervene guide
-- `docs/technical.md` — architecture deep-dive, schema reference, component internals
-- `docs/user_manual.md` — original architecture decision record
+- [`scripts/analysis/AUDIT_V2.md`](scripts/analysis/AUDIT_V2.md) — **consolidated research verdict** (start here)
+- [`scripts/analysis/v2_phase1_report.md`](scripts/analysis/v2_phase1_report.md) through [`v7_xg_report.md`](scripts/analysis/v7_xg_report.md) — detailed phase reports
+- [`docs/codebase_reference.md`](docs/codebase_reference.md) — production system architecture reference

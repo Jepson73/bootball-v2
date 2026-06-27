@@ -1,0 +1,814 @@
+{
+  "N5": {
+    "N5_h2h": {
+      "windows": [
+        {
+          "label": "2022",
+          "n_bets": 1590,
+          "n_test_fixtures": 3540,
+          "n_market_slots": 10620,
+          "ev_pass_rate": 0.1497175141242938,
+          "win_rate": 0.28238993710691823,
+          "avg_odds": 4.17525786163522,
+          "avg_ev": 0.14721068313651692,
+          "avg_p_blended": 0.33674633176551266,
+          "roi": -0.06828930817610057,
+          "ci_lo": -0.1458006289308176,
+          "ci_hi": 0.0128199685534591,
+          "window": "2022",
+          "market": "h2h"
+        },
+        {
+          "label": "2023",
+          "n_bets": 3121,
+          "n_test_fixtures": 5456,
+          "n_market_slots": 16368,
+          "ev_pass_rate": 0.19067693059628543,
+          "win_rate": 0.2601730214674784,
+          "avg_odds": 4.249301505927587,
+          "avg_ev": 0.18052113361772476,
+          "avg_p_blended": 0.32436508730055597,
+          "roi": -0.09612624158923427,
+          "ci_lo": -0.1539723646267222,
+          "ci_hi": -0.039336030118551774,
+          "window": "2023",
+          "market": "h2h"
+        },
+        {
+          "label": "2025-26",
+          "n_bets": 1960,
+          "n_test_fixtures": 3029,
+          "n_market_slots": 9087,
+          "ev_pass_rate": 0.21569274788158907,
+          "win_rate": 0.23622448979591837,
+          "avg_odds": 5.144137755102041,
+          "avg_ev": 0.2120266877405738,
+          "avg_p_blended": 0.30010984808906477,
+          "roi": -0.07983673469387755,
+          "ci_lo": -0.16768354591836734,
+          "ci_hi": 0.01192882653061222,
+          "window": "2025-26",
+          "market": "h2h"
+        }
+      ],
+      "aggregate": {
+        "label": "N5_h2h_ALL",
+        "n_bets": 6671,
+        "n_test_fixtures": 12025,
+        "n_market_slots": 36075,
+        "ev_pass_rate": 0.18492030492030492,
+        "win_rate": 0.2584320191875281,
+        "avg_odds": 4.494564533053515,
+        "avg_ev": 0.18183836788779878,
+        "avg_p_blended": 0.32018968778695356,
+        "roi": -0.08470544146304906,
+        "ci_lo": -0.12872612801678907,
+        "ci_hi": -0.04111220206865538,
+        "market": "h2h"
+      },
+      "success_bar": {
+        "market": "h2h",
+        "n_windows_pass": 0,
+        "windows_passing": [],
+        "min_bets_met_per_window": {
+          "2022": [
+            true,
+            1590
+          ],
+          "2023": [
+            true,
+            3121
+          ],
+          "2025-26": [
+            true,
+            1960
+          ]
+        },
+        "ci_excludes_zero_per_window": {
+          "2022": [
+            false,
+            -0.1458006289308176
+          ],
+          "2023": [
+            false,
+            -0.1539723646267222
+          ],
+          "2025-26": [
+            false,
+            -0.16768354591836734
+          ]
+        },
+        "overall_pass": false,
+        "verdict": "FAIL"
+      }
+    },
+    "N5_btts": {
+      "windows": [
+        {
+          "label": "2022",
+          "n_bets": 0,
+          "n_test_fixtures": 3540,
+          "roi": NaN,
+          "ci_lo": NaN,
+          "ci_hi": NaN,
+          "ev_pass_rate": 0.0,
+          "win_rate": NaN,
+          "avg_odds": NaN,
+          "avg_ev": NaN,
+          "avg_p_blended": NaN,
+          "window": "2022",
+          "market": "btts"
+        },
+        {
+          "label": "2023",
+          "n_bets": 0,
+          "n_test_fixtures": 5456,
+          "roi": NaN,
+          "ci_lo": NaN,
+          "ci_hi": NaN,
+          "ev_pass_rate": 0.0,
+          "win_rate": NaN,
+          "avg_odds": NaN,
+          "avg_ev": NaN,
+          "avg_p_blended": NaN,
+          "window": "2023",
+          "market": "btts"
+        },
+        {
+          "label": "2025-26",
+          "n_bets": 98,
+          "n_test_fixtures": 3029,
+          "n_market_slots": 6058,
+          "ev_pass_rate": 0.01617695609111918,
+          "win_rate": 0.45918367346938777,
+          "avg_odds": 2.6252040816326527,
+          "avg_ev": 0.10504700729850254,
+          "avg_p_blended": 0.4276736341393568,
+          "roi": 0.17306122448979586,
+          "ci_lo": -0.08329591836734693,
+          "ci_hi": 0.4392295918367345,
+          "window": "2025-26",
+          "market": "btts"
+        }
+      ],
+      "aggregate": {
+        "label": "N5_btts_ALL",
+        "n_bets": 98,
+        "n_test_fixtures": 12025,
+        "n_market_slots": 24050,
+        "ev_pass_rate": 0.004074844074844075,
+        "win_rate": 0.45918367346938777,
+        "avg_odds": 2.6252040816326527,
+        "avg_ev": 0.10504700729850254,
+        "avg_p_blended": 0.4276736341393568,
+        "roi": 0.17306122448979586,
+        "ci_lo": -0.08329591836734693,
+        "ci_hi": 0.4392295918367345,
+        "market": "btts"
+      },
+      "success_bar": {
+        "market": "btts",
+        "n_windows_pass": 0,
+        "windows_passing": [],
+        "min_bets_met_per_window": {
+          "2022": [
+            false,
+            0
+          ],
+          "2023": [
+            false,
+            0
+          ],
+          "2025-26": [
+            false,
+            98
+          ]
+        },
+        "ci_excludes_zero_per_window": {
+          "2022": [
+            false,
+            NaN
+          ],
+          "2023": [
+            false,
+            NaN
+          ],
+          "2025-26": [
+            false,
+            -0.08329591836734693
+          ]
+        },
+        "overall_pass": false,
+        "verdict": "FAIL"
+      }
+    },
+    "N5_ou25": {
+      "windows": [
+        {
+          "label": "2022",
+          "n_bets": 55,
+          "n_test_fixtures": 3540,
+          "n_market_slots": 7080,
+          "ev_pass_rate": 0.007768361581920904,
+          "win_rate": 0.34545454545454546,
+          "avg_odds": 2.3721818181818177,
+          "avg_ev": 0.08039637459979135,
+          "avg_p_blended": 0.46241369552395956,
+          "roi": -0.18527272727272728,
+          "ci_lo": -0.4681954545454545,
+          "ci_hi": 0.12074999999999989,
+          "window": "2022",
+          "market": "ou25"
+        },
+        {
+          "label": "2023",
+          "n_bets": 1288,
+          "n_test_fixtures": 5456,
+          "n_market_slots": 10912,
+          "ev_pass_rate": 0.11803519061583578,
+          "win_rate": 0.41537267080745344,
+          "avg_odds": 2.2918711180124225,
+          "avg_ev": 0.09956901156996957,
+          "avg_p_blended": 0.48890934011634346,
+          "roi": -0.07202639751552806,
+          "ci_lo": -0.1323361801242236,
+          "ci_hi": -0.011029697204969007,
+          "window": "2023",
+          "market": "ou25"
+        },
+        {
+          "label": "2025-26",
+          "n_bets": 225,
+          "n_test_fixtures": 3029,
+          "n_market_slots": 6058,
+          "ev_pass_rate": 0.03714097061736547,
+          "win_rate": 0.3688888888888889,
+          "avg_odds": 2.556711111111111,
+          "avg_ev": 0.08828225744108427,
+          "avg_p_blended": 0.44002822047256107,
+          "roi": -0.10111111111111112,
+          "ci_lo": -0.2649344444444445,
+          "ci_hi": 0.06363777777777754,
+          "window": "2025-26",
+          "market": "ou25"
+        }
+      ],
+      "aggregate": {
+        "label": "N5_ou25_ALL",
+        "n_bets": 1568,
+        "n_test_fixtures": 12025,
+        "n_market_slots": 24050,
+        "ev_pass_rate": 0.0651975051975052,
+        "win_rate": 0.40625,
+        "avg_odds": 2.3326913265306124,
+        "avg_ev": 0.09727691035035288,
+        "avg_p_blended": 0.4809657735522923,
+        "roi": -0.0801721938775512,
+        "ci_lo": -0.13379830994897962,
+        "ci_hi": -0.02336830357142871,
+        "market": "ou25"
+      },
+      "success_bar": {
+        "market": "ou25",
+        "n_windows_pass": 0,
+        "windows_passing": [],
+        "min_bets_met_per_window": {
+          "2022": [
+            false,
+            55
+          ],
+          "2023": [
+            true,
+            1288
+          ],
+          "2025-26": [
+            false,
+            225
+          ]
+        },
+        "ci_excludes_zero_per_window": {
+          "2022": [
+            false,
+            -0.4681954545454545
+          ],
+          "2023": [
+            false,
+            -0.1323361801242236
+          ],
+          "2025-26": [
+            false,
+            -0.2649344444444445
+          ]
+        },
+        "overall_pass": false,
+        "verdict": "FAIL"
+      }
+    },
+    "N5_ou15": {
+      "windows": [
+        {
+          "label": "2022",
+          "n_bets": 0,
+          "n_test_fixtures": 3540,
+          "roi": NaN,
+          "ci_lo": NaN,
+          "ci_hi": NaN,
+          "ev_pass_rate": 0.0,
+          "win_rate": NaN,
+          "avg_odds": NaN,
+          "avg_ev": NaN,
+          "avg_p_blended": NaN,
+          "window": "2022",
+          "market": "ou15"
+        },
+        {
+          "label": "2023",
+          "n_bets": 0,
+          "n_test_fixtures": 5456,
+          "roi": NaN,
+          "ci_lo": NaN,
+          "ci_hi": NaN,
+          "ev_pass_rate": 0.0,
+          "win_rate": NaN,
+          "avg_odds": NaN,
+          "avg_ev": NaN,
+          "avg_p_blended": NaN,
+          "window": "2023",
+          "market": "ou15"
+        },
+        {
+          "label": "2025-26",
+          "n_bets": 23,
+          "n_test_fixtures": 3029,
+          "n_market_slots": 6058,
+          "ev_pass_rate": 0.0037966325519973587,
+          "win_rate": 0.4782608695652174,
+          "avg_odds": 1.7169565217391305,
+          "avg_ev": 0.07054016719910669,
+          "avg_p_blended": 0.625633943350673,
+          "roi": -0.18782608695652175,
+          "ci_lo": -0.5400760869565218,
+          "ci_hi": 0.1661521739130431,
+          "window": "2025-26",
+          "market": "ou15"
+        }
+      ],
+      "aggregate": {
+        "label": "N5_ou15_ALL",
+        "n_bets": 23,
+        "n_test_fixtures": 12025,
+        "n_market_slots": 24050,
+        "ev_pass_rate": 0.0009563409563409564,
+        "win_rate": 0.4782608695652174,
+        "avg_odds": 1.7169565217391305,
+        "avg_ev": 0.07054016719910669,
+        "avg_p_blended": 0.625633943350673,
+        "roi": -0.18782608695652175,
+        "ci_lo": -0.5400760869565218,
+        "ci_hi": 0.1661521739130431,
+        "market": "ou15"
+      },
+      "success_bar": {
+        "market": "ou15",
+        "n_windows_pass": 0,
+        "windows_passing": [],
+        "min_bets_met_per_window": {
+          "2022": [
+            false,
+            0
+          ],
+          "2023": [
+            false,
+            0
+          ],
+          "2025-26": [
+            false,
+            23
+          ]
+        },
+        "ci_excludes_zero_per_window": {
+          "2022": [
+            false,
+            NaN
+          ],
+          "2023": [
+            false,
+            NaN
+          ],
+          "2025-26": [
+            false,
+            -0.5400760869565218
+          ]
+        },
+        "overall_pass": false,
+        "verdict": "FAIL"
+      }
+    }
+  },
+  "N10": {
+    "N10_h2h": {
+      "windows": [
+        {
+          "label": "2022",
+          "n_bets": 1519,
+          "n_test_fixtures": 3540,
+          "n_market_slots": 10620,
+          "ev_pass_rate": 0.14303201506591337,
+          "win_rate": 0.26003949967083606,
+          "avg_odds": 4.368940092165898,
+          "avg_ev": 0.14431578539205286,
+          "avg_p_blended": 0.32284023625310904,
+          "roi": -0.10560236998025012,
+          "ci_lo": -0.18823156682027647,
+          "ci_hi": -0.019761685319289013,
+          "window": "2022",
+          "market": "h2h"
+        },
+        {
+          "label": "2023",
+          "n_bets": 3091,
+          "n_test_fixtures": 5456,
+          "n_market_slots": 16368,
+          "ev_pass_rate": 0.18884408602150538,
+          "win_rate": 0.27337431252022,
+          "avg_odds": 4.05735684244581,
+          "avg_ev": 0.1764455711006376,
+          "avg_p_blended": 0.3398415437458656,
+          "roi": -0.1037043028146232,
+          "ci_lo": -0.16100299255904238,
+          "ci_hi": -0.04816273050792625,
+          "window": "2023",
+          "market": "h2h"
+        },
+        {
+          "label": "2025-26",
+          "n_bets": 1952,
+          "n_test_fixtures": 3029,
+          "n_market_slots": 9087,
+          "ev_pass_rate": 0.2148123693188071,
+          "win_rate": 0.24077868852459017,
+          "avg_odds": 5.125578893442623,
+          "avg_ev": 0.2062748089027644,
+          "avg_p_blended": 0.29788248581022936,
+          "roi": -0.07026127049180325,
+          "ci_lo": -0.15628906250000002,
+          "ci_hi": 0.01854264856557375,
+          "window": "2025-26",
+          "market": "h2h"
+        }
+      ],
+      "aggregate": {
+        "label": "N10_h2h_ALL",
+        "n_bets": 6562,
+        "n_test_fixtures": 12025,
+        "n_market_slots": 36075,
+        "ev_pass_rate": 0.1818988218988219,
+        "win_rate": 0.2605912831453825,
+        "avg_odds": 4.447247790307833,
+        "avg_ev": 0.17788134185626261,
+        "avg_p_blended": 0.32342443506377794,
+        "roi": -0.09419536726607738,
+        "ci_lo": -0.13923780859494056,
+        "ci_hi": -0.049571700701005805,
+        "market": "h2h"
+      },
+      "success_bar": {
+        "market": "h2h",
+        "n_windows_pass": 0,
+        "windows_passing": [],
+        "min_bets_met_per_window": {
+          "2022": [
+            true,
+            1519
+          ],
+          "2023": [
+            true,
+            3091
+          ],
+          "2025-26": [
+            true,
+            1952
+          ]
+        },
+        "ci_excludes_zero_per_window": {
+          "2022": [
+            false,
+            -0.18823156682027647
+          ],
+          "2023": [
+            false,
+            -0.16100299255904238
+          ],
+          "2025-26": [
+            false,
+            -0.15628906250000002
+          ]
+        },
+        "overall_pass": false,
+        "verdict": "FAIL"
+      }
+    },
+    "N10_btts": {
+      "windows": [
+        {
+          "label": "2022",
+          "n_bets": 0,
+          "n_test_fixtures": 3540,
+          "roi": NaN,
+          "ci_lo": NaN,
+          "ci_hi": NaN,
+          "ev_pass_rate": 0.0,
+          "win_rate": NaN,
+          "avg_odds": NaN,
+          "avg_ev": NaN,
+          "avg_p_blended": NaN,
+          "window": "2022",
+          "market": "btts"
+        },
+        {
+          "label": "2023",
+          "n_bets": 0,
+          "n_test_fixtures": 5456,
+          "roi": NaN,
+          "ci_lo": NaN,
+          "ci_hi": NaN,
+          "ev_pass_rate": 0.0,
+          "win_rate": NaN,
+          "avg_odds": NaN,
+          "avg_ev": NaN,
+          "avg_p_blended": NaN,
+          "window": "2023",
+          "market": "btts"
+        },
+        {
+          "label": "2025-26",
+          "n_bets": 117,
+          "n_test_fixtures": 3029,
+          "n_market_slots": 6058,
+          "ev_pass_rate": 0.019313304721030045,
+          "win_rate": 0.4444444444444444,
+          "avg_odds": 2.585641025641026,
+          "avg_ev": 0.10763964044747824,
+          "avg_p_blended": 0.4354693303900718,
+          "roi": 0.12829059829059833,
+          "ci_lo": -0.09860470085470084,
+          "ci_hi": 0.3679102564102562,
+          "window": "2025-26",
+          "market": "btts"
+        }
+      ],
+      "aggregate": {
+        "label": "N10_btts_ALL",
+        "n_bets": 117,
+        "n_test_fixtures": 12025,
+        "n_market_slots": 24050,
+        "ev_pass_rate": 0.004864864864864865,
+        "win_rate": 0.4444444444444444,
+        "avg_odds": 2.585641025641026,
+        "avg_ev": 0.10763964044747824,
+        "avg_p_blended": 0.4354693303900718,
+        "roi": 0.12829059829059833,
+        "ci_lo": -0.09860470085470084,
+        "ci_hi": 0.3679102564102562,
+        "market": "btts"
+      },
+      "success_bar": {
+        "market": "btts",
+        "n_windows_pass": 0,
+        "windows_passing": [],
+        "min_bets_met_per_window": {
+          "2022": [
+            false,
+            0
+          ],
+          "2023": [
+            false,
+            0
+          ],
+          "2025-26": [
+            false,
+            117
+          ]
+        },
+        "ci_excludes_zero_per_window": {
+          "2022": [
+            false,
+            NaN
+          ],
+          "2023": [
+            false,
+            NaN
+          ],
+          "2025-26": [
+            false,
+            -0.09860470085470084
+          ]
+        },
+        "overall_pass": false,
+        "verdict": "FAIL"
+      }
+    },
+    "N10_ou25": {
+      "windows": [
+        {
+          "label": "2022",
+          "n_bets": 59,
+          "n_test_fixtures": 3540,
+          "n_market_slots": 7080,
+          "ev_pass_rate": 0.008333333333333333,
+          "win_rate": 0.2542372881355932,
+          "avg_odds": 2.4,
+          "avg_ev": 0.07625558718370881,
+          "avg_p_blended": 0.45502040294639984,
+          "roi": -0.3988135593220339,
+          "ci_lo": -0.6525593220338983,
+          "ci_hi": -0.1276016949152544,
+          "window": "2022",
+          "market": "ou25"
+        },
+        {
+          "label": "2023",
+          "n_bets": 1136,
+          "n_test_fixtures": 5456,
+          "n_market_slots": 10912,
+          "ev_pass_rate": 0.10410557184750734,
+          "win_rate": 0.3961267605633803,
+          "avg_odds": 2.302464788732394,
+          "avg_ev": 0.09782528107759927,
+          "avg_p_blended": 0.48649834269519243,
+          "roi": -0.11112676056338032,
+          "ci_lo": -0.1753512323943662,
+          "ci_hi": -0.045116637323943685,
+          "window": "2023",
+          "market": "ou25"
+        },
+        {
+          "label": "2025-26",
+          "n_bets": 213,
+          "n_test_fixtures": 3029,
+          "n_market_slots": 6058,
+          "ev_pass_rate": 0.035160118851105975,
+          "win_rate": 0.352112676056338,
+          "avg_odds": 2.554600938967136,
+          "avg_ev": 0.09250850642753772,
+          "avg_p_blended": 0.44239038769668665,
+          "roi": -0.14131455399061033,
+          "ci_lo": -0.29850117370892015,
+          "ci_hi": 0.02655751173708878,
+          "window": "2025-26",
+          "market": "ou25"
+        }
+      ],
+      "aggregate": {
+        "label": "N10_ou25_ALL",
+        "n_bets": 1408,
+        "n_test_fixtures": 12025,
+        "n_market_slots": 24050,
+        "ev_pass_rate": 0.05854469854469854,
+        "win_rate": 0.3835227272727273,
+        "avg_odds": 2.3446946022727273,
+        "avg_ev": 0.09611712415984174,
+        "avg_p_blended": 0.47850672844813236,
+        "roi": -0.1277485795454548,
+        "ci_lo": -0.18813991477272723,
+        "ci_hi": -0.06525674715909095,
+        "market": "ou25"
+      },
+      "success_bar": {
+        "market": "ou25",
+        "n_windows_pass": 0,
+        "windows_passing": [],
+        "min_bets_met_per_window": {
+          "2022": [
+            false,
+            59
+          ],
+          "2023": [
+            true,
+            1136
+          ],
+          "2025-26": [
+            false,
+            213
+          ]
+        },
+        "ci_excludes_zero_per_window": {
+          "2022": [
+            false,
+            -0.6525593220338983
+          ],
+          "2023": [
+            false,
+            -0.1753512323943662
+          ],
+          "2025-26": [
+            false,
+            -0.29850117370892015
+          ]
+        },
+        "overall_pass": false,
+        "verdict": "FAIL"
+      }
+    },
+    "N10_ou15": {
+      "windows": [
+        {
+          "label": "2022",
+          "n_bets": 0,
+          "n_test_fixtures": 3540,
+          "roi": NaN,
+          "ci_lo": NaN,
+          "ci_hi": NaN,
+          "ev_pass_rate": 0.0,
+          "win_rate": NaN,
+          "avg_odds": NaN,
+          "avg_ev": NaN,
+          "avg_p_blended": NaN,
+          "window": "2022",
+          "market": "ou15"
+        },
+        {
+          "label": "2023",
+          "n_bets": 0,
+          "n_test_fixtures": 5456,
+          "roi": NaN,
+          "ci_lo": NaN,
+          "ci_hi": NaN,
+          "ev_pass_rate": 0.0,
+          "win_rate": NaN,
+          "avg_odds": NaN,
+          "avg_ev": NaN,
+          "avg_p_blended": NaN,
+          "window": "2023",
+          "market": "ou15"
+        },
+        {
+          "label": "2025-26",
+          "n_bets": 28,
+          "n_test_fixtures": 3029,
+          "n_market_slots": 6058,
+          "ev_pass_rate": 0.00462198745460548,
+          "win_rate": 0.5,
+          "avg_odds": 1.729642857142857,
+          "avg_ev": 0.07684833867448433,
+          "avg_p_blended": 0.6245786159675946,
+          "roi": -0.1335714285714285,
+          "ci_lo": -0.46,
+          "ci_hi": 0.19251785714285707,
+          "window": "2025-26",
+          "market": "ou15"
+        }
+      ],
+      "aggregate": {
+        "label": "N10_ou15_ALL",
+        "n_bets": 28,
+        "n_test_fixtures": 12025,
+        "n_market_slots": 24050,
+        "ev_pass_rate": 0.0011642411642411642,
+        "win_rate": 0.5,
+        "avg_odds": 1.729642857142857,
+        "avg_ev": 0.07684833867448433,
+        "avg_p_blended": 0.6245786159675946,
+        "roi": -0.1335714285714285,
+        "ci_lo": -0.46,
+        "ci_hi": 0.19251785714285707,
+        "market": "ou15"
+      },
+      "success_bar": {
+        "market": "ou15",
+        "n_windows_pass": 0,
+        "windows_passing": [],
+        "min_bets_met_per_window": {
+          "2022": [
+            false,
+            0
+          ],
+          "2023": [
+            false,
+            0
+          ],
+          "2025-26": [
+            false,
+            28
+          ]
+        },
+        "ci_excludes_zero_per_window": {
+          "2022": [
+            false,
+            NaN
+          ],
+          "2023": [
+            false,
+            NaN
+          ],
+          "2025-26": [
+            false,
+            -0.46
+          ]
+        },
+        "overall_pass": false,
+        "verdict": "FAIL"
+      }
+    }
+  }
+}

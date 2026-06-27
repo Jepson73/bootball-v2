@@ -1,0 +1,1362 @@
+{
+  "generated_at": "2026-06-24T12:11:53.592969",
+  "league_heterogeneity": {
+    "n_leagues_with_metrics": 835,
+    "metric_distributions": {
+      "avg_goals": {
+        "min": 1.5,
+        "p25": 2.59,
+        "median": 3.0,
+        "p75": 3.5,
+        "max": 9.39
+      },
+      "btts_rate": {
+        "min": 0.125,
+        "p25": 0.433,
+        "median": 0.509,
+        "p75": 0.58,
+        "max": 1.0
+      },
+      "hhi": {
+        "min": 0.0008,
+        "p25": 0.0678,
+        "median": 0.0908,
+        "p75": 0.1254,
+        "max": 0.4074
+      }
+    },
+    "clusters": {
+      "0": {
+        "n_leagues": 297,
+        "avg_goals_mean": 3.7,
+        "btts_rate_mean": 0.604,
+        "hhi_mean": 0.0867
+      },
+      "1": {
+        "n_leagues": 155,
+        "avg_goals_mean": 3.02,
+        "btts_rate_mean": 0.464,
+        "hhi_mean": 0.1816
+      },
+      "2": {
+        "n_leagues": 383,
+        "avg_goals_mean": 2.65,
+        "btts_rate_mean": 0.449,
+        "hhi_mean": 0.0791
+      }
+    }
+  },
+  "walk_forward_windows": [
+    {
+      "window": 1,
+      "cutoff": "2026-04-15T00:00:00",
+      "train_size": 92136,
+      "test_size": 497,
+      "pass_rates": {
+        "raw": 2.332,
+        "insample": 2.8732,
+        "outoffold": 2.7344,
+        "clustered": 2.6298
+      },
+      "bets_by_cal": {
+        "raw": 1159,
+        "insample": 1428,
+        "outoffold": 1359,
+        "clustered": 1307
+      }
+    },
+    {
+      "window": 2,
+      "cutoff": "2026-05-01T00:00:00",
+      "train_size": 94059,
+      "test_size": 1705,
+      "pass_rates": {
+        "raw": 2.529,
+        "insample": 2.2686,
+        "outoffold": 1.9666,
+        "clustered": 2.0962
+      },
+      "bets_by_cal": {
+        "raw": 4312,
+        "insample": 3868,
+        "outoffold": 3353,
+        "clustered": 3574
+      }
+    },
+    {
+      "window": 3,
+      "cutoff": "2026-06-01T00:00:00",
+      "train_size": 102517,
+      "test_size": 131,
+      "pass_rates": {
+        "raw": 2.9084,
+        "insample": 2.4427,
+        "outoffold": 2.2748,
+        "clustered": 2.4504
+      },
+      "bets_by_cal": {
+        "raw": 381,
+        "insample": 320,
+        "outoffold": 298,
+        "clustered": 321
+      }
+    }
+  ],
+  "by_cal_type": {
+    "raw": {
+      "description": "Uncalibrated (V1 baseline)",
+      "n_bets": 5852,
+      "ev_pass_rate": 0.6271,
+      "staked": 242498.44,
+      "pnl": -9075.36,
+      "roi_pct": -3.74,
+      "ci_95_pct": [
+        -7.86,
+        0.22
+      ],
+      "win_rate": 0.4211,
+      "avg_ev": 0.86,
+      "by_market": {
+        "btts": {
+          "n_bets": 1281,
+          "staked": 42429.55,
+          "pnl": -1669.59,
+          "roi_pct": -3.93,
+          "ci_95": [
+            -11.17,
+            3.64
+          ],
+          "win_rate": 0.434,
+          "avg_odds": 2.282,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 128,
+              "mean_predicted": 0.4302,
+              "actual_win_rate": 0.3672
+            },
+            {
+              "decile": 2,
+              "n": 128,
+              "mean_predicted": 0.4811,
+              "actual_win_rate": 0.3594
+            },
+            {
+              "decile": 3,
+              "n": 128,
+              "mean_predicted": 0.4895,
+              "actual_win_rate": 0.4219
+            },
+            {
+              "decile": 4,
+              "n": 128,
+              "mean_predicted": 0.4978,
+              "actual_win_rate": 0.3828
+            },
+            {
+              "decile": 5,
+              "n": 128,
+              "mean_predicted": 0.5063,
+              "actual_win_rate": 0.4375
+            },
+            {
+              "decile": 6,
+              "n": 128,
+              "mean_predicted": 0.5155,
+              "actual_win_rate": 0.5312
+            },
+            {
+              "decile": 7,
+              "n": 128,
+              "mean_predicted": 0.5288,
+              "actual_win_rate": 0.375
+            },
+            {
+              "decile": 8,
+              "n": 128,
+              "mean_predicted": 0.559,
+              "actual_win_rate": 0.4844
+            },
+            {
+              "decile": 9,
+              "n": 128,
+              "mean_predicted": 0.5896,
+              "actual_win_rate": 0.4531
+            },
+            {
+              "decile": 10,
+              "n": 129,
+              "mean_predicted": 0.6502,
+              "actual_win_rate": 0.5271
+            }
+          ]
+        },
+        "h2h": {
+          "n_bets": 1868,
+          "staked": 77826.54,
+          "pnl": -715.83,
+          "roi_pct": -0.92,
+          "ci_95": [
+            -10.48,
+            8.72
+          ],
+          "win_rate": 0.3046,
+          "avg_odds": 4.392,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 186,
+              "mean_predicted": 0.2177,
+              "actual_win_rate": 0.0914
+            },
+            {
+              "decile": 2,
+              "n": 186,
+              "mean_predicted": 0.2912,
+              "actual_win_rate": 0.1505
+            },
+            {
+              "decile": 3,
+              "n": 186,
+              "mean_predicted": 0.3299,
+              "actual_win_rate": 0.2796
+            },
+            {
+              "decile": 4,
+              "n": 186,
+              "mean_predicted": 0.3609,
+              "actual_win_rate": 0.1882
+            },
+            {
+              "decile": 5,
+              "n": 186,
+              "mean_predicted": 0.3963,
+              "actual_win_rate": 0.3011
+            },
+            {
+              "decile": 6,
+              "n": 186,
+              "mean_predicted": 0.434,
+              "actual_win_rate": 0.3172
+            },
+            {
+              "decile": 7,
+              "n": 186,
+              "mean_predicted": 0.4674,
+              "actual_win_rate": 0.3602
+            },
+            {
+              "decile": 8,
+              "n": 186,
+              "mean_predicted": 0.5047,
+              "actual_win_rate": 0.3925
+            },
+            {
+              "decile": 9,
+              "n": 186,
+              "mean_predicted": 0.5615,
+              "actual_win_rate": 0.3656
+            },
+            {
+              "decile": 10,
+              "n": 194,
+              "mean_predicted": 0.6969,
+              "actual_win_rate": 0.5876
+            }
+          ]
+        },
+        "ou15": {
+          "n_bets": 1059,
+          "staked": 52152.6,
+          "pnl": -2695.32,
+          "roi_pct": -5.17,
+          "ci_95": [
+            -11.14,
+            0.71
+          ],
+          "win_rate": 0.5873,
+          "avg_odds": 2.402,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 105,
+              "mean_predicted": 0.2406,
+              "actual_win_rate": 0.1143
+            },
+            {
+              "decile": 2,
+              "n": 105,
+              "mean_predicted": 0.2951,
+              "actual_win_rate": 0.1714
+            },
+            {
+              "decile": 3,
+              "n": 105,
+              "mean_predicted": 0.732,
+              "actual_win_rate": 0.6571
+            },
+            {
+              "decile": 4,
+              "n": 105,
+              "mean_predicted": 0.7477,
+              "actual_win_rate": 0.6476
+            },
+            {
+              "decile": 5,
+              "n": 105,
+              "mean_predicted": 0.7582,
+              "actual_win_rate": 0.6286
+            },
+            {
+              "decile": 6,
+              "n": 105,
+              "mean_predicted": 0.7708,
+              "actual_win_rate": 0.6286
+            },
+            {
+              "decile": 7,
+              "n": 105,
+              "mean_predicted": 0.7842,
+              "actual_win_rate": 0.6286
+            },
+            {
+              "decile": 8,
+              "n": 105,
+              "mean_predicted": 0.8032,
+              "actual_win_rate": 0.7429
+            },
+            {
+              "decile": 9,
+              "n": 105,
+              "mean_predicted": 0.8291,
+              "actual_win_rate": 0.8095
+            },
+            {
+              "decile": 10,
+              "n": 114,
+              "mean_predicted": 0.8802,
+              "actual_win_rate": 0.8246
+            }
+          ]
+        },
+        "ou25": {
+          "n_bets": 1644,
+          "staked": 70089.75,
+          "pnl": -3994.62,
+          "roi_pct": -5.7,
+          "ci_95": [
+            -12.03,
+            0.53
+          ],
+          "win_rate": 0.4361,
+          "avg_odds": 2.304,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 164,
+              "mean_predicted": 0.4291,
+              "actual_win_rate": 0.311
+            },
+            {
+              "decile": 2,
+              "n": 164,
+              "mean_predicted": 0.4802,
+              "actual_win_rate": 0.3659
+            },
+            {
+              "decile": 3,
+              "n": 164,
+              "mean_predicted": 0.4986,
+              "actual_win_rate": 0.3963
+            },
+            {
+              "decile": 4,
+              "n": 164,
+              "mean_predicted": 0.5105,
+              "actual_win_rate": 0.3841
+            },
+            {
+              "decile": 5,
+              "n": 164,
+              "mean_predicted": 0.525,
+              "actual_win_rate": 0.439
+            },
+            {
+              "decile": 6,
+              "n": 164,
+              "mean_predicted": 0.5438,
+              "actual_win_rate": 0.4146
+            },
+            {
+              "decile": 7,
+              "n": 164,
+              "mean_predicted": 0.5621,
+              "actual_win_rate": 0.3963
+            },
+            {
+              "decile": 8,
+              "n": 164,
+              "mean_predicted": 0.59,
+              "actual_win_rate": 0.5
+            },
+            {
+              "decile": 9,
+              "n": 164,
+              "mean_predicted": 0.6325,
+              "actual_win_rate": 0.5427
+            },
+            {
+              "decile": 10,
+              "n": 168,
+              "mean_predicted": 0.7098,
+              "actual_win_rate": 0.6071
+            }
+          ]
+        }
+      }
+    },
+    "insample": {
+      "description": "In-sample Platt (optimistic upper bound)",
+      "n_bets": 5616,
+      "ev_pass_rate": 0.6018,
+      "staked": 339385.09,
+      "pnl": -7480.1,
+      "roi_pct": -2.2,
+      "ci_95_pct": [
+        -5.44,
+        0.93
+      ],
+      "win_rate": 0.4915,
+      "avg_ev": 0.9134,
+      "by_market": {
+        "btts": {
+          "n_bets": 1422,
+          "staked": 79711.76,
+          "pnl": -3400.47,
+          "roi_pct": -4.27,
+          "ci_95": [
+            -10.12,
+            1.41
+          ],
+          "win_rate": 0.4958,
+          "avg_odds": 2.034,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 142,
+              "mean_predicted": 0.4347,
+              "actual_win_rate": 0.331
+            },
+            {
+              "decile": 2,
+              "n": 142,
+              "mean_predicted": 0.4794,
+              "actual_win_rate": 0.3944
+            },
+            {
+              "decile": 3,
+              "n": 142,
+              "mean_predicted": 0.5105,
+              "actual_win_rate": 0.5141
+            },
+            {
+              "decile": 4,
+              "n": 142,
+              "mean_predicted": 0.5468,
+              "actual_win_rate": 0.4085
+            },
+            {
+              "decile": 5,
+              "n": 142,
+              "mean_predicted": 0.5997,
+              "actual_win_rate": 0.5211
+            },
+            {
+              "decile": 6,
+              "n": 142,
+              "mean_predicted": 0.6432,
+              "actual_win_rate": 0.493
+            },
+            {
+              "decile": 7,
+              "n": 142,
+              "mean_predicted": 0.673,
+              "actual_win_rate": 0.493
+            },
+            {
+              "decile": 8,
+              "n": 142,
+              "mean_predicted": 0.7015,
+              "actual_win_rate": 0.6268
+            },
+            {
+              "decile": 9,
+              "n": 142,
+              "mean_predicted": 0.7476,
+              "actual_win_rate": 0.5845
+            },
+            {
+              "decile": 10,
+              "n": 144,
+              "mean_predicted": 0.8313,
+              "actual_win_rate": 0.5903
+            }
+          ]
+        },
+        "h2h": {
+          "n_bets": 1707,
+          "staked": 82308.99,
+          "pnl": -34.1,
+          "roi_pct": -0.04,
+          "ci_95": [
+            -8.6,
+            8.47
+          ],
+          "win_rate": 0.3421,
+          "avg_odds": 4.081,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 170,
+              "mean_predicted": 0.213,
+              "actual_win_rate": 0.0882
+            },
+            {
+              "decile": 2,
+              "n": 170,
+              "mean_predicted": 0.2951,
+              "actual_win_rate": 0.2412
+            },
+            {
+              "decile": 3,
+              "n": 170,
+              "mean_predicted": 0.3418,
+              "actual_win_rate": 0.2059
+            },
+            {
+              "decile": 4,
+              "n": 170,
+              "mean_predicted": 0.3876,
+              "actual_win_rate": 0.2529
+            },
+            {
+              "decile": 5,
+              "n": 170,
+              "mean_predicted": 0.4349,
+              "actual_win_rate": 0.3176
+            },
+            {
+              "decile": 6,
+              "n": 170,
+              "mean_predicted": 0.4737,
+              "actual_win_rate": 0.3588
+            },
+            {
+              "decile": 7,
+              "n": 170,
+              "mean_predicted": 0.5111,
+              "actual_win_rate": 0.4353
+            },
+            {
+              "decile": 8,
+              "n": 170,
+              "mean_predicted": 0.5646,
+              "actual_win_rate": 0.3882
+            },
+            {
+              "decile": 9,
+              "n": 170,
+              "mean_predicted": 0.6363,
+              "actual_win_rate": 0.4588
+            },
+            {
+              "decile": 10,
+              "n": 177,
+              "mean_predicted": 0.7885,
+              "actual_win_rate": 0.661
+            }
+          ]
+        },
+        "ou15": {
+          "n_bets": 1097,
+          "staked": 99211.1,
+          "pnl": -1244.01,
+          "roi_pct": -1.25,
+          "ci_95": [
+            -4.94,
+            2.36
+          ],
+          "win_rate": 0.7457,
+          "avg_odds": 1.326,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 109,
+              "mean_predicted": 0.7077,
+              "actual_win_rate": 0.5963
+            },
+            {
+              "decile": 2,
+              "n": 109,
+              "mean_predicted": 0.7505,
+              "actual_win_rate": 0.633
+            },
+            {
+              "decile": 3,
+              "n": 109,
+              "mean_predicted": 0.7835,
+              "actual_win_rate": 0.6789
+            },
+            {
+              "decile": 4,
+              "n": 109,
+              "mean_predicted": 0.807,
+              "actual_win_rate": 0.5872
+            },
+            {
+              "decile": 5,
+              "n": 109,
+              "mean_predicted": 0.8347,
+              "actual_win_rate": 0.7615
+            },
+            {
+              "decile": 6,
+              "n": 109,
+              "mean_predicted": 0.8577,
+              "actual_win_rate": 0.789
+            },
+            {
+              "decile": 7,
+              "n": 109,
+              "mean_predicted": 0.8814,
+              "actual_win_rate": 0.844
+            },
+            {
+              "decile": 8,
+              "n": 109,
+              "mean_predicted": 0.9051,
+              "actual_win_rate": 0.8624
+            },
+            {
+              "decile": 9,
+              "n": 109,
+              "mean_predicted": 0.9338,
+              "actual_win_rate": 0.8165
+            },
+            {
+              "decile": 10,
+              "n": 116,
+              "mean_predicted": 0.9703,
+              "actual_win_rate": 0.8793
+            }
+          ]
+        },
+        "ou25": {
+          "n_bets": 1390,
+          "staked": 78153.24,
+          "pnl": -2801.52,
+          "roi_pct": -3.58,
+          "ci_95": [
+            -9.79,
+            2.88
+          ],
+          "win_rate": 0.4698,
+          "avg_odds": 2.189,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 139,
+              "mean_predicted": 0.4213,
+              "actual_win_rate": 0.3022
+            },
+            {
+              "decile": 2,
+              "n": 139,
+              "mean_predicted": 0.4684,
+              "actual_win_rate": 0.3597
+            },
+            {
+              "decile": 3,
+              "n": 139,
+              "mean_predicted": 0.4963,
+              "actual_win_rate": 0.4317
+            },
+            {
+              "decile": 4,
+              "n": 139,
+              "mean_predicted": 0.5295,
+              "actual_win_rate": 0.4317
+            },
+            {
+              "decile": 5,
+              "n": 139,
+              "mean_predicted": 0.5589,
+              "actual_win_rate": 0.3885
+            },
+            {
+              "decile": 6,
+              "n": 139,
+              "mean_predicted": 0.5903,
+              "actual_win_rate": 0.4964
+            },
+            {
+              "decile": 7,
+              "n": 139,
+              "mean_predicted": 0.6348,
+              "actual_win_rate": 0.4892
+            },
+            {
+              "decile": 8,
+              "n": 139,
+              "mean_predicted": 0.6842,
+              "actual_win_rate": 0.5612
+            },
+            {
+              "decile": 9,
+              "n": 139,
+              "mean_predicted": 0.7352,
+              "actual_win_rate": 0.6115
+            },
+            {
+              "decile": 10,
+              "n": 139,
+              "mean_predicted": 0.8301,
+              "actual_win_rate": 0.6259
+            }
+          ]
+        }
+      }
+    },
+    "outoffold": {
+      "description": "Out-of-fold Platt (honest \u2014 matches production intent)",
+      "n_bets": 5010,
+      "ev_pass_rate": 0.5369,
+      "staked": 309968.85,
+      "pnl": -6447.96,
+      "roi_pct": -2.08,
+      "ci_95_pct": [
+        -5.09,
+        1.06
+      ],
+      "win_rate": 0.4904,
+      "avg_ev": 0.9217,
+      "by_market": {
+        "btts": {
+          "n_bets": 1009,
+          "staked": 59101.21,
+          "pnl": -2832.5,
+          "roi_pct": -4.79,
+          "ci_95": [
+            -11.78,
+            2.09
+          ],
+          "win_rate": 0.5045,
+          "avg_odds": 1.992,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 100,
+              "mean_predicted": 0.4188,
+              "actual_win_rate": 0.33
+            },
+            {
+              "decile": 2,
+              "n": 100,
+              "mean_predicted": 0.48,
+              "actual_win_rate": 0.47
+            },
+            {
+              "decile": 3,
+              "n": 100,
+              "mean_predicted": 0.5305,
+              "actual_win_rate": 0.38
+            },
+            {
+              "decile": 4,
+              "n": 100,
+              "mean_predicted": 0.5938,
+              "actual_win_rate": 0.49
+            },
+            {
+              "decile": 5,
+              "n": 100,
+              "mean_predicted": 0.6277,
+              "actual_win_rate": 0.5
+            },
+            {
+              "decile": 6,
+              "n": 100,
+              "mean_predicted": 0.653,
+              "actual_win_rate": 0.51
+            },
+            {
+              "decile": 7,
+              "n": 100,
+              "mean_predicted": 0.6781,
+              "actual_win_rate": 0.65
+            },
+            {
+              "decile": 8,
+              "n": 100,
+              "mean_predicted": 0.7114,
+              "actual_win_rate": 0.53
+            },
+            {
+              "decile": 9,
+              "n": 100,
+              "mean_predicted": 0.7605,
+              "actual_win_rate": 0.59
+            },
+            {
+              "decile": 10,
+              "n": 109,
+              "mean_predicted": 0.8413,
+              "actual_win_rate": 0.5872
+            }
+          ]
+        },
+        "h2h": {
+          "n_bets": 1676,
+          "staked": 79911.22,
+          "pnl": 8.6,
+          "roi_pct": 0.01,
+          "ci_95": [
+            -8.81,
+            8.91
+          ],
+          "win_rate": 0.3419,
+          "avg_odds": 4.101,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 167,
+              "mean_predicted": 0.2103,
+              "actual_win_rate": 0.0838
+            },
+            {
+              "decile": 2,
+              "n": 167,
+              "mean_predicted": 0.2928,
+              "actual_win_rate": 0.2455
+            },
+            {
+              "decile": 3,
+              "n": 167,
+              "mean_predicted": 0.3388,
+              "actual_win_rate": 0.2036
+            },
+            {
+              "decile": 4,
+              "n": 167,
+              "mean_predicted": 0.385,
+              "actual_win_rate": 0.2455
+            },
+            {
+              "decile": 5,
+              "n": 167,
+              "mean_predicted": 0.4325,
+              "actual_win_rate": 0.3353
+            },
+            {
+              "decile": 6,
+              "n": 167,
+              "mean_predicted": 0.4709,
+              "actual_win_rate": 0.3533
+            },
+            {
+              "decile": 7,
+              "n": 167,
+              "mean_predicted": 0.5089,
+              "actual_win_rate": 0.4311
+            },
+            {
+              "decile": 8,
+              "n": 167,
+              "mean_predicted": 0.5623,
+              "actual_win_rate": 0.3952
+            },
+            {
+              "decile": 9,
+              "n": 167,
+              "mean_predicted": 0.6346,
+              "actual_win_rate": 0.4671
+            },
+            {
+              "decile": 10,
+              "n": 173,
+              "mean_predicted": 0.7889,
+              "actual_win_rate": 0.6474
+            }
+          ]
+        },
+        "ou15": {
+          "n_bets": 1058,
+          "staked": 98954.24,
+          "pnl": -954.72,
+          "roi_pct": -0.96,
+          "ci_95": [
+            -4.71,
+            2.52
+          ],
+          "win_rate": 0.7457,
+          "avg_odds": 1.322,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 105,
+              "mean_predicted": 0.7005,
+              "actual_win_rate": 0.581
+            },
+            {
+              "decile": 2,
+              "n": 105,
+              "mean_predicted": 0.7499,
+              "actual_win_rate": 0.6476
+            },
+            {
+              "decile": 3,
+              "n": 105,
+              "mean_predicted": 0.7854,
+              "actual_win_rate": 0.6095
+            },
+            {
+              "decile": 4,
+              "n": 105,
+              "mean_predicted": 0.8119,
+              "actual_win_rate": 0.6381
+            },
+            {
+              "decile": 5,
+              "n": 105,
+              "mean_predicted": 0.8402,
+              "actual_win_rate": 0.7619
+            },
+            {
+              "decile": 6,
+              "n": 105,
+              "mean_predicted": 0.8633,
+              "actual_win_rate": 0.7905
+            },
+            {
+              "decile": 7,
+              "n": 105,
+              "mean_predicted": 0.8873,
+              "actual_win_rate": 0.8571
+            },
+            {
+              "decile": 8,
+              "n": 105,
+              "mean_predicted": 0.9108,
+              "actual_win_rate": 0.8667
+            },
+            {
+              "decile": 9,
+              "n": 105,
+              "mean_predicted": 0.9396,
+              "actual_win_rate": 0.819
+            },
+            {
+              "decile": 10,
+              "n": 113,
+              "mean_predicted": 0.9742,
+              "actual_win_rate": 0.8761
+            }
+          ]
+        },
+        "ou25": {
+          "n_bets": 1267,
+          "staked": 72002.18,
+          "pnl": -2669.34,
+          "roi_pct": -3.71,
+          "ci_95": [
+            -10.36,
+            3.04
+          ],
+          "win_rate": 0.4625,
+          "avg_odds": 2.186,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 126,
+              "mean_predicted": 0.412,
+              "actual_win_rate": 0.2381
+            },
+            {
+              "decile": 2,
+              "n": 126,
+              "mean_predicted": 0.4593,
+              "actual_win_rate": 0.3571
+            },
+            {
+              "decile": 3,
+              "n": 126,
+              "mean_predicted": 0.4938,
+              "actual_win_rate": 0.381
+            },
+            {
+              "decile": 4,
+              "n": 126,
+              "mean_predicted": 0.5292,
+              "actual_win_rate": 0.4524
+            },
+            {
+              "decile": 5,
+              "n": 126,
+              "mean_predicted": 0.5585,
+              "actual_win_rate": 0.3968
+            },
+            {
+              "decile": 6,
+              "n": 126,
+              "mean_predicted": 0.5936,
+              "actual_win_rate": 0.4524
+            },
+            {
+              "decile": 7,
+              "n": 126,
+              "mean_predicted": 0.6428,
+              "actual_win_rate": 0.5317
+            },
+            {
+              "decile": 8,
+              "n": 126,
+              "mean_predicted": 0.6899,
+              "actual_win_rate": 0.5556
+            },
+            {
+              "decile": 9,
+              "n": 126,
+              "mean_predicted": 0.7391,
+              "actual_win_rate": 0.619
+            },
+            {
+              "decile": 10,
+              "n": 133,
+              "mean_predicted": 0.8367,
+              "actual_win_rate": 0.6316
+            }
+          ]
+        }
+      }
+    },
+    "clustered": {
+      "description": "Cluster-stratified Platt (one calibrator per league cluster)",
+      "n_bets": 5202,
+      "ev_pass_rate": 0.5574,
+      "staked": 314228.57,
+      "pnl": -6121.3,
+      "roi_pct": -1.95,
+      "ci_95_pct": [
+        -5.3,
+        1.25
+      ],
+      "win_rate": 0.4889,
+      "avg_ev": 0.9208,
+      "by_market": {
+        "btts": {
+          "n_bets": 1076,
+          "staked": 60015.17,
+          "pnl": -2939.01,
+          "roi_pct": -4.9,
+          "ci_95": [
+            -11.1,
+            1.81
+          ],
+          "win_rate": 0.4991,
+          "avg_odds": 2.028,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 107,
+              "mean_predicted": 0.4248,
+              "actual_win_rate": 0.3551
+            },
+            {
+              "decile": 2,
+              "n": 107,
+              "mean_predicted": 0.4716,
+              "actual_win_rate": 0.4019
+            },
+            {
+              "decile": 3,
+              "n": 107,
+              "mean_predicted": 0.5118,
+              "actual_win_rate": 0.3645
+            },
+            {
+              "decile": 4,
+              "n": 107,
+              "mean_predicted": 0.559,
+              "actual_win_rate": 0.514
+            },
+            {
+              "decile": 5,
+              "n": 107,
+              "mean_predicted": 0.6013,
+              "actual_win_rate": 0.514
+            },
+            {
+              "decile": 6,
+              "n": 107,
+              "mean_predicted": 0.6337,
+              "actual_win_rate": 0.4766
+            },
+            {
+              "decile": 7,
+              "n": 107,
+              "mean_predicted": 0.6681,
+              "actual_win_rate": 0.514
+            },
+            {
+              "decile": 8,
+              "n": 107,
+              "mean_predicted": 0.7095,
+              "actual_win_rate": 0.6542
+            },
+            {
+              "decile": 9,
+              "n": 107,
+              "mean_predicted": 0.7569,
+              "actual_win_rate": 0.5794
+            },
+            {
+              "decile": 10,
+              "n": 113,
+              "mean_predicted": 0.8436,
+              "actual_win_rate": 0.6106
+            }
+          ]
+        },
+        "h2h": {
+          "n_bets": 1692,
+          "staked": 81698.6,
+          "pnl": 142.26,
+          "roi_pct": 0.17,
+          "ci_95": [
+            -8.35,
+            9.09
+          ],
+          "win_rate": 0.3375,
+          "avg_odds": 4.111,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 169,
+              "mean_predicted": 0.214,
+              "actual_win_rate": 0.0828
+            },
+            {
+              "decile": 2,
+              "n": 169,
+              "mean_predicted": 0.298,
+              "actual_win_rate": 0.213
+            },
+            {
+              "decile": 3,
+              "n": 169,
+              "mean_predicted": 0.3419,
+              "actual_win_rate": 0.2249
+            },
+            {
+              "decile": 4,
+              "n": 169,
+              "mean_predicted": 0.3876,
+              "actual_win_rate": 0.2367
+            },
+            {
+              "decile": 5,
+              "n": 169,
+              "mean_predicted": 0.4348,
+              "actual_win_rate": 0.3254
+            },
+            {
+              "decile": 6,
+              "n": 169,
+              "mean_predicted": 0.4724,
+              "actual_win_rate": 0.3905
+            },
+            {
+              "decile": 7,
+              "n": 169,
+              "mean_predicted": 0.5105,
+              "actual_win_rate": 0.3787
+            },
+            {
+              "decile": 8,
+              "n": 169,
+              "mean_predicted": 0.5626,
+              "actual_win_rate": 0.4024
+            },
+            {
+              "decile": 9,
+              "n": 169,
+              "mean_predicted": 0.6387,
+              "actual_win_rate": 0.4497
+            },
+            {
+              "decile": 10,
+              "n": 171,
+              "mean_predicted": 0.7882,
+              "actual_win_rate": 0.6667
+            }
+          ]
+        },
+        "ou15": {
+          "n_bets": 1040,
+          "staked": 94681.03,
+          "pnl": -155.36,
+          "roi_pct": -0.16,
+          "ci_95": [
+            -4.03,
+            3.28
+          ],
+          "win_rate": 0.7558,
+          "avg_odds": 1.318,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 104,
+              "mean_predicted": 0.6894,
+              "actual_win_rate": 0.5962
+            },
+            {
+              "decile": 2,
+              "n": 104,
+              "mean_predicted": 0.7507,
+              "actual_win_rate": 0.6923
+            },
+            {
+              "decile": 3,
+              "n": 104,
+              "mean_predicted": 0.7835,
+              "actual_win_rate": 0.5769
+            },
+            {
+              "decile": 4,
+              "n": 104,
+              "mean_predicted": 0.8131,
+              "actual_win_rate": 0.6827
+            },
+            {
+              "decile": 5,
+              "n": 104,
+              "mean_predicted": 0.8373,
+              "actual_win_rate": 0.7885
+            },
+            {
+              "decile": 6,
+              "n": 104,
+              "mean_predicted": 0.8631,
+              "actual_win_rate": 0.7788
+            },
+            {
+              "decile": 7,
+              "n": 104,
+              "mean_predicted": 0.8902,
+              "actual_win_rate": 0.8269
+            },
+            {
+              "decile": 8,
+              "n": 104,
+              "mean_predicted": 0.9135,
+              "actual_win_rate": 0.8942
+            },
+            {
+              "decile": 9,
+              "n": 104,
+              "mean_predicted": 0.9409,
+              "actual_win_rate": 0.8462
+            },
+            {
+              "decile": 10,
+              "n": 104,
+              "mean_predicted": 0.9743,
+              "actual_win_rate": 0.875
+            }
+          ]
+        },
+        "ou25": {
+          "n_bets": 1394,
+          "staked": 77833.77,
+          "pnl": -3169.19,
+          "roi_pct": -4.07,
+          "ci_95": [
+            -10.26,
+            2.18
+          ],
+          "win_rate": 0.4656,
+          "avg_odds": 2.186,
+          "calibration_deciles": [
+            {
+              "decile": 1,
+              "n": 139,
+              "mean_predicted": 0.4181,
+              "actual_win_rate": 0.3309
+            },
+            {
+              "decile": 2,
+              "n": 139,
+              "mean_predicted": 0.4741,
+              "actual_win_rate": 0.3453
+            },
+            {
+              "decile": 3,
+              "n": 139,
+              "mean_predicted": 0.507,
+              "actual_win_rate": 0.4029
+            },
+            {
+              "decile": 4,
+              "n": 139,
+              "mean_predicted": 0.5305,
+              "actual_win_rate": 0.3957
+            },
+            {
+              "decile": 5,
+              "n": 139,
+              "mean_predicted": 0.5528,
+              "actual_win_rate": 0.3453
+            },
+            {
+              "decile": 6,
+              "n": 139,
+              "mean_predicted": 0.5888,
+              "actual_win_rate": 0.4388
+            },
+            {
+              "decile": 7,
+              "n": 139,
+              "mean_predicted": 0.6329,
+              "actual_win_rate": 0.5108
+            },
+            {
+              "decile": 8,
+              "n": 139,
+              "mean_predicted": 0.6825,
+              "actual_win_rate": 0.5899
+            },
+            {
+              "decile": 9,
+              "n": 139,
+              "mean_predicted": 0.736,
+              "actual_win_rate": 0.6259
+            },
+            {
+              "decile": 10,
+              "n": 143,
+              "mean_predicted": 0.8309,
+              "actual_win_rate": 0.6643
+            }
+          ]
+        }
+      }
+    }
+  },
+  "ev_filter_comparison": {
+    "raw_pass_count": 5852,
+    "outoffold_pass_count": 5010,
+    "raw_avg_ev": 0.86,
+    "outoffold_avg_ev": 0.9217,
+    "filter_selectivity_ratio": 0.8561
+  }
+}

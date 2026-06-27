@@ -80,6 +80,64 @@ class Player(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime)
 
 
+class PlayerSeasonStats(Base):
+    __tablename__ = "player_season_stats"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    player_id: Mapped[int] = mapped_column(Integer, index=True)
+    team_id: Mapped[int] = mapped_column(Integer, index=True)
+    season: Mapped[int] = mapped_column(Integer)
+    league_id: Mapped[int] = mapped_column(Integer)
+    player_name: Mapped[str | None] = mapped_column(String(200))
+    position: Mapped[str | None] = mapped_column(String(10))
+    photo_url: Mapped[str | None] = mapped_column(String(500))
+
+    appearances: Mapped[int] = mapped_column(Integer, default=0)
+    lineups: Mapped[int] = mapped_column(Integer, default=0)
+    minutes: Mapped[int] = mapped_column(Integer, default=0)
+    rating: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    goals: Mapped[int] = mapped_column(Integer, default=0)
+    assists: Mapped[int] = mapped_column(Integer, default=0)
+    goals_conceded: Mapped[int] = mapped_column(Integer, default=0)
+    saves: Mapped[int] = mapped_column(Integer, default=0)
+
+    shots_total: Mapped[int] = mapped_column(Integer, default=0)
+    shots_on: Mapped[int] = mapped_column(Integer, default=0)
+
+    passes_total: Mapped[int] = mapped_column(Integer, default=0)
+    passes_key: Mapped[int] = mapped_column(Integer, default=0)
+    pass_accuracy: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    tackles_total: Mapped[int] = mapped_column(Integer, default=0)
+    duels_total: Mapped[int] = mapped_column(Integer, default=0)
+    duels_won: Mapped[int] = mapped_column(Integer, default=0)
+    dribbles_attempts: Mapped[int] = mapped_column(Integer, default=0)
+    dribbles_success: Mapped[int] = mapped_column(Integer, default=0)
+
+    yellow_cards: Mapped[int] = mapped_column(Integer, default=0)
+    red_cards: Mapped[int] = mapped_column(Integer, default=0)
+    fouls_drawn: Mapped[int] = mapped_column(Integer, default=0)
+    fouls_committed: Mapped[int] = mapped_column(Integer, default=0)
+
+    pens_scored: Mapped[int] = mapped_column(Integer, default=0)
+    pens_missed: Mapped[int] = mapped_column(Integer, default=0)
+    pens_saved: Mapped[int] = mapped_column(Integer, default=0)
+
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (UniqueConstraint("player_id", "team_id", "season", "league_id"),)
+
+
+class PlayerFetchLog(Base):
+    __tablename__ = "player_fetch_log"
+
+    team_id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    season: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    row_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
 class Injury(Base):
     __tablename__ = "injuries"
 
@@ -286,11 +344,14 @@ class PredictionRecord(Base):
     run_id: Mapped[str | None] = mapped_column(String(36), nullable=True)
     calibration_version_id: Mapped[str | None] = mapped_column(String(50), nullable=True)
     feature_pipeline_version: Mapped[str] = mapped_column(String(20), default="v1.0.0")
+    blend_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     predicted_outcome: Mapped[str] = mapped_column(String(10))   # H/D/A, Yes/No, Over/Under
     raw_outcome: Mapped[str | None] = mapped_column(String(10), nullable=True)
     our_prob: Mapped[float] = mapped_column(Float)
     calibrated_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
+    market_prob: Mapped[float | None] = mapped_column(Float, nullable=True)   # de-vigged (Shin) market-implied prob
+    blended_prob: Mapped[float | None] = mapped_column(Float, nullable=True)  # final — drives EV/Kelly/betting
     implied_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
     ev: Mapped[float | None] = mapped_column(Float, nullable=True)
     edge: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -575,6 +636,13 @@ class PlacedBet(Base):
     actual_result: Mapped[str | None] = mapped_column(String(10))
     won: Mapped[bool | None] = mapped_column(Boolean)
     pnl: Mapped[float | None] = mapped_column(Float)
+
+    # Closing Line Value — odds/implied-prob captured near kickoff, and the
+    # resulting edge vs. our bet price. Fast same-day signal of whether a
+    # claimed edge was real foresight or model error (see odds_poll.py capture).
+    closing_odds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    closing_implied_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
+    clv_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     placed_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime)

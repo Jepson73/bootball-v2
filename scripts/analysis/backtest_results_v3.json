@@ -1,0 +1,298 @@
+{
+  "raw_noBlend": {
+    "n_bets": 5638,
+    "n_candidates": 2334,
+    "ev_pass_rate": 2.4156,
+    "roi_pct": -4.09,
+    "ci_95": [
+      -7.99,
+      0.11
+    ],
+    "avg_ev": 0.3515,
+    "avg_p_final": 0.4982,
+    "by_market": {
+      "btts": {
+        "n_bets": 1219,
+        "staked": 41647.97,
+        "pnl": -1706.05,
+        "roi_pct": -4.1,
+        "ci_95": [
+          -11.87,
+          3.28
+        ],
+        "win_rate": 0.4258,
+        "avg_odds": 2.313,
+        "avg_ev": 0.1886,
+        "avg_p_raw": 0.521,
+        "avg_p_final": 0.521
+      },
+      "h2h": {
+        "n_bets": 1860,
+        "staked": 77185.38,
+        "pnl": -760.67,
+        "roi_pct": -0.99,
+        "ci_95": [
+          -10.62,
+          8.87
+        ],
+        "win_rate": 0.2909,
+        "avg_odds": 4.486,
+        "avg_ev": 0.5935,
+        "avg_p_raw": 0.4158,
+        "avg_p_final": 0.4158
+      },
+      "ou15": {
+        "n_bets": 981,
+        "staked": 47603.37,
+        "pnl": -3053.33,
+        "roi_pct": -6.41,
+        "ci_95": [
+          -13.06,
+          0.21
+        ],
+        "win_rate": 0.4424,
+        "avg_odds": 3.359,
+        "avg_ev": 0.2677,
+        "avg_p_raw": 0.5521,
+        "avg_p_final": 0.5521
+      },
+      "ou25": {
+        "n_bets": 1578,
+        "staked": 69199.78,
+        "pnl": -4128.31,
+        "roi_pct": -5.97,
+        "ci_95": [
+          -12.06,
+          0.33
+        ],
+        "win_rate": 0.4271,
+        "avg_odds": 2.34,
+        "avg_ev": 0.2443,
+        "avg_p_raw": 0.5443,
+        "avg_p_final": 0.5443
+      }
+    }
+  },
+  "raw_blend": {
+    "n_bets": 1822,
+    "n_candidates": 2334,
+    "ev_pass_rate": 0.7806,
+    "roi_pct": -0.39,
+    "ci_95": [
+      -8.35,
+      8.06
+    ],
+    "avg_ev": 0.2231,
+    "avg_p_final": 0.3818,
+    "by_market": {
+      "btts": {
+        "n_bets": 244,
+        "staked": 4015.08,
+        "pnl": -168.13,
+        "roi_pct": -4.19,
+        "ci_95": [
+          -21.01,
+          14.71
+        ],
+        "win_rate": 0.373,
+        "avg_odds": 2.688,
+        "avg_ev": 0.1139,
+        "avg_p_raw": 0.5278,
+        "avg_p_final": 0.4234
+      },
+      "h2h": {
+        "n_bets": 847,
+        "staked": 15986.39,
+        "pnl": 741.72,
+        "roi_pct": 4.64,
+        "ci_95": [
+          -9.62,
+          18.9
+        ],
+        "win_rate": 0.2798,
+        "avg_odds": 5.437,
+        "avg_ev": 0.3313,
+        "avg_p_raw": 0.4331,
+        "avg_p_final": 0.3139
+      },
+      "ou15": {
+        "n_bets": 115,
+        "staked": 2435.27,
+        "pnl": -9.36,
+        "roi_pct": -0.38,
+        "ci_95": [
+          -26.64,
+          28.32
+        ],
+        "win_rate": 0.3913,
+        "avg_odds": 4.546,
+        "avg_ev": 0.21,
+        "avg_p_raw": 0.55,
+        "avg_p_final": 0.4412
+      },
+      "ou25": {
+        "n_bets": 616,
+        "staked": 11389.19,
+        "pnl": -694.91,
+        "roi_pct": -6.1,
+        "ci_95": [
+          -15.64,
+          4.09
+        ],
+        "win_rate": 0.3929,
+        "avg_odds": 2.599,
+        "avg_ev": 0.12,
+        "avg_p_raw": 0.5541,
+        "avg_p_final": 0.4475
+      }
+    }
+  },
+  "oof_noBlend": {
+    "n_bets": 4613,
+    "n_candidates": 2334,
+    "ev_pass_rate": 1.9764,
+    "roi_pct": -2.02,
+    "ci_95": [
+      -5.39,
+      1.3
+    ],
+    "avg_ev": 0.334,
+    "avg_p_final": 0.5984,
+    "by_market": {
+      "btts": {
+        "n_bets": 947,
+        "staked": 58173.87,
+        "pnl": -2722.94,
+        "roi_pct": -4.68,
+        "ci_95": [
+          -11.58,
+          2.38
+        ],
+        "win_rate": 0.5026,
+        "avg_odds": 2.014,
+        "avg_ev": 0.2237,
+        "avg_p_raw": 0.5762,
+        "avg_p_final": 0.6315
+      },
+      "h2h": {
+        "n_bets": 1649,
+        "staked": 79197.82,
+        "pnl": 147.02,
+        "roi_pct": 0.19,
+        "ci_95": [
+          -8.76,
+          8.94
+        ],
+        "win_rate": 0.3335,
+        "avg_odds": 4.18,
+        "avg_ev": 0.5503,
+        "avg_p_raw": 0.4573,
+        "avg_p_final": 0.4568
+      },
+      "ou15": {
+        "n_bets": 806,
+        "staked": 89857.09,
+        "pnl": -838.93,
+        "roi_pct": -0.93,
+        "ci_95": [
+          -5.13,
+          3.01
+        ],
+        "win_rate": 0.7357,
+        "avg_odds": 1.341,
+        "avg_ev": 0.1351,
+        "avg_p_raw": 0.809,
+        "avg_p_final": 0.8547
+      },
+      "ou25": {
+        "n_bets": 1211,
+        "staked": 71109.42,
+        "pnl": -2601.8,
+        "roi_pct": -3.66,
+        "ci_95": [
+          -10.22,
+          3.07
+        ],
+        "win_rate": 0.4575,
+        "avg_odds": 2.211,
+        "avg_ev": 0.2582,
+        "avg_p_raw": 0.5837,
+        "avg_p_final": 0.5948
+      }
+    }
+  },
+  "oof_blend": {
+    "n_bets": 1716,
+    "n_candidates": 2334,
+    "ev_pass_rate": 0.7352,
+    "roi_pct": -1.43,
+    "ci_95": [
+      -8.08,
+      4.87
+    ],
+    "avg_ev": 0.1909,
+    "avg_p_final": 0.4647,
+    "by_market": {
+      "btts": {
+        "n_bets": 307,
+        "staked": 8328.2,
+        "pnl": -515.72,
+        "roi_pct": -6.19,
+        "ci_95": [
+          -18.17,
+          5.89
+        ],
+        "win_rate": 0.4788,
+        "avg_odds": 2.074,
+        "avg_ev": 0.1067,
+        "avg_p_raw": 0.6045,
+        "avg_p_final": 0.5581
+      },
+      "h2h": {
+        "n_bets": 770,
+        "staked": 16304.42,
+        "pnl": 402.68,
+        "roi_pct": 2.47,
+        "ci_95": [
+          -10.8,
+          15.89
+        ],
+        "win_rate": 0.3195,
+        "avg_odds": 4.716,
+        "avg_ev": 0.2901,
+        "avg_p_raw": 0.4795,
+        "avg_p_final": 0.3599
+      },
+      "ou15": {
+        "n_bets": 97,
+        "staked": 3880.53,
+        "pnl": -122.67,
+        "roi_pct": -3.16,
+        "ci_95": [
+          -17.4,
+          10.3
+        ],
+        "win_rate": 0.6495,
+        "avg_odds": 1.501,
+        "avg_ev": 0.0726,
+        "avg_p_raw": 0.8091,
+        "avg_p_final": 0.7238
+      },
+      "ou25": {
+        "n_bets": 542,
+        "staked": 13627.02,
+        "pnl": -366.17,
+        "roi_pct": -2.69,
+        "ci_95": [
+          -11.89,
+          6.27
+        ],
+        "win_rate": 0.4539,
+        "avg_odds": 2.313,
+        "avg_ev": 0.1188,
+        "avg_p_raw": 0.608,
+        "avg_p_final": 0.5144
+      }
+    }
+  }
+}

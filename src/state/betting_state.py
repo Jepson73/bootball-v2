@@ -159,6 +159,14 @@ def build_betting_state(active_round_id: int | None = None) -> BettingState:
         rounds = []
         for r in rounds_result:
             status = "Active" if r[11] else ("Closed" if r[3] else "Pending")
+            r_initial = r[4] or 0
+            r_total_pnl = r[9] or 0
+            # Return on bankroll (matches `roi` above), computed live from total_pnl/
+            # initial_bankroll rather than trusting the stored roi_pct column — the
+            # stored value (a) used a different "yield" definition (pnl/turnover) that
+            # reads as a wildly different number for the same round, and (b) is only
+            # ever refreshed when a round closes, so an active round stayed at 0.0%.
+            r_roi_pct = (r_total_pnl / r_initial * 100) if r_initial > 0 else 0
             rounds.append({
                 "id": r[0],
                 "round_number": r[1],
@@ -170,7 +178,7 @@ def build_betting_state(active_round_id: int | None = None) -> BettingState:
                 "total_wins": r[7],
                 "total_staked": r[8],
                 "total_pnl": r[9],
-                "roi_pct": r[10],
+                "roi_pct": r_roi_pct,
                 "is_active": r[11],
                 "status": status,
             })

@@ -148,8 +148,19 @@ class ExecutionStrategistAgent:
     
     def _prepare_candidates(self) -> list[dict]:
         """Prepare candidates for optimization."""
+        from config.settings import settings
+
+        # Real EV gate (was a de-facto `ev <= 0` no-op — practically any positive
+        # float passed). Investigation (2026-06) found the largest claimed "edges"
+        # were the WORST performers: against a near-efficient market built on the
+        # same public information our standings-only features see, a big claimed
+        # edge is much more likely to be model overconfidence than real opportunity.
+        # `settings.bot_min_ev` (default 0.05) was already defined but unused —
+        # wire it up here as a real, meaningful floor.
+        min_ev = settings.bot_min_ev
+
         candidates = []
-        
+
         for pred in self._last_predictions:
             # Handle both dict and object formats
             if hasattr(pred, '__dict__'):
@@ -166,8 +177,10 @@ class ExecutionStrategistAgent:
             ev = pred.get("ev") or 0.0
             odds = pred.get("odds_decimal") or pred.get("odds") or 0.0
 
-            # Preliminary predictions (no odds yet), below minimum odds, or negative/zero EV — skip.
-            if not odds or odds < 1.6 or ev <= 0:
+            # Preliminary predictions (no odds yet), below minimum odds, or EV below
+            # the meaningful floor — skip. (Was `ev <= 0`, a near no-op; now uses
+            # settings.bot_min_ev so a "value" bet has to clear a real bar.)
+            if not odds or odds < 1.6 or ev <= min_ev:
                 continue
             
             candidate = {

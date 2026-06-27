@@ -115,26 +115,35 @@ def fix_orphaned_fixtures(season: int | None = None) -> list[dict]:
     Returns a list of dicts describing each league that was fixed (or skipped).
     """
     from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+    from sqlalchemy import text as _text
     from src.ingestion.client import APIFootballClient
-    from config.settings import get_settings
+    from config.settings import settings
 
     if season is None:
-        season = get_settings().current_season
+        season = settings.current_season
 
     client = APIFootballClient()
     report = []
 
     with get_session() as s:
-        # Leagues in fixtures but not in standings (exclude cups by name)
+        # Leagues in fixtures but not in standings (exclude cups by name, and
+        # leagues already checked this season — once we've determined a league
+        # has no standings table, there's no point re-querying it every cycle).
         leagues_with_standings = select(Standing.league_id).distinct()
         leagues_in_fixtures = select(Fixture.league_id).distinct()
         cup_leagues = select(League.id).where(League.name.ilike("%cup%"))
+        already_checked = set(s.execute(_text(
+            "SELECT league_id FROM league_standings_check WHERE season_checked = :season"
+        ), {"season": season}).scalars().all())
 
-        orphan_league_ids = s.execute(
-            leagues_in_fixtures
-            .where(Fixture.league_id.notin_(leagues_with_standings))
-            .where(Fixture.league_id.notin_(cup_leagues))
-        ).scalars().all()
+        orphan_league_ids = [
+            lid for lid in s.execute(
+                leagues_in_fixtures
+                .where(Fixture.league_id.notin_(leagues_with_standings))
+                .where(Fixture.league_id.notin_(cup_leagues))
+            ).scalars().all()
+            if lid not in already_checked
+        ]
 
         if not orphan_league_ids:
             return []
@@ -142,6 +151,20 @@ def fix_orphaned_fixtures(season: int | None = None) -> list[dict]:
         logger.info(
             f"[MAINTENANCE] {len(orphan_league_ids)} leagues have fixtures but no standings — fetching"
         )
+
+        def _record_check(league_id: int, status: str):
+            """Persist the check outcome so the league is recognized as 'handled'
+            (skipped on future cycles this season, excluded from the orphaned count)."""
+            s.execute(_text("""
+                INSERT INTO league_standings_check (league_id, status, season_checked, checked_at)
+                VALUES (:league_id, :status, :season, :checked_at)
+                ON CONFLICT(league_id) DO UPDATE SET
+                    status = excluded.status,
+                    season_checked = excluded.season_checked,
+                    checked_at = excluded.checked_at
+            """), {"league_id": league_id, "status": status, "season": season,
+                   "checked_at": datetime.utcnow().isoformat()})
+            s.commit()
 
         for league_id in orphan_league_ids:
             league_name = s.execute(
@@ -152,6 +175,7 @@ def fix_orphaned_fixtures(season: int | None = None) -> list[dict]:
             lname_lower = league_name.lower()
             if any(kw in lname_lower for kw in _NO_STANDINGS_KEYWORDS):
                 report.append({"league_id": league_id, "league": league_name, "status": "no_standings_expected", "rows": 0})
+                _record_check(league_id, "no_standings_expected")
                 continue
 
             # Try current season, then fall back two seasons
@@ -167,6 +191,7 @@ def fix_orphaned_fixtures(season: int | None = None) -> list[dict]:
             if not raw:
                 logger.info(f"[MAINTENANCE] No standings for league {league_id} ({league_name}) — skipped")
                 report.append({"league_id": league_id, "league": league_name, "status": "no_data", "rows": 0})
+                _record_check(league_id, "no_data")
                 continue
 
             rows = []
@@ -211,8 +236,10 @@ def fix_orphaned_fixtures(season: int | None = None) -> list[dict]:
                     "status": "fixed",
                     "rows": len(rows),
                 })
+                _record_check(league_id, "fixed")
             else:
                 report.append({"league_id": league_id, "league": league_name, "status": "empty", "rows": 0})
+                _record_check(league_id, "empty")
 
     return report
 
@@ -224,9 +251,9 @@ def run_maintenance(days: int = 30, season: int | None = None) -> dict:
 
     Returns a summary dict with counts and detail lists.
     """
-    from config.settings import get_settings
+    from config.settings import settings
     if season is None:
-        season = get_settings().current_season
+        season = settings.current_season
 
     summary = {
         "ft_null_goals_fixed": 0,

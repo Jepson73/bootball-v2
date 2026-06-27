@@ -1,0 +1,1055 @@
+{
+  "generated": "2026-06-24T13:19:58.871728",
+  "totals": {
+    "downloaded": 40,
+    "rows_parsed": 17926,
+    "matched_exact": 13959,
+    "matched_fuzzy": 3686,
+    "unmatched": 281,
+    "inserted_h2h": 17628,
+    "inserted_ou25": 17628,
+    "already_existed": 0
+  },
+  "coverage_post_backfill": [
+    {
+      "season": 2019,
+      "fixtures_with_h2h": 3307,
+      "fixtures_with_ou25": 3307,
+      "total_ft": 3779
+    },
+    {
+      "season": 2020,
+      "fixtures_with_h2h": 3576,
+      "fixtures_with_ou25": 3576,
+      "total_ft": 4044
+    },
+    {
+      "season": 2021,
+      "fixtures_with_h2h": 3581,
+      "fixtures_with_ou25": 3581,
+      "total_ft": 4038
+    },
+    {
+      "season": 2022,
+      "fixtures_with_h2h": 3583,
+      "fixtures_with_ou25": 3583,
+      "total_ft": 4045
+    },
+    {
+      "season": 2023,
+      "fixtures_with_h2h": 3581,
+      "fixtures_with_ou25": 3581,
+      "total_ft": 4047
+    },
+    {
+      "season": 2024,
+      "fixtures_with_h2h": 0,
+      "fixtures_with_ou25": 0,
+      "total_ft": 4045
+    }
+  ],
+  "per_league_season": [
+    {
+      "fd_league": "E0",
+      "fd_season": "1920",
+      "league_id": 39,
+      "api_season": 2019,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 380,
+      "matched_fuzzy": 0,
+      "unmatched": 0,
+      "inserted_h2h": 380,
+      "inserted_ou25": 380,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E0",
+      "fd_season": "2021",
+      "league_id": 39,
+      "api_season": 2020,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 380,
+      "matched_fuzzy": 0,
+      "unmatched": 0,
+      "inserted_h2h": 380,
+      "inserted_ou25": 380,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E0",
+      "fd_season": "2122",
+      "league_id": 39,
+      "api_season": 2021,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 380,
+      "matched_fuzzy": 0,
+      "unmatched": 0,
+      "inserted_h2h": 380,
+      "inserted_ou25": 380,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E0",
+      "fd_season": "2223",
+      "league_id": 39,
+      "api_season": 2022,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 342,
+      "matched_fuzzy": 38,
+      "unmatched": 0,
+      "inserted_h2h": 380,
+      "inserted_ou25": 380,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E0",
+      "fd_season": "2324",
+      "league_id": 39,
+      "api_season": 2023,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 342,
+      "matched_fuzzy": 38,
+      "unmatched": 0,
+      "inserted_h2h": 380,
+      "inserted_ou25": 380,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E1",
+      "fd_season": "1920",
+      "league_id": 40,
+      "api_season": 2019,
+      "status": "ok",
+      "rows": 552,
+      "matched_exact": 506,
+      "matched_fuzzy": 46,
+      "unmatched": 0,
+      "inserted_h2h": 552,
+      "inserted_ou25": 552,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E1",
+      "fd_season": "2021",
+      "league_id": 40,
+      "api_season": 2020,
+      "status": "ok",
+      "rows": 552,
+      "matched_exact": 506,
+      "matched_fuzzy": 46,
+      "unmatched": 0,
+      "inserted_h2h": 552,
+      "inserted_ou25": 552,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E1",
+      "fd_season": "2122",
+      "league_id": 40,
+      "api_season": 2021,
+      "status": "ok",
+      "rows": 552,
+      "matched_exact": 462,
+      "matched_fuzzy": 90,
+      "unmatched": 0,
+      "inserted_h2h": 552,
+      "inserted_ou25": 552,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E1",
+      "fd_season": "2223",
+      "league_id": 40,
+      "api_season": 2022,
+      "status": "ok",
+      "rows": 552,
+      "matched_exact": 552,
+      "matched_fuzzy": 0,
+      "unmatched": 0,
+      "inserted_h2h": 552,
+      "inserted_ou25": 552,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E1",
+      "fd_season": "2324",
+      "league_id": 40,
+      "api_season": 2023,
+      "status": "ok",
+      "rows": 552,
+      "matched_exact": 552,
+      "matched_fuzzy": 0,
+      "unmatched": 0,
+      "inserted_h2h": 552,
+      "inserted_ou25": 552,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "1920",
+      "league_id": 41,
+      "api_season": 2019,
+      "status": "ok",
+      "rows": 400,
+      "matched_exact": 269,
+      "matched_fuzzy": 129,
+      "unmatched": 2,
+      "inserted_h2h": 397,
+      "inserted_ou25": 397,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2021",
+      "league_id": 41,
+      "api_season": 2020,
+      "status": "ok",
+      "rows": 552,
+      "matched_exact": 342,
+      "matched_fuzzy": 204,
+      "unmatched": 6,
+      "inserted_h2h": 545,
+      "inserted_ou25": 546,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2122",
+      "league_id": 41,
+      "api_season": 2021,
+      "status": "ok",
+      "rows": 552,
+      "matched_exact": 462,
+      "matched_fuzzy": 90,
+      "unmatched": 0,
+      "inserted_h2h": 552,
+      "inserted_ou25": 552,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2223",
+      "league_id": 41,
+      "api_season": 2022,
+      "status": "ok",
+      "rows": 552,
+      "matched_exact": 380,
+      "matched_fuzzy": 170,
+      "unmatched": 2,
+      "inserted_h2h": 550,
+      "inserted_ou25": 550,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2324",
+      "league_id": 41,
+      "api_season": 2023,
+      "status": "ok",
+      "rows": 552,
+      "matched_exact": 420,
+      "matched_fuzzy": 130,
+      "unmatched": 2,
+      "inserted_h2h": 550,
+      "inserted_ou25": 550,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E3",
+      "fd_season": "1920",
+      "league_id": 42,
+      "api_season": 2019,
+      "status": "ok",
+      "rows": 440,
+      "matched_exact": 369,
+      "matched_fuzzy": 71,
+      "unmatched": 0,
+      "inserted_h2h": 436,
+      "inserted_ou25": 436,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E3",
+      "fd_season": "2021",
+      "league_id": 42,
+      "api_season": 2020,
+      "status": "ok",
+      "rows": 552,
+      "matched_exact": 506,
+      "matched_fuzzy": 46,
+      "unmatched": 0,
+      "inserted_h2h": 552,
+      "inserted_ou25": 552,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E3",
+      "fd_season": "2122",
+      "league_id": 42,
+      "api_season": 2021,
+      "status": "ok",
+      "rows": 552,
+      "matched_exact": 380,
+      "matched_fuzzy": 172,
+      "unmatched": 0,
+      "inserted_h2h": 552,
+      "inserted_ou25": 552,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E3",
+      "fd_season": "2223",
+      "league_id": 42,
+      "api_season": 2022,
+      "status": "ok",
+      "rows": 552,
+      "matched_exact": 380,
+      "matched_fuzzy": 172,
+      "unmatched": 0,
+      "inserted_h2h": 551,
+      "inserted_ou25": 551,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "E3",
+      "fd_season": "2324",
+      "league_id": 42,
+      "api_season": 2023,
+      "status": "ok",
+      "rows": 552,
+      "matched_exact": 342,
+      "matched_fuzzy": 210,
+      "unmatched": 0,
+      "inserted_h2h": 552,
+      "inserted_ou25": 552,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "league_id": 140,
+      "api_season": 2019,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 210,
+      "matched_fuzzy": 122,
+      "unmatched": 48,
+      "inserted_h2h": 332,
+      "inserted_ou25": 332,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "2021",
+      "league_id": 140,
+      "api_season": 2020,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 240,
+      "matched_fuzzy": 96,
+      "unmatched": 44,
+      "inserted_h2h": 336,
+      "inserted_ou25": 336,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "2122",
+      "league_id": 140,
+      "api_season": 2021,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 182,
+      "matched_fuzzy": 146,
+      "unmatched": 52,
+      "inserted_h2h": 328,
+      "inserted_ou25": 328,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "2223",
+      "league_id": 140,
+      "api_season": 2022,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 182,
+      "matched_fuzzy": 146,
+      "unmatched": 52,
+      "inserted_h2h": 328,
+      "inserted_ou25": 328,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "2324",
+      "league_id": 140,
+      "api_season": 2023,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 210,
+      "matched_fuzzy": 122,
+      "unmatched": 48,
+      "inserted_h2h": 332,
+      "inserted_ou25": 332,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "SP2",
+      "fd_season": "1920",
+      "league_id": 141,
+      "api_season": 2019,
+      "status": "ok",
+      "rows": 462,
+      "matched_exact": 272,
+      "matched_fuzzy": 184,
+      "unmatched": 6,
+      "inserted_h2h": 456,
+      "inserted_ou25": 456,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "SP2",
+      "fd_season": "2021",
+      "league_id": 141,
+      "api_season": 2020,
+      "status": "ok",
+      "rows": 462,
+      "matched_exact": 240,
+      "matched_fuzzy": 216,
+      "unmatched": 6,
+      "inserted_h2h": 456,
+      "inserted_ou25": 456,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "SP2",
+      "fd_season": "2122",
+      "league_id": 141,
+      "api_season": 2021,
+      "status": "ok",
+      "rows": 462,
+      "matched_exact": 342,
+      "matched_fuzzy": 118,
+      "unmatched": 2,
+      "inserted_h2h": 460,
+      "inserted_ou25": 460,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "SP2",
+      "fd_season": "2223",
+      "league_id": 141,
+      "api_season": 2022,
+      "status": "ok",
+      "rows": 462,
+      "matched_exact": 272,
+      "matched_fuzzy": 190,
+      "unmatched": 0,
+      "inserted_h2h": 462,
+      "inserted_ou25": 462,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "SP2",
+      "fd_season": "2324",
+      "league_id": 141,
+      "api_season": 2023,
+      "status": "ok",
+      "rows": 462,
+      "matched_exact": 210,
+      "matched_fuzzy": 246,
+      "unmatched": 6,
+      "inserted_h2h": 456,
+      "inserted_ou25": 456,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "I1",
+      "fd_season": "1920",
+      "league_id": 135,
+      "api_season": 2019,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 342,
+      "matched_fuzzy": 38,
+      "unmatched": 0,
+      "inserted_h2h": 380,
+      "inserted_ou25": 380,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "I1",
+      "fd_season": "2021",
+      "league_id": 135,
+      "api_season": 2020,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 342,
+      "matched_fuzzy": 38,
+      "unmatched": 0,
+      "inserted_h2h": 380,
+      "inserted_ou25": 379,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "I1",
+      "fd_season": "2122",
+      "league_id": 135,
+      "api_season": 2021,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 342,
+      "matched_fuzzy": 38,
+      "unmatched": 0,
+      "inserted_h2h": 379,
+      "inserted_ou25": 379,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "I1",
+      "fd_season": "2223",
+      "league_id": 135,
+      "api_season": 2022,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 342,
+      "matched_fuzzy": 38,
+      "unmatched": 0,
+      "inserted_h2h": 380,
+      "inserted_ou25": 380,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "I1",
+      "fd_season": "2324",
+      "league_id": 135,
+      "api_season": 2023,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 342,
+      "matched_fuzzy": 38,
+      "unmatched": 0,
+      "inserted_h2h": 380,
+      "inserted_ou25": 380,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "I2",
+      "fd_season": "1920",
+      "league_id": 136,
+      "api_season": 2019,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 342,
+      "matched_fuzzy": 38,
+      "unmatched": 0,
+      "inserted_h2h": 374,
+      "inserted_ou25": 374,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "I2",
+      "fd_season": "2021",
+      "league_id": 136,
+      "api_season": 2020,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 305,
+      "matched_fuzzy": 72,
+      "unmatched": 3,
+      "inserted_h2h": 375,
+      "inserted_ou25": 375,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "I2",
+      "fd_season": "2122",
+      "league_id": 136,
+      "api_season": 2021,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 306,
+      "matched_fuzzy": 72,
+      "unmatched": 2,
+      "inserted_h2h": 378,
+      "inserted_ou25": 378,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "I2",
+      "fd_season": "2223",
+      "league_id": 136,
+      "api_season": 2022,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 342,
+      "matched_fuzzy": 38,
+      "unmatched": 0,
+      "inserted_h2h": 380,
+      "inserted_ou25": 380,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "I2",
+      "fd_season": "2324",
+      "league_id": 136,
+      "api_season": 2023,
+      "status": "ok",
+      "rows": 380,
+      "matched_exact": 342,
+      "matched_fuzzy": 38,
+      "unmatched": 0,
+      "inserted_h2h": 379,
+      "inserted_ou25": 379,
+      "already_existed": 0
+    },
+    {
+      "fd_league": "D3",
+      "fd_season": "1920",
+      "league_id": 80,
+      "api_season": 2019,
+      "status": "download_failed",
+      "rows": 0
+    },
+    {
+      "fd_league": "D3",
+      "fd_season": "2021",
+      "league_id": 80,
+      "api_season": 2020,
+      "status": "download_failed",
+      "rows": 0
+    },
+    {
+      "fd_league": "D3",
+      "fd_season": "2122",
+      "league_id": 80,
+      "api_season": 2021,
+      "status": "download_failed",
+      "rows": 0
+    },
+    {
+      "fd_league": "D3",
+      "fd_season": "2223",
+      "league_id": 80,
+      "api_season": 2022,
+      "status": "download_failed",
+      "rows": 0
+    },
+    {
+      "fd_league": "D3",
+      "fd_season": "2324",
+      "league_id": 80,
+      "api_season": 2023,
+      "status": "download_failed",
+      "rows": 0
+    }
+  ],
+  "ambiguous_sample": [
+    {
+      "fd_league": "E2",
+      "fd_season": "1920",
+      "date": "2019-11-23",
+      "home": "Peterboro",
+      "away": "Burton",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "1920",
+      "date": "2020-02-29",
+      "home": "Burton",
+      "away": "Peterboro",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2021",
+      "date": "2020-09-26",
+      "home": "Swindon",
+      "away": "Burton",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2021",
+      "date": "2020-10-03",
+      "home": "Peterboro",
+      "away": "Swindon",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2021",
+      "date": "2020-10-27",
+      "home": "Peterboro",
+      "away": "Burton",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2021",
+      "date": "2021-03-06",
+      "home": "Burton",
+      "away": "Peterboro",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2021",
+      "date": "2021-04-05",
+      "home": "Burton",
+      "away": "Swindon",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2021",
+      "date": "2021-04-10",
+      "home": "Swindon",
+      "away": "Peterboro",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2223",
+      "date": "2022-10-08",
+      "home": "Peterboro",
+      "away": "Burton",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2223",
+      "date": "2023-03-14",
+      "home": "Burton",
+      "away": "Peterboro",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2324",
+      "date": "2023-11-25",
+      "home": "Peterboro",
+      "away": "Burton",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "E2",
+      "fd_season": "2324",
+      "date": "2024-03-09",
+      "home": "Burton",
+      "away": "Peterboro",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-08-16",
+      "home": "Ath Bilbao",
+      "away": "Barcelona",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-08-24",
+      "home": "Getafe",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-08-30",
+      "home": "Ath Bilbao",
+      "away": "Sociedad",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-09-13",
+      "home": "Mallorca",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-09-14",
+      "home": "Sociedad",
+      "away": "Ath Madrid",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-09-21",
+      "home": "Ath Madrid",
+      "away": "Celta",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-09-22",
+      "home": "Ath Bilbao",
+      "away": "Alaves",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-09-25",
+      "home": "Leganes",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-09-26",
+      "home": "Celta",
+      "away": "Espanol",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-09-28",
+      "home": "Ath Bilbao",
+      "away": "Valencia",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-10-06",
+      "home": "Celta",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-10-20",
+      "home": "Ath Bilbao",
+      "away": "Valladolid",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-10-26",
+      "home": "Ath Madrid",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-10-27",
+      "home": "Celta",
+      "away": "Sociedad",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-10-30",
+      "home": "Ath Bilbao",
+      "away": "Espanol",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-11-03",
+      "home": "Villarreal",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-11-10",
+      "home": "Ath Bilbao",
+      "away": "Levante",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-11-10",
+      "home": "Ath Madrid",
+      "away": "Espanol",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-11-24",
+      "home": "Osasuna",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-12-01",
+      "home": "Ath Bilbao",
+      "away": "Granada",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-12-08",
+      "home": "Betis",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-12-14",
+      "home": "Ath Bilbao",
+      "away": "Eibar",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2019-12-22",
+      "home": "Real Madrid",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-01-03",
+      "home": "Sevilla",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-01-19",
+      "home": "Ath Bilbao",
+      "away": "Celta",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-01-25",
+      "home": "Espanol",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-02-02",
+      "home": "Ath Bilbao",
+      "away": "Getafe",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-02-09",
+      "home": "Sociedad",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-02-16",
+      "home": "Ath Bilbao",
+      "away": "Osasuna",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-02-23",
+      "home": "Alaves",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-03-01",
+      "home": "Ath Bilbao",
+      "away": "Villarreal",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-03-01",
+      "home": "Espanol",
+      "away": "Ath Madrid",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-03-08",
+      "home": "Valladolid",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-06-14",
+      "home": "Ath Bilbao",
+      "away": "Ath Madrid",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-06-17",
+      "home": "Eibar",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-06-20",
+      "home": "Ath Bilbao",
+      "away": "Betis",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-06-23",
+      "home": "Barcelona",
+      "away": "Ath Bilbao",
+      "reason": "no_match"
+    },
+    {
+      "fd_league": "SP1",
+      "fd_season": "1920",
+      "date": "2020-06-24",
+      "home": "Sociedad",
+      "away": "Celta",
+      "reason": "no_match"
+    }
+  ]
+}

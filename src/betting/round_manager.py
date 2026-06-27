@@ -118,7 +118,10 @@ def archive_and_create_new_round(session, reason: str = "manual_reset") -> Bankr
         active.total_wins = sum(1 for b in settled if b.won)
         active.total_staked = sum(b.stake for b in settled)
         active.total_pnl = sum(b.pnl or 0 for b in settled)
-        active.roi_pct = (active.total_pnl / active.total_staked * 100) if active.total_staked > 0 else 0
+        # Return on bankroll (matches BettingState.roi and the history-table display),
+        # not pnl/turnover "yield" — the latter reads as a wildly different number for
+        # the same round once capital gets recycled across many bets.
+        active.roi_pct = (active.total_pnl / active.initial_bankroll * 100) if active.initial_bankroll > 0 else 0
         active.reason = reason
 
     last_round = session.execute(
@@ -178,7 +181,8 @@ def close_round_if_full(session) -> BankrollRound | None:
     active.total_staked = sum(b.stake for b in all_bets)
     active.total_pnl = sum(b.pnl or 0 for b in settled)
     active.ending_balance = active.initial_bankroll + active.total_pnl
-    active.roi_pct = (active.total_pnl / active.total_staked * 100) if active.total_staked > 0 else 0
+    # Return on bankroll — see comment in reset_round/archive above.
+    active.roi_pct = (active.total_pnl / active.initial_bankroll * 100) if active.initial_bankroll > 0 else 0
     active.reason = 'auto_20_bets'
 
     new_round = BankrollRound(
@@ -223,7 +227,8 @@ def update_closed_round_stats(session) -> int:
         total_wins = sum(1 for b in settled if b.won)
         total_staked = sum(b.stake for b in all_bets)
         ending_balance = rnd.initial_bankroll + total_pnl
-        roi_pct = (total_pnl / total_staked * 100) if total_staked > 0 else 0
+        # Return on bankroll — see comment in reset_round/archive above.
+        roi_pct = (total_pnl / rnd.initial_bankroll * 100) if rnd.initial_bankroll > 0 else 0
 
         if (rnd.total_wins != total_wins
                 or abs((rnd.total_pnl or 0) - total_pnl) > 0.001

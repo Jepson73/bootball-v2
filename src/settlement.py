@@ -484,11 +484,12 @@ def _fix_stuck_fixtures() -> int:
                 logger.info(f"Fixture {fix.id} already finished: {fix.goals_home}-{fix.goals_away} ({fix.status})")
                 updated += 1
 
-        # Force-fetch 1H/2H fixtures > 3 hours old
+        # Force-fetch 1H/2H/P fixtures > 3 hours old
+        # 'P' = Penalty In Progress — should have reached PEN within minutes; stale means missed update
         stale_with_scores = s.execute(
             select(Fixture).where(
                 Fixture.date < cutoff,
-                Fixture.status.in_(["1H", "2H", "HT"]),
+                Fixture.status.in_(["1H", "2H", "HT", "P"]),
             )
         ).scalars().all()
 

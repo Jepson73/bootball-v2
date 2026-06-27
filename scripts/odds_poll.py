@@ -313,6 +313,95 @@ def recalculate_prediction_ev(s, fixture_ids, dry_run=False):
     return updated
 
 
+_CLV_FIELD_MAP = {
+    "h2h": {"1": "odd_home", "X": "odd_draw", "2": "odd_away"},
+    "btts": {"Yes": "odd_btts_yes", "No": "odd_btts_no"},
+    "ou25": {"Over": "odd_over", "Under": "odd_under"},
+    "ou15": {"Over": "odd_over15", "Under": "odd_under15"},
+}
+
+
+def capture_closing_lines(s, fixture_ids=None, dry_run=False):
+    """Snapshot closing odds for open placed bets near kickoff — Closing Line Value.
+
+    CLV compares the price you bet at to the price the market settles on just
+    before kickoff: a same-day signal of whether a claimed "edge" was real
+    foresight (the market moved toward your side after you bet — positive CLV)
+    or model error (the market moved away — negative CLV), instead of waiting
+    weeks for the match to settle and the bet to grade.
+
+    Convention (odds-ratio, the standard "beat the close" measure):
+        clv_pct = (your_odds - closing_odds) / closing_odds
+    Positive  → you got longer odds than the closing line (beat the close — good).
+    Negative  → the market shortened away from your price (bad).
+
+    Only fires for fixtures that are within NEAR_KICKOFF_HOURS of kickoff and
+    haven't started yet ('NS') — any later and "closing" odds aren't truly
+    closing; any earlier and the line can still move a lot before kickoff.
+    """
+    now = datetime.utcnow()
+    near_cutoff = now + timedelta(hours=NEAR_KICKOFF_HOURS)
+
+    query = (
+        select(PlacedBet, Fixture)
+        .join(Fixture, Fixture.id == PlacedBet.fixture_id)
+        .where(
+            PlacedBet.settled == False,
+            PlacedBet.closing_odds.is_(None),
+            Fixture.status == 'NS',
+            Fixture.date >= now,
+            Fixture.date <= near_cutoff,
+        )
+    )
+    if fixture_ids:
+        query = query.where(PlacedBet.fixture_id.in_(fixture_ids))
+
+    rows = s.execute(query).all()
+    if not rows:
+        return 0
+
+    captured = 0
+    for bet, fixture in rows:
+        bet_type = MARKET_BET_TYPE_MAP.get(bet.market, bet.market)
+        odds_row = s.execute(
+            select(FixtureOdds).where(
+                FixtureOdds.fixture_id == bet.fixture_id,
+                FixtureOdds.bet_type == bet_type,
+            )
+        ).scalars().first()
+        if not odds_row:
+            continue
+
+        odd_field = _CLV_FIELD_MAP.get(bet.market, {}).get(bet.outcome)
+        if not odd_field:
+            continue
+
+        closing_odds = getattr(odds_row, odd_field, None)
+        if not closing_odds or closing_odds < 1.01:
+            continue
+
+        clv_pct = (bet.odds - closing_odds) / closing_odds
+
+        if dry_run:
+            logger.info(
+                f"  [DRY RUN] Would capture CLV for bet {bet.id} "
+                f"({bet.market}/{bet.outcome}): your_odds={bet.odds:.2f} "
+                f"closing_odds={closing_odds:.2f} clv_pct={clv_pct:+.3f}"
+            )
+            continue
+
+        bet.closing_odds = closing_odds
+        bet.closing_implied_prob = 1.0 / closing_odds
+        bet.clv_pct = clv_pct
+        captured += 1
+
+    if captured and not dry_run:
+        s.commit()
+        logger.info(f"[CLV] Captured closing lines for {captured} bet(s)")
+
+    return captured
+
+
 MARKET_BET_TYPE_MAP = {
         "h2h": "h2h",
         "btts": "btts",
@@ -457,6 +546,10 @@ def main():
 
         recalculated = recalculate_prediction_ev(s, fixture_ids, args.dry_run)
         logger.info(f"Recalculated EV for {recalculated} predictions")
+
+        clv_captured = capture_closing_lines(s, fixture_ids, args.dry_run)
+        if clv_captured:
+            logger.info(f"Captured CLV for {clv_captured} placed bet(s)")
 
         if not args.dry_run and updated_odds > 0:
             new_value_bets = find_new_value_bets(s, fixture_ids, min_ev=0.05, min_odds=1.2)

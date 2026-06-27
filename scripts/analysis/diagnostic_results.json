@@ -1,0 +1,3669 @@
+{
+  "windows": [
+    {
+      "window": "2022",
+      "9feat": {
+        "h2h": {
+          "raw_metrics_default": {
+            "auc": 0.5840587413266395,
+            "log_loss": 1.1653847747668533,
+            "brier": 0.23096993097289717,
+            "n": 3540
+          },
+          "ev_default": {
+            "label": "2022/9feat/h2h/default",
+            "n_bets": 1281,
+            "roi": -0.02905542544886806,
+            "ci_lo": -0.13048438719750194,
+            "ci_hi": 0.08127459016393433,
+            "win_rate": 0.2544886807181889,
+            "avg_odds": 4.964363778298205,
+            "avg_ev": 0.16321859031710562
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2022/9feat/h2h/warm_ge5",
+              "n_bets": 1275,
+              "roi": -0.029482352941176463,
+              "ci_lo": -0.13054941176470586,
+              "ci_hi": 0.0774490196078431,
+              "win_rate": 0.2541176470588235,
+              "avg_odds": 4.968101960784313,
+              "avg_ev": 0.16314607065122153
+            },
+            "cold_lt5": {
+              "label": "2022/9feat/h2h/cold_lt5",
+              "n_bets": 6,
+              "roi": 0.06166666666666668,
+              "ci_lo": -1.0,
+              "ci_hi": 1.5,
+              "win_rate": 0.3333333333333333,
+              "avg_odds": 4.17,
+              "avg_ev": 0.17862901931747677
+            },
+            "warm_ge10": {
+              "label": "2022/9feat/h2h/warm_ge10",
+              "n_bets": 1263,
+              "roi": -0.03554235946159936,
+              "ci_lo": -0.14025118764845604,
+              "ci_hi": 0.06864924782264448,
+              "win_rate": 0.25257323832145684,
+              "avg_odds": 4.978685669041964,
+              "avg_ev": 0.16337277114572385
+            },
+            "cold_lt10": {
+              "label": "2022/9feat/h2h/cold_lt10",
+              "n_bets": 18,
+              "roi": 0.4261111111111111,
+              "ci_lo": -0.4,
+              "ci_hi": 1.2874999999999983,
+              "win_rate": 0.3888888888888889,
+              "avg_odds": 3.959444444444445,
+              "avg_ev": 0.1524002355090587
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "btts": {
+          "raw_metrics_default": {
+            "auc": 0.48756384363000627,
+            "log_loss": 0.7613055327095318,
+            "brier": 0.27948960558302127,
+            "n": 3540
+          },
+          "ev_default": {
+            "label": "2022/9feat/btts/default",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2022/9feat/btts/warm_ge5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt5": {
+              "label": "2022/9feat/btts/cold_lt5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "warm_ge10": {
+              "label": "2022/9feat/btts/warm_ge10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt10": {
+              "label": "2022/9feat/btts/cold_lt10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "ou25": {
+          "raw_metrics_default": {
+            "auc": 0.4962718618196425,
+            "log_loss": 0.8104737562246224,
+            "brier": 0.2949112395862918,
+            "n": 3540
+          },
+          "ev_default": {
+            "label": "2022/9feat/ou25/default",
+            "n_bets": 64,
+            "roi": -0.030468750000000017,
+            "ci_lo": -0.33772265625,
+            "ci_hi": 0.2742421874999999,
+            "win_rate": 0.390625,
+            "avg_odds": 2.52453125,
+            "avg_ev": 0.07818923862324179
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2022/9feat/ou25/warm_ge5",
+              "n_bets": 63,
+              "roi": -0.01507936507936506,
+              "ci_lo": -0.3186150793650794,
+              "ci_hi": 0.3090952380952378,
+              "win_rate": 0.3968253968253968,
+              "avg_odds": 2.5249206349206346,
+              "avg_ev": 0.07857686503859637
+            },
+            "cold_lt5": {
+              "label": "2022/9feat/ou25/cold_lt5",
+              "n_bets": 1,
+              "roi": -1.0,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": 0.0,
+              "avg_odds": 2.5,
+              "avg_ev": 0.05376877445590256
+            },
+            "warm_ge10": {
+              "label": "2022/9feat/ou25/warm_ge10",
+              "n_bets": 63,
+              "roi": -0.01507936507936506,
+              "ci_lo": -0.3186150793650794,
+              "ci_hi": 0.3090952380952378,
+              "win_rate": 0.3968253968253968,
+              "avg_odds": 2.5249206349206346,
+              "avg_ev": 0.07857686503859637
+            },
+            "cold_lt10": {
+              "label": "2022/9feat/ou25/cold_lt10",
+              "n_bets": 1,
+              "roi": -1.0,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": 0.0,
+              "avg_odds": 2.5,
+              "avg_ev": 0.05376877445590256
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "ou15": {
+          "raw_metrics_default": {
+            "auc": 0.5092464398734178,
+            "log_loss": 0.661939476602515,
+            "brier": 0.22912816977598577,
+            "n": 3540
+          },
+          "ev_default": {
+            "label": "2022/9feat/ou15/default",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2022/9feat/ou15/warm_ge5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt5": {
+              "label": "2022/9feat/ou15/cold_lt5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "warm_ge10": {
+              "label": "2022/9feat/ou15/warm_ge10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt10": {
+              "label": "2022/9feat/ou15/cold_lt10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        }
+      },
+      "29feat_n5": {
+        "h2h": {
+          "raw_metrics_default": {
+            "auc": 0.5841802533292109,
+            "log_loss": 1.11319057269059,
+            "brier": 0.22187266650813675,
+            "n": 3540
+          },
+          "ev_default": {
+            "label": "2022/29feat_n5/h2h/default",
+            "n_bets": 1590,
+            "roi": -0.06828930817610063,
+            "ci_lo": -0.1458006289308176,
+            "ci_hi": 0.0128199685534591,
+            "win_rate": 0.28238993710691823,
+            "avg_odds": 4.17525786163522,
+            "avg_ev": 0.14721068313651692
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2022/29feat_n5/h2h/warm_ge5",
+              "n_bets": 1581,
+              "roi": -0.0726438962681847,
+              "ci_lo": -0.15740907653383934,
+              "ci_hi": 0.011951929158760153,
+              "win_rate": 0.2814674256799494,
+              "avg_odds": 4.174535104364326,
+              "avg_ev": 0.14712583358119025
+            },
+            "cold_lt5": {
+              "label": "2022/29feat_n5/h2h/cold_lt5",
+              "n_bets": 9,
+              "roi": 0.6966666666666668,
+              "ci_lo": -0.6777777777777777,
+              "ci_hi": 2.155805555555554,
+              "win_rate": 0.4444444444444444,
+              "avg_odds": 4.302222222222222,
+              "avg_ev": 0.16211592168890415
+            },
+            "warm_ge10": {
+              "label": "2022/29feat_n5/h2h/warm_ge10",
+              "n_bets": 1573,
+              "roi": -0.07676414494596313,
+              "ci_lo": -0.15633343928798477,
+              "ci_hi": 0.004333121424030472,
+              "win_rate": 0.2803560076287349,
+              "avg_odds": 4.17745708836618,
+              "avg_ev": 0.14700976951152714
+            },
+            "cold_lt10": {
+              "label": "2022/29feat_n5/h2h/cold_lt10",
+              "n_bets": 17,
+              "roi": 0.7158823529411765,
+              "ci_lo": -0.19205882352941173,
+              "ci_hi": 1.7101029411764699,
+              "win_rate": 0.47058823529411764,
+              "avg_odds": 3.9717647058823538,
+              "avg_ev": 0.16580110267233786
+            }
+          },
+          "v1_blend": {
+            "H": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            },
+            "D": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            },
+            "A": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            }
+          },
+          "v2_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300,
+              "log_loss": 1.044331223774867
+            },
+            "scores": {
+              "nl31_ne300": {
+                "num_leaves": 31,
+                "n_estimators": 300,
+                "log_loss": 1.044331223774867
+              },
+              "nl63_ne300": {
+                "num_leaves": 63,
+                "n_estimators": 300,
+                "log_loss": 1.05724101181051
+              },
+              "nl127_ne300": {
+                "num_leaves": 127,
+                "n_estimators": 300,
+                "log_loss": 1.0750936918820153
+              },
+              "nl31_ne500": {
+                "num_leaves": 31,
+                "n_estimators": 500,
+                "log_loss": 1.0561733963247784
+              },
+              "nl63_ne500": {
+                "num_leaves": 63,
+                "n_estimators": 500,
+                "log_loss": 1.0768780501837245
+              },
+              "nl127_ne500": {
+                "num_leaves": 127,
+                "n_estimators": 500,
+                "log_loss": 1.1099559410501831
+              }
+            }
+          },
+          "ev_opt_blend": {
+            "H": {
+              "best_weight": 0.35,
+              "label": "2022/29feat_n5/h2h/opt_blend_H",
+              "n_bets": 1590,
+              "roi": -0.06828930817610063,
+              "ci_lo": -0.1458006289308176,
+              "ci_hi": 0.0128199685534591,
+              "win_rate": 0.28238993710691823,
+              "avg_odds": 4.17525786163522,
+              "avg_ev": 0.14721068313651692
+            },
+            "D": {
+              "best_weight": 0.35,
+              "label": "2022/29feat_n5/h2h/opt_blend_D",
+              "n_bets": 1590,
+              "roi": -0.06828930817610063,
+              "ci_lo": -0.1458006289308176,
+              "ci_hi": 0.0128199685534591,
+              "win_rate": 0.28238993710691823,
+              "avg_odds": 4.17525786163522,
+              "avg_ev": 0.14721068313651692
+            },
+            "A": {
+              "best_weight": 0.35,
+              "label": "2022/29feat_n5/h2h/opt_blend_A",
+              "n_bets": 1590,
+              "roi": -0.06828930817610063,
+              "ci_lo": -0.1458006289308176,
+              "ci_hi": 0.0128199685534591,
+              "win_rate": 0.28238993710691823,
+              "avg_odds": 4.17525786163522,
+              "avg_ev": 0.14721068313651692
+            }
+          },
+          "ev_tuned_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300
+            },
+            "note": "best HP same as default; no refit",
+            "label": "2022/29feat_n5/h2h/tuned_hp_same",
+            "n_bets": 1590,
+            "roi": -0.06828930817610063,
+            "ci_lo": -0.1458006289308176,
+            "ci_hi": 0.0128199685534591,
+            "win_rate": 0.28238993710691823,
+            "avg_odds": 4.17525786163522,
+            "avg_ev": 0.14721068313651692
+          }
+        },
+        "btts": {
+          "raw_metrics_default": {
+            "auc": 0.5120390845154749,
+            "log_loss": 0.7338386223634821,
+            "brier": 0.2678158589968467,
+            "n": 3540
+          },
+          "ev_default": {
+            "label": "2022/29feat_n5/btts/default",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2022/29feat_n5/btts/warm_ge5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt5": {
+              "label": "2022/29feat_n5/btts/cold_lt5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "warm_ge10": {
+              "label": "2022/29feat_n5/btts/warm_ge10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt10": {
+              "label": "2022/29feat_n5/btts/cold_lt10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "v1_blend": {
+            "yes": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            }
+          },
+          "v2_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300,
+              "log_loss": 0.6975901444429992
+            },
+            "scores": {
+              "nl31_ne300": {
+                "num_leaves": 31,
+                "n_estimators": 300,
+                "log_loss": 0.6975901444429992
+              },
+              "nl63_ne300": {
+                "num_leaves": 63,
+                "n_estimators": 300,
+                "log_loss": 0.7017319987988976
+              },
+              "nl127_ne300": {
+                "num_leaves": 127,
+                "n_estimators": 300,
+                "log_loss": 0.712654205937395
+              },
+              "nl31_ne500": {
+                "num_leaves": 31,
+                "n_estimators": 500,
+                "log_loss": 0.7039857763055652
+              },
+              "nl63_ne500": {
+                "num_leaves": 63,
+                "n_estimators": 500,
+                "log_loss": 0.7106883586070472
+              },
+              "nl127_ne500": {
+                "num_leaves": 127,
+                "n_estimators": 500,
+                "log_loss": 0.7256749487913673
+              }
+            }
+          },
+          "ev_opt_blend": {
+            "yes": {
+              "best_weight": 0.35,
+              "label": "2022/29feat_n5/btts/opt_blend_yes",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "ev_tuned_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300
+            },
+            "note": "best HP same as default; no refit",
+            "label": "2022/29feat_n5/btts/tuned_hp_same",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          }
+        },
+        "ou25": {
+          "raw_metrics_default": {
+            "auc": 0.5095648122112875,
+            "log_loss": 0.7625852729263425,
+            "brier": 0.27776989823378306,
+            "n": 3540
+          },
+          "ev_default": {
+            "label": "2022/29feat_n5/ou25/default",
+            "n_bets": 55,
+            "roi": -0.18527272727272728,
+            "ci_lo": -0.4681954545454545,
+            "ci_hi": 0.12074999999999989,
+            "win_rate": 0.34545454545454546,
+            "avg_odds": 2.3721818181818177,
+            "avg_ev": 0.08039637459979135
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2022/29feat_n5/ou25/warm_ge5",
+              "n_bets": 54,
+              "roi": -0.20851851851851855,
+              "ci_lo": -0.4863981481481482,
+              "ci_hi": 0.1011527777777775,
+              "win_rate": 0.3333333333333333,
+              "avg_odds": 2.3777777777777773,
+              "avg_ev": 0.08082399181921139
+            },
+            "cold_lt5": {
+              "label": "2022/29feat_n5/ou25/cold_lt5",
+              "n_bets": 1,
+              "roi": 1.0699999999999998,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": 1.0,
+              "avg_odds": 2.07,
+              "avg_ev": 0.05730504475110987
+            },
+            "warm_ge10": {
+              "label": "2022/29feat_n5/ou25/warm_ge10",
+              "n_bets": 54,
+              "roi": -0.20851851851851855,
+              "ci_lo": -0.4863981481481482,
+              "ci_hi": 0.1011527777777775,
+              "win_rate": 0.3333333333333333,
+              "avg_odds": 2.3777777777777773,
+              "avg_ev": 0.08082399181921139
+            },
+            "cold_lt10": {
+              "label": "2022/29feat_n5/ou25/cold_lt10",
+              "n_bets": 1,
+              "roi": 1.0699999999999998,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": 1.0,
+              "avg_odds": 2.07,
+              "avg_ev": 0.05730504475110987
+            }
+          },
+          "v1_blend": {
+            "over": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            }
+          },
+          "v2_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300,
+              "log_loss": 0.6930863113083526
+            },
+            "scores": {
+              "nl31_ne300": {
+                "num_leaves": 31,
+                "n_estimators": 300,
+                "log_loss": 0.6930863113083526
+              },
+              "nl63_ne300": {
+                "num_leaves": 63,
+                "n_estimators": 300,
+                "log_loss": 0.697436123880984
+              },
+              "nl127_ne300": {
+                "num_leaves": 127,
+                "n_estimators": 300,
+                "log_loss": 0.7085187203971266
+              },
+              "nl31_ne500": {
+                "num_leaves": 31,
+                "n_estimators": 500,
+                "log_loss": 0.6992253032578726
+              },
+              "nl63_ne500": {
+                "num_leaves": 63,
+                "n_estimators": 500,
+                "log_loss": 0.7091153706244815
+              },
+              "nl127_ne500": {
+                "num_leaves": 127,
+                "n_estimators": 500,
+                "log_loss": 0.7255638364171136
+              }
+            }
+          },
+          "ev_opt_blend": {
+            "over": {
+              "best_weight": 0.35,
+              "label": "2022/29feat_n5/ou25/opt_blend_over",
+              "n_bets": 55,
+              "roi": -0.18527272727272728,
+              "ci_lo": -0.4681954545454545,
+              "ci_hi": 0.12074999999999989,
+              "win_rate": 0.34545454545454546,
+              "avg_odds": 2.3721818181818177,
+              "avg_ev": 0.08039637459979135
+            }
+          },
+          "ev_tuned_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300
+            },
+            "note": "best HP same as default; no refit",
+            "label": "2022/29feat_n5/ou25/tuned_hp_same",
+            "n_bets": 55,
+            "roi": -0.18527272727272728,
+            "ci_lo": -0.4681954545454545,
+            "ci_hi": 0.12074999999999989,
+            "win_rate": 0.34545454545454546,
+            "avg_odds": 2.3721818181818177,
+            "avg_ev": 0.08039637459979135
+          }
+        },
+        "ou15": {
+          "raw_metrics_default": {
+            "auc": 0.5255963251113224,
+            "log_loss": 0.6455822973523083,
+            "brier": 0.22429830016136482,
+            "n": 3540
+          },
+          "ev_default": {
+            "label": "2022/29feat_n5/ou15/default",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2022/29feat_n5/ou15/warm_ge5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt5": {
+              "label": "2022/29feat_n5/ou15/cold_lt5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "warm_ge10": {
+              "label": "2022/29feat_n5/ou15/warm_ge10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt10": {
+              "label": "2022/29feat_n5/ou15/cold_lt10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "v1_blend": {
+            "over": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            }
+          },
+          "v2_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300,
+              "log_loss": 0.5923189595406587
+            },
+            "scores": {
+              "nl31_ne300": {
+                "num_leaves": 31,
+                "n_estimators": 300,
+                "log_loss": 0.5923189595406587
+              },
+              "nl63_ne300": {
+                "num_leaves": 63,
+                "n_estimators": 300,
+                "log_loss": 0.5998069129539753
+              },
+              "nl127_ne300": {
+                "num_leaves": 127,
+                "n_estimators": 300,
+                "log_loss": 0.6143294920575493
+              },
+              "nl31_ne500": {
+                "num_leaves": 31,
+                "n_estimators": 500,
+                "log_loss": 0.5986563184936828
+              },
+              "nl63_ne500": {
+                "num_leaves": 63,
+                "n_estimators": 500,
+                "log_loss": 0.6131268093048318
+              },
+              "nl127_ne500": {
+                "num_leaves": 127,
+                "n_estimators": 500,
+                "log_loss": 0.6403880107512946
+              }
+            }
+          },
+          "ev_opt_blend": {
+            "over": {
+              "best_weight": 0.35,
+              "label": "2022/29feat_n5/ou15/opt_blend_over",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "ev_tuned_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300
+            },
+            "note": "best HP same as default; no refit",
+            "label": "2022/29feat_n5/ou15/tuned_hp_same",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          }
+        }
+      },
+      "29feat_n10": {
+        "h2h": {
+          "raw_metrics_default": {
+            "auc": 0.5869792016525647,
+            "log_loss": 1.105359261741557,
+            "brier": 0.2191732126059566,
+            "n": 3540
+          },
+          "ev_default": {
+            "label": "2022/29feat_n10/h2h/default",
+            "n_bets": 1519,
+            "roi": -0.10560236998025016,
+            "ci_lo": -0.18823156682027647,
+            "ci_hi": -0.019761685319289013,
+            "win_rate": 0.26003949967083606,
+            "avg_odds": 4.368940092165898,
+            "avg_ev": 0.14431578539205286
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2022/29feat_n10/h2h/warm_ge5",
+              "n_bets": 1511,
+              "roi": -0.10751819986763732,
+              "ci_lo": -0.19269606221045665,
+              "ci_hi": -0.01960158835208471,
+              "win_rate": 0.25943084050297816,
+              "avg_odds": 4.370066181336863,
+              "avg_ev": 0.14444969288872347
+            },
+            "cold_lt5": {
+              "label": "2022/29feat_n10/h2h/cold_lt5",
+              "n_bets": 8,
+              "roi": 0.25625,
+              "ci_lo": -1.0,
+              "ci_hi": 1.46875,
+              "win_rate": 0.375,
+              "avg_odds": 4.15625,
+              "avg_ev": 0.11902400695839288
+            },
+            "warm_ge10": {
+              "label": "2022/29feat_n10/h2h/warm_ge10",
+              "n_bets": 1497,
+              "roi": -0.11453573814295256,
+              "ci_lo": -0.20396376085504345,
+              "ci_hi": -0.02859068136272549,
+              "win_rate": 0.2571810287241149,
+              "avg_odds": 4.3790714762859055,
+              "avg_ev": 0.14452171285613294
+            },
+            "cold_lt10": {
+              "label": "2022/29feat_n10/h2h/cold_lt10",
+              "n_bets": 22,
+              "roi": 0.5022727272727273,
+              "ci_lo": -0.20460227272727274,
+              "ci_hi": 1.2159090909090908,
+              "win_rate": 0.45454545454545453,
+              "avg_odds": 3.679545454545455,
+              "avg_ev": 0.13030335749533029
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "btts": {
+          "raw_metrics_default": {
+            "auc": 0.5104709141274238,
+            "log_loss": 0.7324132495862985,
+            "brier": 0.2673879006111129,
+            "n": 3540
+          },
+          "ev_default": {
+            "label": "2022/29feat_n10/btts/default",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2022/29feat_n10/btts/warm_ge5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt5": {
+              "label": "2022/29feat_n10/btts/cold_lt5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "warm_ge10": {
+              "label": "2022/29feat_n10/btts/warm_ge10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt10": {
+              "label": "2022/29feat_n10/btts/cold_lt10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "ou25": {
+          "raw_metrics_default": {
+            "auc": 0.508280056236192,
+            "log_loss": 0.7721974793473378,
+            "brier": 0.2812450236361117,
+            "n": 3540
+          },
+          "ev_default": {
+            "label": "2022/29feat_n10/ou25/default",
+            "n_bets": 59,
+            "roi": -0.39881355932203394,
+            "ci_lo": -0.6525593220338983,
+            "ci_hi": -0.1276016949152544,
+            "win_rate": 0.2542372881355932,
+            "avg_odds": 2.4,
+            "avg_ev": 0.07625558718370881
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2022/29feat_n10/ou25/warm_ge5",
+              "n_bets": 59,
+              "roi": -0.39881355932203394,
+              "ci_lo": -0.6525593220338983,
+              "ci_hi": -0.1276016949152544,
+              "win_rate": 0.2542372881355932,
+              "avg_odds": 2.4,
+              "avg_ev": 0.07625558718370881
+            },
+            "cold_lt5": {
+              "label": "2022/29feat_n10/ou25/cold_lt5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "warm_ge10": {
+              "label": "2022/29feat_n10/ou25/warm_ge10",
+              "n_bets": 58,
+              "roi": -0.388448275862069,
+              "ci_lo": -0.6415732758620689,
+              "ci_hi": -0.12409913793103469,
+              "win_rate": 0.25862068965517243,
+              "avg_odds": 2.4034482758620688,
+              "avg_ev": 0.0765513221093749
+            },
+            "cold_lt10": {
+              "label": "2022/29feat_n10/ou25/cold_lt10",
+              "n_bets": 1,
+              "roi": -1.0,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": 0.0,
+              "avg_odds": 2.2,
+              "avg_ev": 0.059102961495075323
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "ou15": {
+          "raw_metrics_default": {
+            "auc": 0.5289328688647621,
+            "log_loss": 0.6477526757272719,
+            "brier": 0.22624861357251597,
+            "n": 3540
+          },
+          "ev_default": {
+            "label": "2022/29feat_n10/ou15/default",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2022/29feat_n10/ou15/warm_ge5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt5": {
+              "label": "2022/29feat_n10/ou15/cold_lt5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "warm_ge10": {
+              "label": "2022/29feat_n10/ou15/warm_ge10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt10": {
+              "label": "2022/29feat_n10/ou15/cold_lt10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        }
+      }
+    },
+    {
+      "window": "2023",
+      "9feat": {
+        "h2h": {
+          "raw_metrics_default": {
+            "auc": 0.5784298358876818,
+            "log_loss": 1.1489521753705405,
+            "brier": 0.228530086182729,
+            "n": 5456
+          },
+          "ev_default": {
+            "label": "2023/9feat/h2h/default",
+            "n_bets": 3525,
+            "roi": -0.13047092198581559,
+            "ci_lo": -0.18736560283687945,
+            "ci_hi": -0.0743317021276596,
+            "win_rate": 0.24198581560283688,
+            "avg_odds": 4.466272340425532,
+            "avg_ev": 0.22372321859452177
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2023/9feat/h2h/warm_ge5",
+              "n_bets": 3513,
+              "roi": -0.13102476515798464,
+              "ci_lo": -0.18505180757187586,
+              "ci_hi": -0.07620203529746655,
+              "win_rate": 0.24195844007970396,
+              "avg_odds": 4.466390549387987,
+              "avg_ev": 0.22381439304043868
+            },
+            "cold_lt5": {
+              "label": "2023/9feat/h2h/cold_lt5",
+              "n_bets": 12,
+              "roi": 0.031666666666666655,
+              "ci_lo": -1.0,
+              "ci_hi": 1.24,
+              "win_rate": 0.25,
+              "avg_odds": 4.4316666666666675,
+              "avg_ev": 0.1970318995523459
+            },
+            "warm_ge10": {
+              "label": "2023/9feat/h2h/warm_ge10",
+              "n_bets": 3485,
+              "roi": -0.13332568149210902,
+              "ci_lo": -0.18896233859397418,
+              "ci_hi": -0.07763486370157821,
+              "win_rate": 0.24131994261119083,
+              "avg_odds": 4.467615494978479,
+              "avg_ev": 0.22356300697259296
+            },
+            "cold_lt10": {
+              "label": "2023/9feat/h2h/cold_lt10",
+              "n_bets": 40,
+              "roi": 0.11825,
+              "ci_lo": -0.42924999999999996,
+              "ci_hi": 0.7394999999999999,
+              "win_rate": 0.3,
+              "avg_odds": 4.34925,
+              "avg_ev": 0.2376816561550676
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "btts": {
+          "raw_metrics_default": {
+            "auc": 0.5124746443483127,
+            "log_loss": 0.7526485726140485,
+            "brier": 0.2745468364824805,
+            "n": 5456
+          },
+          "ev_default": {
+            "label": "2023/9feat/btts/default",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2023/9feat/btts/warm_ge5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt5": {
+              "label": "2023/9feat/btts/cold_lt5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "warm_ge10": {
+              "label": "2023/9feat/btts/warm_ge10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt10": {
+              "label": "2023/9feat/btts/cold_lt10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "ou25": {
+          "raw_metrics_default": {
+            "auc": 0.5112826122184411,
+            "log_loss": 0.7688133636715815,
+            "brier": 0.28218998540998247,
+            "n": 5456
+          },
+          "ev_default": {
+            "label": "2023/9feat/ou25/default",
+            "n_bets": 2325,
+            "roi": -0.0982752688172043,
+            "ci_lo": -0.14636161290322583,
+            "ci_hi": -0.05348139784946238,
+            "win_rate": 0.40602150537634407,
+            "avg_odds": 2.2632344086021505,
+            "avg_ev": 0.1092595860259694
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2023/9feat/ou25/warm_ge5",
+              "n_bets": 2318,
+              "roi": -0.09757981018119068,
+              "ci_lo": -0.14310763589301123,
+              "ci_hi": -0.05045362381363255,
+              "win_rate": 0.40638481449525454,
+              "avg_odds": 2.262584124245039,
+              "avg_ev": 0.1092691429565941
+            },
+            "cold_lt5": {
+              "label": "2023/9feat/ou25/cold_lt5",
+              "n_bets": 7,
+              "roi": -0.32857142857142857,
+              "ci_lo": -1.0,
+              "ci_hi": 0.6785714285714286,
+              "win_rate": 0.2857142857142857,
+              "avg_odds": 2.4785714285714286,
+              "avg_ev": 0.10609487671338995
+            },
+            "warm_ge10": {
+              "label": "2023/9feat/ou25/warm_ge10",
+              "n_bets": 2310,
+              "roi": -0.09962770562770563,
+              "ci_lo": -0.14279956709956712,
+              "ci_hi": -0.0527224025974026,
+              "win_rate": 0.4056277056277056,
+              "avg_odds": 2.261978354978355,
+              "avg_ev": 0.10931857772374542
+            },
+            "cold_lt10": {
+              "label": "2023/9feat/ou25/cold_lt10",
+              "n_bets": 15,
+              "roi": 0.11000000000000006,
+              "ci_lo": -0.5233333333333333,
+              "ci_hi": 0.6866666666666666,
+              "win_rate": 0.4666666666666667,
+              "avg_odds": 2.4566666666666674,
+              "avg_ev": 0.10017486456846104
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "ou15": {
+          "raw_metrics_default": {
+            "auc": 0.4989281714541561,
+            "log_loss": 0.7509150131528443,
+            "brier": 0.22929248255566656,
+            "n": 5456
+          },
+          "ev_default": {
+            "label": "2023/9feat/ou15/default",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2023/9feat/ou15/warm_ge5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt5": {
+              "label": "2023/9feat/ou15/cold_lt5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "warm_ge10": {
+              "label": "2023/9feat/ou15/warm_ge10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt10": {
+              "label": "2023/9feat/ou15/cold_lt10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        }
+      },
+      "29feat_n5": {
+        "h2h": {
+          "raw_metrics_default": {
+            "auc": 0.5889763861207741,
+            "log_loss": 1.1069808864811712,
+            "brier": 0.22141212697479365,
+            "n": 5456
+          },
+          "ev_default": {
+            "label": "2023/29feat_n5/h2h/default",
+            "n_bets": 3121,
+            "roi": -0.09612624158923422,
+            "ci_lo": -0.1539723646267222,
+            "ci_hi": -0.039336030118551774,
+            "win_rate": 0.2601730214674784,
+            "avg_odds": 4.249301505927587,
+            "avg_ev": 0.18052113361772476
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2023/29feat_n5/h2h/warm_ge5",
+              "n_bets": 3108,
+              "roi": -0.09596525096525096,
+              "ci_lo": -0.1507472651222651,
+              "ci_hi": -0.03516023166023168,
+              "win_rate": 0.2602960102960103,
+              "avg_odds": 4.249723294723294,
+              "avg_ev": 0.18060144831763475
+            },
+            "cold_lt5": {
+              "label": "2023/29feat_n5/h2h/cold_lt5",
+              "n_bets": 13,
+              "roi": -0.13461538461538458,
+              "ci_lo": -1.0,
+              "ci_hi": 0.8576923076923078,
+              "win_rate": 0.23076923076923078,
+              "avg_odds": 4.148461538461539,
+              "avg_ev": 0.16131974228540044
+            },
+            "warm_ge10": {
+              "label": "2023/29feat_n5/h2h/warm_ge10",
+              "n_bets": 3091,
+              "roi": -0.09555483662245229,
+              "ci_lo": -0.15356915237787125,
+              "ci_hi": -0.033110724684568146,
+              "win_rate": 0.2604335166612747,
+              "avg_odds": 4.250194111937884,
+              "avg_ev": 0.1805685989055929
+            },
+            "cold_lt10": {
+              "label": "2023/29feat_n5/h2h/cold_lt10",
+              "n_bets": 30,
+              "roi": -0.15499999999999994,
+              "ci_lo": -0.6933750000000001,
+              "ci_hi": 0.44679166666666603,
+              "win_rate": 0.23333333333333334,
+              "avg_odds": 4.157333333333333,
+              "avg_ev": 0.1756306267910426
+            }
+          },
+          "v1_blend": {
+            "H": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            },
+            "D": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            },
+            "A": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            }
+          },
+          "v2_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300,
+              "log_loss": 1.0168343682446686
+            },
+            "scores": {
+              "nl31_ne300": {
+                "num_leaves": 31,
+                "n_estimators": 300,
+                "log_loss": 1.0168343682446686
+              },
+              "nl63_ne300": {
+                "num_leaves": 63,
+                "n_estimators": 300,
+                "log_loss": 1.0245821648275195
+              },
+              "nl127_ne300": {
+                "num_leaves": 127,
+                "n_estimators": 300,
+                "log_loss": 1.0451879562431834
+              },
+              "nl31_ne500": {
+                "num_leaves": 31,
+                "n_estimators": 500,
+                "log_loss": 1.025630293398397
+              },
+              "nl63_ne500": {
+                "num_leaves": 63,
+                "n_estimators": 500,
+                "log_loss": 1.0396493320769657
+              },
+              "nl127_ne500": {
+                "num_leaves": 127,
+                "n_estimators": 500,
+                "log_loss": 1.0727607156945256
+              }
+            }
+          },
+          "ev_opt_blend": {
+            "H": {
+              "best_weight": 0.35,
+              "label": "2023/29feat_n5/h2h/opt_blend_H",
+              "n_bets": 3121,
+              "roi": -0.09612624158923422,
+              "ci_lo": -0.1539723646267222,
+              "ci_hi": -0.039336030118551774,
+              "win_rate": 0.2601730214674784,
+              "avg_odds": 4.249301505927587,
+              "avg_ev": 0.18052113361772476
+            },
+            "D": {
+              "best_weight": 0.35,
+              "label": "2023/29feat_n5/h2h/opt_blend_D",
+              "n_bets": 3121,
+              "roi": -0.09612624158923422,
+              "ci_lo": -0.1539723646267222,
+              "ci_hi": -0.039336030118551774,
+              "win_rate": 0.2601730214674784,
+              "avg_odds": 4.249301505927587,
+              "avg_ev": 0.18052113361772476
+            },
+            "A": {
+              "best_weight": 0.35,
+              "label": "2023/29feat_n5/h2h/opt_blend_A",
+              "n_bets": 3121,
+              "roi": -0.09612624158923422,
+              "ci_lo": -0.1539723646267222,
+              "ci_hi": -0.039336030118551774,
+              "win_rate": 0.2601730214674784,
+              "avg_odds": 4.249301505927587,
+              "avg_ev": 0.18052113361772476
+            }
+          },
+          "ev_tuned_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300
+            },
+            "note": "best HP same as default; no refit",
+            "label": "2023/29feat_n5/h2h/tuned_hp_same",
+            "n_bets": 3121,
+            "roi": -0.09612624158923422,
+            "ci_lo": -0.1539723646267222,
+            "ci_hi": -0.039336030118551774,
+            "win_rate": 0.2601730214674784,
+            "avg_odds": 4.249301505927587,
+            "avg_ev": 0.18052113361772476
+          }
+        },
+        "btts": {
+          "raw_metrics_default": {
+            "auc": 0.5193220826876721,
+            "log_loss": 0.7285001914967213,
+            "brier": 0.2652788017613025,
+            "n": 5456
+          },
+          "ev_default": {
+            "label": "2023/29feat_n5/btts/default",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2023/29feat_n5/btts/warm_ge5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt5": {
+              "label": "2023/29feat_n5/btts/cold_lt5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "warm_ge10": {
+              "label": "2023/29feat_n5/btts/warm_ge10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt10": {
+              "label": "2023/29feat_n5/btts/cold_lt10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "v1_blend": {
+            "yes": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            }
+          },
+          "v2_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300,
+              "log_loss": 0.6954113256159012
+            },
+            "scores": {
+              "nl31_ne300": {
+                "num_leaves": 31,
+                "n_estimators": 300,
+                "log_loss": 0.6954113256159012
+              },
+              "nl63_ne300": {
+                "num_leaves": 63,
+                "n_estimators": 300,
+                "log_loss": 0.7000344919406217
+              },
+              "nl127_ne300": {
+                "num_leaves": 127,
+                "n_estimators": 300,
+                "log_loss": 0.7098594167969625
+              },
+              "nl31_ne500": {
+                "num_leaves": 31,
+                "n_estimators": 500,
+                "log_loss": 0.6998026648257273
+              },
+              "nl63_ne500": {
+                "num_leaves": 63,
+                "n_estimators": 500,
+                "log_loss": 0.7100574374015174
+              },
+              "nl127_ne500": {
+                "num_leaves": 127,
+                "n_estimators": 500,
+                "log_loss": 0.7258081566277057
+              }
+            }
+          },
+          "ev_opt_blend": {
+            "yes": {
+              "best_weight": 0.35,
+              "label": "2023/29feat_n5/btts/opt_blend_yes",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "ev_tuned_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300
+            },
+            "note": "best HP same as default; no refit",
+            "label": "2023/29feat_n5/btts/tuned_hp_same",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          }
+        },
+        "ou25": {
+          "raw_metrics_default": {
+            "auc": 0.5437449629092459,
+            "log_loss": 0.7096398936855854,
+            "brier": 0.25704647318088625,
+            "n": 5456
+          },
+          "ev_default": {
+            "label": "2023/29feat_n5/ou25/default",
+            "n_bets": 1288,
+            "roi": -0.07202639751552795,
+            "ci_lo": -0.1323361801242236,
+            "ci_hi": -0.011029697204969007,
+            "win_rate": 0.41537267080745344,
+            "avg_odds": 2.2918711180124225,
+            "avg_ev": 0.09956901156996957
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2023/29feat_n5/ou25/warm_ge5",
+              "n_bets": 1287,
+              "roi": -0.0713053613053613,
+              "ci_lo": -0.13188908313908315,
+              "ci_hi": -0.013379953379953428,
+              "win_rate": 0.4156954156954157,
+              "avg_odds": 2.291981351981352,
+              "avg_ev": 0.09957078801836432
+            },
+            "cold_lt5": {
+              "label": "2023/29feat_n5/ou25/cold_lt5",
+              "n_bets": 1,
+              "roi": -1.0,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": 0.0,
+              "avg_odds": 2.15,
+              "avg_ev": 0.09728272248594538
+            },
+            "warm_ge10": {
+              "label": "2023/29feat_n5/ou25/warm_ge10",
+              "n_bets": 1284,
+              "roi": -0.07287383177570093,
+              "ci_lo": -0.13308528037383177,
+              "ci_hi": -0.007531931464174534,
+              "win_rate": 0.4151090342679128,
+              "avg_odds": 2.291495327102804,
+              "avg_ev": 0.09966313881919035
+            },
+            "cold_lt10": {
+              "label": "2023/29feat_n5/ou25/cold_lt10",
+              "n_bets": 4,
+              "roi": 0.20000000000000007,
+              "ci_lo": -1.0,
+              "ci_hi": 1.4000000000000001,
+              "win_rate": 0.5,
+              "avg_odds": 2.4125000000000005,
+              "avg_ev": 0.06935416457010463
+            }
+          },
+          "v1_blend": {
+            "over": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            }
+          },
+          "v2_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300,
+              "log_loss": 0.6714462409633903
+            },
+            "scores": {
+              "nl31_ne300": {
+                "num_leaves": 31,
+                "n_estimators": 300,
+                "log_loss": 0.6714462409633903
+              },
+              "nl63_ne300": {
+                "num_leaves": 63,
+                "n_estimators": 300,
+                "log_loss": 0.6761556808037047
+              },
+              "nl127_ne300": {
+                "num_leaves": 127,
+                "n_estimators": 300,
+                "log_loss": 0.6875987173528398
+              },
+              "nl31_ne500": {
+                "num_leaves": 31,
+                "n_estimators": 500,
+                "log_loss": 0.6754554825127097
+              },
+              "nl63_ne500": {
+                "num_leaves": 63,
+                "n_estimators": 500,
+                "log_loss": 0.6841265024549581
+              },
+              "nl127_ne500": {
+                "num_leaves": 127,
+                "n_estimators": 500,
+                "log_loss": 0.7002586912187794
+              }
+            }
+          },
+          "ev_opt_blend": {
+            "over": {
+              "best_weight": 0.35,
+              "label": "2023/29feat_n5/ou25/opt_blend_over",
+              "n_bets": 1288,
+              "roi": -0.07202639751552795,
+              "ci_lo": -0.1323361801242236,
+              "ci_hi": -0.011029697204969007,
+              "win_rate": 0.41537267080745344,
+              "avg_odds": 2.2918711180124225,
+              "avg_ev": 0.09956901156996957
+            }
+          },
+          "ev_tuned_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300
+            },
+            "note": "best HP same as default; no refit",
+            "label": "2023/29feat_n5/ou25/tuned_hp_same",
+            "n_bets": 1288,
+            "roi": -0.07202639751552795,
+            "ci_lo": -0.1323361801242236,
+            "ci_hi": -0.011029697204969007,
+            "win_rate": 0.41537267080745344,
+            "avg_odds": 2.2918711180124225,
+            "avg_ev": 0.09956901156996957
+          }
+        },
+        "ou15": {
+          "raw_metrics_default": {
+            "auc": 0.5152147180982036,
+            "log_loss": 0.6111415384507358,
+            "brier": 0.20518114727057687,
+            "n": 5456
+          },
+          "ev_default": {
+            "label": "2023/29feat_n5/ou15/default",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2023/29feat_n5/ou15/warm_ge5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt5": {
+              "label": "2023/29feat_n5/ou15/cold_lt5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "warm_ge10": {
+              "label": "2023/29feat_n5/ou15/warm_ge10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt10": {
+              "label": "2023/29feat_n5/ou15/cold_lt10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "v1_blend": {
+            "over": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            }
+          },
+          "v2_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300,
+              "log_loss": 0.5171598354096709
+            },
+            "scores": {
+              "nl31_ne300": {
+                "num_leaves": 31,
+                "n_estimators": 300,
+                "log_loss": 0.5171598354096709
+              },
+              "nl63_ne300": {
+                "num_leaves": 63,
+                "n_estimators": 300,
+                "log_loss": 0.5222415725754805
+              },
+              "nl127_ne300": {
+                "num_leaves": 127,
+                "n_estimators": 300,
+                "log_loss": 0.531436727523262
+              },
+              "nl31_ne500": {
+                "num_leaves": 31,
+                "n_estimators": 500,
+                "log_loss": 0.5213603259554931
+              },
+              "nl63_ne500": {
+                "num_leaves": 63,
+                "n_estimators": 500,
+                "log_loss": 0.5293385968123723
+              },
+              "nl127_ne500": {
+                "num_leaves": 127,
+                "n_estimators": 500,
+                "log_loss": 0.5454809458381326
+              }
+            }
+          },
+          "ev_opt_blend": {
+            "over": {
+              "best_weight": 0.35,
+              "label": "2023/29feat_n5/ou15/opt_blend_over",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "ev_tuned_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300
+            },
+            "note": "best HP same as default; no refit",
+            "label": "2023/29feat_n5/ou15/tuned_hp_same",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          }
+        }
+      },
+      "29feat_n10": {
+        "h2h": {
+          "raw_metrics_default": {
+            "auc": 0.5840474742528327,
+            "log_loss": 1.1093865507899732,
+            "brier": 0.22121715747913548,
+            "n": 5456
+          },
+          "ev_default": {
+            "label": "2023/29feat_n10/h2h/default",
+            "n_bets": 3091,
+            "roi": -0.10370430281462309,
+            "ci_lo": -0.16100299255904238,
+            "ci_hi": -0.04816273050792625,
+            "win_rate": 0.27337431252022,
+            "avg_odds": 4.05735684244581,
+            "avg_ev": 0.1764455711006376
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2023/29feat_n10/h2h/warm_ge5",
+              "n_bets": 3081,
+              "roi": -0.10431678026614735,
+              "ci_lo": -0.16068857513794224,
+              "ci_hi": -0.04527401817591693,
+              "win_rate": 0.2732878935410581,
+              "avg_odds": 4.057429406037,
+              "avg_ev": 0.17658025955713413
+            },
+            "cold_lt5": {
+              "label": "2023/29feat_n10/h2h/cold_lt5",
+              "n_bets": 10,
+              "roi": 0.085,
+              "ci_lo": -1.0,
+              "ci_hi": 1.335,
+              "win_rate": 0.3,
+              "avg_odds": 4.035000000000001,
+              "avg_ev": 0.1349480576540595
+            },
+            "warm_ge10": {
+              "label": "2023/29feat_n10/h2h/warm_ge10",
+              "n_bets": 3059,
+              "roi": -0.1073324615887545,
+              "ci_lo": -0.1627526969597908,
+              "ci_hi": -0.049426037920889225,
+              "win_rate": 0.2726381170317097,
+              "avg_odds": 4.057678980058842,
+              "avg_ev": 0.17672009669918826
+            },
+            "cold_lt10": {
+              "label": "2023/29feat_n10/h2h/cold_lt10",
+              "n_bets": 32,
+              "roi": 0.24312500000000004,
+              "ci_lo": -0.378140625,
+              "ci_hi": 0.9400624999999996,
+              "win_rate": 0.34375,
+              "avg_odds": 4.0265625,
+              "avg_ev": 0.1502026396641838
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "btts": {
+          "raw_metrics_default": {
+            "auc": 0.5295398050103306,
+            "log_loss": 0.7262721413868098,
+            "brier": 0.2644258609571959,
+            "n": 5456
+          },
+          "ev_default": {
+            "label": "2023/29feat_n10/btts/default",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2023/29feat_n10/btts/warm_ge5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt5": {
+              "label": "2023/29feat_n10/btts/cold_lt5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "warm_ge10": {
+              "label": "2023/29feat_n10/btts/warm_ge10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt10": {
+              "label": "2023/29feat_n10/btts/cold_lt10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "ou25": {
+          "raw_metrics_default": {
+            "auc": 0.5367942487392804,
+            "log_loss": 0.709795491063256,
+            "brier": 0.2572006933398294,
+            "n": 5456
+          },
+          "ev_default": {
+            "label": "2023/29feat_n10/ou25/default",
+            "n_bets": 1136,
+            "roi": -0.11112676056338029,
+            "ci_lo": -0.1753512323943662,
+            "ci_hi": -0.045116637323943685,
+            "win_rate": 0.3961267605633803,
+            "avg_odds": 2.302464788732394,
+            "avg_ev": 0.09782528107759927
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2023/29feat_n10/ou25/warm_ge5",
+              "n_bets": 1131,
+              "roi": -0.10927497789566755,
+              "ci_lo": -0.17623717948717949,
+              "ci_hi": -0.04692219274977901,
+              "win_rate": 0.39699381078691426,
+              "avg_odds": 2.301370468611848,
+              "avg_ev": 0.09789856857643912
+            },
+            "cold_lt5": {
+              "label": "2023/29feat_n10/ou25/cold_lt5",
+              "n_bets": 5,
+              "roi": -0.53,
+              "ci_lo": -1.0,
+              "ci_hi": 0.41000000000000003,
+              "win_rate": 0.2,
+              "avg_odds": 2.55,
+              "avg_ev": 0.08124764884002418
+            },
+            "warm_ge10": {
+              "label": "2023/29feat_n10/ou25/warm_ge10",
+              "n_bets": 1128,
+              "roi": -0.11125,
+              "ci_lo": -0.17504853723404257,
+              "ci_hi": -0.04735749113475178,
+              "win_rate": 0.3962765957446808,
+              "avg_odds": 2.3009308510638298,
+              "avg_ev": 0.09792501876079672
+            },
+            "cold_lt10": {
+              "label": "2023/29feat_n10/ou25/cold_lt10",
+              "n_bets": 8,
+              "roi": -0.09374999999999994,
+              "ci_lo": -0.725,
+              "ci_hi": 0.7503124999999985,
+              "win_rate": 0.375,
+              "avg_odds": 2.5187500000000003,
+              "avg_ev": 0.0837622677467601
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "ou15": {
+          "raw_metrics_default": {
+            "auc": 0.5334610965077818,
+            "log_loss": 0.6135386727826074,
+            "brier": 0.204672875743926,
+            "n": 5456
+          },
+          "ev_default": {
+            "label": "2023/29feat_n10/ou15/default",
+            "n_bets": 0,
+            "roi": NaN,
+            "ci_lo": NaN,
+            "ci_hi": NaN,
+            "win_rate": NaN,
+            "avg_odds": NaN
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2023/29feat_n10/ou15/warm_ge5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt5": {
+              "label": "2023/29feat_n10/ou15/cold_lt5",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "warm_ge10": {
+              "label": "2023/29feat_n10/ou15/warm_ge10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            },
+            "cold_lt10": {
+              "label": "2023/29feat_n10/ou15/cold_lt10",
+              "n_bets": 0,
+              "roi": NaN,
+              "ci_lo": NaN,
+              "ci_hi": NaN,
+              "win_rate": NaN,
+              "avg_odds": NaN
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        }
+      }
+    },
+    {
+      "window": "2025-26",
+      "9feat": {
+        "h2h": {
+          "raw_metrics_default": {
+            "auc": 0.5620344491671323,
+            "log_loss": 1.1023879375603949,
+            "brier": 0.22026109774015723,
+            "n": 3029
+          },
+          "ev_default": {
+            "label": "2025-26/9feat/h2h/default",
+            "n_bets": 2092,
+            "roi": -0.10368546845124282,
+            "ci_lo": -0.18392614722753348,
+            "ci_hi": -0.024407982791587023,
+            "win_rate": 0.23183556405353728,
+            "avg_odds": 5.1410994263862335,
+            "avg_ev": 0.2336741424916792
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2025-26/9feat/h2h/warm_ge5",
+              "n_bets": 1062,
+              "roi": -0.10548022598870056,
+              "ci_lo": -0.22157274011299433,
+              "ci_hi": 0.01561016949152532,
+              "win_rate": 0.23634651600753295,
+              "avg_odds": 4.8974482109227875,
+              "avg_ev": 0.23140381490647
+            },
+            "cold_lt5": {
+              "label": "2025-26/9feat/h2h/cold_lt5",
+              "n_bets": 1030,
+              "roi": -0.10183495145631066,
+              "ci_lo": -0.20972742718446602,
+              "ci_hi": 0.01839781553398055,
+              "win_rate": 0.22718446601941747,
+              "avg_odds": 5.392320388349515,
+              "avg_ev": 0.23601500452613763
+            },
+            "warm_ge10": {
+              "label": "2025-26/9feat/h2h/warm_ge10",
+              "n_bets": 1020,
+              "roi": -0.09318627450980393,
+              "ci_lo": -0.21078382352941175,
+              "ci_hi": 0.034879411764705825,
+              "win_rate": 0.23823529411764705,
+              "avg_odds": 4.925745098039216,
+              "avg_ev": 0.23402517250411156
+            },
+            "cold_lt10": {
+              "label": "2025-26/9feat/h2h/cold_lt10",
+              "n_bets": 1072,
+              "roi": -0.11367537313432836,
+              "ci_lo": -0.22642840485074625,
+              "ci_hi": -0.004039412313432876,
+              "win_rate": 0.22574626865671643,
+              "avg_odds": 5.3460074626865675,
+              "avg_ev": 0.23334014005447679
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "btts": {
+          "raw_metrics_default": {
+            "auc": 0.4796272504296465,
+            "log_loss": 0.7375205662866647,
+            "brier": 0.2696996566787259,
+            "n": 3029
+          },
+          "ev_default": {
+            "label": "2025-26/9feat/btts/default",
+            "n_bets": 140,
+            "roi": 0.031714285714285716,
+            "ci_lo": -0.18064285714285713,
+            "ci_hi": 0.24428392857142817,
+            "win_rate": 0.39285714285714285,
+            "avg_odds": 2.6399285714285714,
+            "avg_ev": 0.10564672156185725
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2025-26/9feat/btts/warm_ge5",
+              "n_bets": 34,
+              "roi": -0.18382352941176472,
+              "ci_lo": -0.5673750000000001,
+              "ci_hi": 0.2632573529411763,
+              "win_rate": 0.29411764705882354,
+              "avg_odds": 2.656764705882353,
+              "avg_ev": 0.11507681873949649
+            },
+            "cold_lt5": {
+              "label": "2025-26/9feat/btts/cold_lt5",
+              "n_bets": 106,
+              "roi": 0.10084905660377358,
+              "ci_lo": -0.15380424528301886,
+              "ci_hi": 0.34210849056603754,
+              "win_rate": 0.42452830188679247,
+              "avg_odds": 2.6345283018867924,
+              "avg_ev": 0.10262197341053902
+            },
+            "warm_ge10": {
+              "label": "2025-26/9feat/btts/warm_ge10",
+              "n_bets": 29,
+              "roi": -0.21379310344827585,
+              "ci_lo": -0.626698275862069,
+              "ci_hi": 0.2234568965517241,
+              "win_rate": 0.3103448275862069,
+              "avg_odds": 2.6144827586206896,
+              "avg_ev": 0.10742656985499997
+            },
+            "cold_lt10": {
+              "label": "2025-26/9feat/btts/cold_lt10",
+              "n_bets": 111,
+              "roi": 0.09585585585585586,
+              "ci_lo": -0.14540765765765767,
+              "ci_hi": 0.3524662162162161,
+              "win_rate": 0.4144144144144144,
+              "avg_odds": 2.6465765765765767,
+              "avg_ev": 0.1051817161519371
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "ou25": {
+          "raw_metrics_default": {
+            "auc": 0.4640178917480845,
+            "log_loss": 0.7473820839859958,
+            "brier": 0.2746228701806896,
+            "n": 3029
+          },
+          "ev_default": {
+            "label": "2025-26/9feat/ou25/default",
+            "n_bets": 481,
+            "roi": -0.11866943866943865,
+            "ci_lo": -0.22254158004158006,
+            "ci_hi": -0.007968814968815165,
+            "win_rate": 0.3492723492723493,
+            "avg_odds": 2.572681912681913,
+            "avg_ev": 0.1162760192640792
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2025-26/9feat/ou25/warm_ge5",
+              "n_bets": 178,
+              "roi": -0.24556179775280904,
+              "ci_lo": -0.402873595505618,
+              "ci_hi": -0.07830758426966297,
+              "win_rate": 0.3146067415730337,
+              "avg_odds": 2.461685393258427,
+              "avg_ev": 0.1075363573658234
+            },
+            "cold_lt5": {
+              "label": "2025-26/9feat/ou25/cold_lt5",
+              "n_bets": 303,
+              "roi": -0.04412541254125413,
+              "ci_lo": -0.18930940594059406,
+              "ci_hi": 0.10083663366336629,
+              "win_rate": 0.3696369636963696,
+              "avg_odds": 2.637887788778878,
+              "avg_ev": 0.12141021008219648
+            },
+            "warm_ge10": {
+              "label": "2025-26/9feat/ou25/warm_ge10",
+              "n_bets": 168,
+              "roi": -0.20065476190476192,
+              "ci_lo": -0.3730119047619048,
+              "ci_hi": -0.019565476190476303,
+              "win_rate": 0.3333333333333333,
+              "avg_odds": 2.4525595238095237,
+              "avg_ev": 0.10594888568720869
+            },
+            "cold_lt10": {
+              "label": "2025-26/9feat/ou25/cold_lt10",
+              "n_bets": 313,
+              "roi": -0.07466453674121405,
+              "ci_lo": -0.2155127795527156,
+              "ci_hi": 0.0629097444089457,
+              "win_rate": 0.35782747603833864,
+              "avg_odds": 2.6371565495207667,
+              "avg_ev": 0.12181901747786275
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "ou15": {
+          "raw_metrics_default": {
+            "auc": 0.4826442359616965,
+            "log_loss": 0.5880801051086769,
+            "brier": 0.19739184929813006,
+            "n": 3029
+          },
+          "ev_default": {
+            "label": "2025-26/9feat/ou15/default",
+            "n_bets": 79,
+            "roi": 0.047341772151898706,
+            "ci_lo": -0.1444367088607595,
+            "ci_hi": 0.2239303797468354,
+            "win_rate": 0.620253164556962,
+            "avg_odds": 1.6930379746835447,
+            "avg_ev": 0.08199594656916664
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2025-26/9feat/ou15/warm_ge5",
+              "n_bets": 18,
+              "roi": -0.3561111111111111,
+              "ci_lo": -0.7227916666666667,
+              "ci_hi": 0.011138888888888771,
+              "win_rate": 0.3888888888888889,
+              "avg_odds": 1.6800000000000002,
+              "avg_ev": 0.08176535201420498
+            },
+            "cold_lt5": {
+              "label": "2025-26/9feat/ou15/cold_lt5",
+              "n_bets": 61,
+              "roi": 0.1663934426229508,
+              "ci_lo": -0.05148360655737706,
+              "ci_hi": 0.36823360655737686,
+              "win_rate": 0.6885245901639344,
+              "avg_odds": 1.6968852459016395,
+              "avg_ev": 0.08206399086407337
+            },
+            "warm_ge10": {
+              "label": "2025-26/9feat/ou15/warm_ge10",
+              "n_bets": 17,
+              "roi": -0.31823529411764706,
+              "ci_lo": -0.7041176470588235,
+              "ci_hi": 0.07413235294117641,
+              "win_rate": 0.4117647058823529,
+              "avg_odds": 1.6841176470588237,
+              "avg_ev": 0.08221186908242123
+            },
+            "cold_lt10": {
+              "label": "2025-26/9feat/ou15/cold_lt10",
+              "n_bets": 62,
+              "roi": 0.1475806451612903,
+              "ci_lo": -0.056987903225806484,
+              "ci_hi": 0.34227822580645145,
+              "win_rate": 0.6774193548387096,
+              "avg_odds": 1.695483870967742,
+              "avg_ev": 0.08193674200908072
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        }
+      },
+      "29feat_n5": {
+        "h2h": {
+          "raw_metrics_default": {
+            "auc": 0.579874301945201,
+            "log_loss": 1.075504799799159,
+            "brier": 0.21518638112085853,
+            "n": 3029
+          },
+          "ev_default": {
+            "label": "2025-26/29feat_n5/h2h/default",
+            "n_bets": 1960,
+            "roi": -0.07983673469387755,
+            "ci_lo": -0.16768354591836734,
+            "ci_hi": 0.01192882653061222,
+            "win_rate": 0.23622448979591837,
+            "avg_odds": 5.144137755102041,
+            "avg_ev": 0.2120266877405738
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2025-26/29feat_n5/h2h/warm_ge5",
+              "n_bets": 975,
+              "roi": -0.07963076923076923,
+              "ci_lo": -0.1974551282051282,
+              "ci_hi": 0.03975076923076909,
+              "win_rate": 0.24615384615384617,
+              "avg_odds": 4.823138461538462,
+              "avg_ev": 0.1939058832646737
+            },
+            "cold_lt5": {
+              "label": "2025-26/29feat_n5/h2h/cold_lt5",
+              "n_bets": 985,
+              "roi": -0.08004060913705582,
+              "ci_lo": -0.2054657360406091,
+              "ci_hi": 0.06358527918781726,
+              "win_rate": 0.2263959390862944,
+              "avg_odds": 5.461878172588833,
+              "avg_ev": 0.229963524658343
+            },
+            "warm_ge10": {
+              "label": "2025-26/29feat_n5/h2h/warm_ge10",
+              "n_bets": 940,
+              "roi": -0.07379787234042555,
+              "ci_lo": -0.1899662234042553,
+              "ci_hi": 0.053480053191489275,
+              "win_rate": 0.24680851063829787,
+              "avg_odds": 4.841021276595745,
+              "avg_ev": 0.194545956408044
+            },
+            "cold_lt10": {
+              "label": "2025-26/29feat_n5/h2h/cold_lt10",
+              "n_bets": 1020,
+              "roi": -0.08540196078431371,
+              "ci_lo": -0.20741642156862747,
+              "ci_hi": 0.04752769607843133,
+              "win_rate": 0.22647058823529412,
+              "avg_odds": 5.423480392156863,
+              "avg_ev": 0.22813638132153266
+            }
+          },
+          "v1_blend": {
+            "H": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            },
+            "D": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            },
+            "A": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            }
+          },
+          "v2_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300,
+              "log_loss": 1.0136094269075726
+            },
+            "scores": {
+              "nl31_ne300": {
+                "num_leaves": 31,
+                "n_estimators": 300,
+                "log_loss": 1.0136094269075726
+              },
+              "nl63_ne300": {
+                "num_leaves": 63,
+                "n_estimators": 300,
+                "log_loss": 1.0239995657859002
+              },
+              "nl127_ne300": {
+                "num_leaves": 127,
+                "n_estimators": 300,
+                "log_loss": 1.0447273922916385
+              },
+              "nl31_ne500": {
+                "num_leaves": 31,
+                "n_estimators": 500,
+                "log_loss": 1.0226289627358438
+              },
+              "nl63_ne500": {
+                "num_leaves": 63,
+                "n_estimators": 500,
+                "log_loss": 1.0407275067969401
+              },
+              "nl127_ne500": {
+                "num_leaves": 127,
+                "n_estimators": 500,
+                "log_loss": 1.0773435750126052
+              }
+            }
+          },
+          "ev_opt_blend": {
+            "H": {
+              "best_weight": 0.35,
+              "label": "2025-26/29feat_n5/h2h/opt_blend_H",
+              "n_bets": 1960,
+              "roi": -0.07983673469387755,
+              "ci_lo": -0.16768354591836734,
+              "ci_hi": 0.01192882653061222,
+              "win_rate": 0.23622448979591837,
+              "avg_odds": 5.144137755102041,
+              "avg_ev": 0.2120266877405738
+            },
+            "D": {
+              "best_weight": 0.35,
+              "label": "2025-26/29feat_n5/h2h/opt_blend_D",
+              "n_bets": 1960,
+              "roi": -0.07983673469387755,
+              "ci_lo": -0.16768354591836734,
+              "ci_hi": 0.01192882653061222,
+              "win_rate": 0.23622448979591837,
+              "avg_odds": 5.144137755102041,
+              "avg_ev": 0.2120266877405738
+            },
+            "A": {
+              "best_weight": 0.35,
+              "label": "2025-26/29feat_n5/h2h/opt_blend_A",
+              "n_bets": 1960,
+              "roi": -0.07983673469387755,
+              "ci_lo": -0.16768354591836734,
+              "ci_hi": 0.01192882653061222,
+              "win_rate": 0.23622448979591837,
+              "avg_odds": 5.144137755102041,
+              "avg_ev": 0.2120266877405738
+            }
+          },
+          "ev_tuned_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300
+            },
+            "note": "best HP same as default; no refit",
+            "label": "2025-26/29feat_n5/h2h/tuned_hp_same",
+            "n_bets": 1960,
+            "roi": -0.07983673469387755,
+            "ci_lo": -0.16768354591836734,
+            "ci_hi": 0.01192882653061222,
+            "win_rate": 0.23622448979591837,
+            "avg_odds": 5.144137755102041,
+            "avg_ev": 0.2120266877405738
+          }
+        },
+        "btts": {
+          "raw_metrics_default": {
+            "auc": 0.5306429899352523,
+            "log_loss": 0.711653233530961,
+            "brier": 0.25776566931597433,
+            "n": 3029
+          },
+          "ev_default": {
+            "label": "2025-26/29feat_n5/btts/default",
+            "n_bets": 98,
+            "roi": 0.17306122448979594,
+            "ci_lo": -0.08329591836734693,
+            "ci_hi": 0.4392295918367345,
+            "win_rate": 0.45918367346938777,
+            "avg_odds": 2.6252040816326527,
+            "avg_ev": 0.10504700729850254
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2025-26/29feat_n5/btts/warm_ge5",
+              "n_bets": 31,
+              "roi": 0.13741935483870968,
+              "ci_lo": -0.34646774193548385,
+              "ci_hi": 0.6271209677419354,
+              "win_rate": 0.45161290322580644,
+              "avg_odds": 2.5664516129032253,
+              "avg_ev": 0.10836918154393876
+            },
+            "cold_lt5": {
+              "label": "2025-26/29feat_n5/btts/cold_lt5",
+              "n_bets": 67,
+              "roi": 0.1895522388059702,
+              "ci_lo": -0.11616791044776117,
+              "ci_hi": 0.5053917910447759,
+              "win_rate": 0.4626865671641791,
+              "avg_odds": 2.652388059701493,
+              "avg_ev": 0.10350988190136041
+            },
+            "warm_ge10": {
+              "label": "2025-26/29feat_n5/btts/warm_ge10",
+              "n_bets": 27,
+              "roi": 0.12259259259259261,
+              "ci_lo": -0.31082407407407403,
+              "ci_hi": 0.5618888888888887,
+              "win_rate": 0.48148148148148145,
+              "avg_odds": 2.490740740740741,
+              "avg_ev": 0.09533590887657285
+            },
+            "cold_lt10": {
+              "label": "2025-26/29feat_n5/btts/cold_lt10",
+              "n_bets": 71,
+              "roi": 0.19225352112676058,
+              "ci_lo": -0.12677464788732393,
+              "ci_hi": 0.5141197183098589,
+              "win_rate": 0.4507042253521127,
+              "avg_odds": 2.6763380281690137,
+              "avg_ev": 0.10873996021951804
+            }
+          },
+          "v1_blend": {
+            "yes": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            }
+          },
+          "v2_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300,
+              "log_loss": 0.6937945953613461
+            },
+            "scores": {
+              "nl31_ne300": {
+                "num_leaves": 31,
+                "n_estimators": 300,
+                "log_loss": 0.6937945953613461
+              },
+              "nl63_ne300": {
+                "num_leaves": 63,
+                "n_estimators": 300,
+                "log_loss": 0.6981942493898161
+              },
+              "nl127_ne300": {
+                "num_leaves": 127,
+                "n_estimators": 300,
+                "log_loss": 0.7089410981046785
+              },
+              "nl31_ne500": {
+                "num_leaves": 31,
+                "n_estimators": 500,
+                "log_loss": 0.6998836551029505
+              },
+              "nl63_ne500": {
+                "num_leaves": 63,
+                "n_estimators": 500,
+                "log_loss": 0.7075725497053812
+              },
+              "nl127_ne500": {
+                "num_leaves": 127,
+                "n_estimators": 500,
+                "log_loss": 0.7277706784470819
+              }
+            }
+          },
+          "ev_opt_blend": {
+            "yes": {
+              "best_weight": 0.35,
+              "label": "2025-26/29feat_n5/btts/opt_blend_yes",
+              "n_bets": 98,
+              "roi": 0.17306122448979594,
+              "ci_lo": -0.08329591836734693,
+              "ci_hi": 0.4392295918367345,
+              "win_rate": 0.45918367346938777,
+              "avg_odds": 2.6252040816326527,
+              "avg_ev": 0.10504700729850254
+            }
+          },
+          "ev_tuned_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300
+            },
+            "note": "best HP same as default; no refit",
+            "label": "2025-26/29feat_n5/btts/tuned_hp_same",
+            "n_bets": 98,
+            "roi": 0.17306122448979594,
+            "ci_lo": -0.08329591836734693,
+            "ci_hi": 0.4392295918367345,
+            "win_rate": 0.45918367346938777,
+            "avg_odds": 2.6252040816326527,
+            "avg_ev": 0.10504700729850254
+          }
+        },
+        "ou25": {
+          "raw_metrics_default": {
+            "auc": 0.5642038768377099,
+            "log_loss": 0.6998005753125586,
+            "brier": 0.2527386871272265,
+            "n": 3029
+          },
+          "ev_default": {
+            "label": "2025-26/29feat_n5/ou25/default",
+            "n_bets": 225,
+            "roi": -0.1011111111111111,
+            "ci_lo": -0.2649344444444445,
+            "ci_hi": 0.06363777777777754,
+            "win_rate": 0.3688888888888889,
+            "avg_odds": 2.556711111111111,
+            "avg_ev": 0.08828225744108427
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2025-26/29feat_n5/ou25/warm_ge5",
+              "n_bets": 110,
+              "roi": -0.0992727272727273,
+              "ci_lo": -0.30460681818181823,
+              "ci_hi": 0.10373181818181765,
+              "win_rate": 0.4,
+              "avg_odds": 2.379,
+              "avg_ev": 0.08333045894994333
+            },
+            "cold_lt5": {
+              "label": "2025-26/29feat_n5/ou25/cold_lt5",
+              "n_bets": 115,
+              "roi": -0.10286956521739132,
+              "ci_lo": -0.32957391304347833,
+              "ci_hi": 0.12830217391304327,
+              "win_rate": 0.3391304347826087,
+              "avg_odds": 2.7266956521739125,
+              "avg_ev": 0.0930187603456539
+            },
+            "warm_ge10": {
+              "label": "2025-26/29feat_n5/ou25/warm_ge10",
+              "n_bets": 98,
+              "roi": -0.025306122448979604,
+              "ci_lo": -0.2476683673469388,
+              "ci_hi": 0.2034770408163265,
+              "win_rate": 0.42857142857142855,
+              "avg_odds": 2.3620408163265303,
+              "avg_ev": 0.08247954730061831
+            },
+            "cold_lt10": {
+              "label": "2025-26/29feat_n5/ou25/cold_lt10",
+              "n_bets": 127,
+              "roi": -0.15960629921259842,
+              "ci_lo": -0.3724192913385827,
+              "ci_hi": 0.05529330708661406,
+              "win_rate": 0.3228346456692913,
+              "avg_odds": 2.7069291338582677,
+              "avg_ev": 0.09275993928175881
+            }
+          },
+          "v1_blend": {
+            "over": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            }
+          },
+          "v2_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300,
+              "log_loss": 0.6774641118883299
+            },
+            "scores": {
+              "nl31_ne300": {
+                "num_leaves": 31,
+                "n_estimators": 300,
+                "log_loss": 0.6774641118883299
+              },
+              "nl63_ne300": {
+                "num_leaves": 63,
+                "n_estimators": 300,
+                "log_loss": 0.684654850492271
+              },
+              "nl127_ne300": {
+                "num_leaves": 127,
+                "n_estimators": 300,
+                "log_loss": 0.6965952242058383
+              },
+              "nl31_ne500": {
+                "num_leaves": 31,
+                "n_estimators": 500,
+                "log_loss": 0.6817283898211745
+              },
+              "nl63_ne500": {
+                "num_leaves": 63,
+                "n_estimators": 500,
+                "log_loss": 0.6962192474037453
+              },
+              "nl127_ne500": {
+                "num_leaves": 127,
+                "n_estimators": 500,
+                "log_loss": 0.7147566982696744
+              }
+            }
+          },
+          "ev_opt_blend": {
+            "over": {
+              "best_weight": 0.35,
+              "label": "2025-26/29feat_n5/ou25/opt_blend_over",
+              "n_bets": 225,
+              "roi": -0.1011111111111111,
+              "ci_lo": -0.2649344444444445,
+              "ci_hi": 0.06363777777777754,
+              "win_rate": 0.3688888888888889,
+              "avg_odds": 2.556711111111111,
+              "avg_ev": 0.08828225744108427
+            }
+          },
+          "ev_tuned_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300
+            },
+            "note": "best HP same as default; no refit",
+            "label": "2025-26/29feat_n5/ou25/tuned_hp_same",
+            "n_bets": 225,
+            "roi": -0.1011111111111111,
+            "ci_lo": -0.2649344444444445,
+            "ci_hi": 0.06363777777777754,
+            "win_rate": 0.3688888888888889,
+            "avg_odds": 2.556711111111111,
+            "avg_ev": 0.08828225744108427
+          }
+        },
+        "ou15": {
+          "raw_metrics_default": {
+            "auc": 0.569668793967349,
+            "log_loss": 0.5558961657677226,
+            "brier": 0.18474283899274008,
+            "n": 3029
+          },
+          "ev_default": {
+            "label": "2025-26/29feat_n5/ou15/default",
+            "n_bets": 23,
+            "roi": -0.18782608695652175,
+            "ci_lo": -0.5400760869565218,
+            "ci_hi": 0.1661521739130431,
+            "win_rate": 0.4782608695652174,
+            "avg_odds": 1.7169565217391305,
+            "avg_ev": 0.07054016719910669
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2025-26/29feat_n5/ou15/warm_ge5",
+              "n_bets": 5,
+              "roi": -0.6799999999999999,
+              "ci_lo": -1.0,
+              "ci_hi": -0.039999999999999945,
+              "win_rate": 0.2,
+              "avg_odds": 1.7259999999999998,
+              "avg_ev": 0.0693702407439702
+            },
+            "cold_lt5": {
+              "label": "2025-26/29feat_n5/ou15/cold_lt5",
+              "n_bets": 18,
+              "roi": -0.05111111111111112,
+              "ci_lo": -0.44223611111111105,
+              "ci_hi": 0.32,
+              "win_rate": 0.5555555555555556,
+              "avg_odds": 1.7144444444444444,
+              "avg_ev": 0.07086514676997793
+            },
+            "warm_ge10": {
+              "label": "2025-26/29feat_n5/ou15/warm_ge10",
+              "n_bets": 5,
+              "roi": -0.6799999999999999,
+              "ci_lo": -1.0,
+              "ci_hi": -0.039999999999999945,
+              "win_rate": 0.2,
+              "avg_odds": 1.7259999999999998,
+              "avg_ev": 0.0693702407439702
+            },
+            "cold_lt10": {
+              "label": "2025-26/29feat_n5/ou15/cold_lt10",
+              "n_bets": 18,
+              "roi": -0.05111111111111112,
+              "ci_lo": -0.44223611111111105,
+              "ci_hi": 0.32,
+              "win_rate": 0.5555555555555556,
+              "avg_odds": 1.7144444444444444,
+              "avg_ev": 0.07086514676997793
+            }
+          },
+          "v1_blend": {
+            "over": {
+              "best_weight": 0.35,
+              "scores_by_weight": {
+                "0.0": NaN,
+                "0.15": NaN,
+                "0.25": NaN,
+                "0.35": NaN,
+                "0.5": NaN,
+                "0.65": NaN,
+                "1.0": NaN
+              },
+              "n_cal_fixtures": 0
+            }
+          },
+          "v2_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300,
+              "log_loss": 0.5563479869242688
+            },
+            "scores": {
+              "nl31_ne300": {
+                "num_leaves": 31,
+                "n_estimators": 300,
+                "log_loss": 0.5563479869242688
+              },
+              "nl63_ne300": {
+                "num_leaves": 63,
+                "n_estimators": 300,
+                "log_loss": 0.5616243428945062
+              },
+              "nl127_ne300": {
+                "num_leaves": 127,
+                "n_estimators": 300,
+                "log_loss": 0.5755073170393219
+              },
+              "nl31_ne500": {
+                "num_leaves": 31,
+                "n_estimators": 500,
+                "log_loss": 0.5605752946274566
+              },
+              "nl63_ne500": {
+                "num_leaves": 63,
+                "n_estimators": 500,
+                "log_loss": 0.5702394425525528
+              },
+              "nl127_ne500": {
+                "num_leaves": 127,
+                "n_estimators": 500,
+                "log_loss": 0.595805663896238
+              }
+            }
+          },
+          "ev_opt_blend": {
+            "over": {
+              "best_weight": 0.35,
+              "label": "2025-26/29feat_n5/ou15/opt_blend_over",
+              "n_bets": 23,
+              "roi": -0.18782608695652175,
+              "ci_lo": -0.5400760869565218,
+              "ci_hi": 0.1661521739130431,
+              "win_rate": 0.4782608695652174,
+              "avg_odds": 1.7169565217391305,
+              "avg_ev": 0.07054016719910669
+            }
+          },
+          "ev_tuned_hp": {
+            "best_hp": {
+              "num_leaves": 31,
+              "n_estimators": 300
+            },
+            "note": "best HP same as default; no refit",
+            "label": "2025-26/29feat_n5/ou15/tuned_hp_same",
+            "n_bets": 23,
+            "roi": -0.18782608695652175,
+            "ci_lo": -0.5400760869565218,
+            "ci_hi": 0.1661521739130431,
+            "win_rate": 0.4782608695652174,
+            "avg_odds": 1.7169565217391305,
+            "avg_ev": 0.07054016719910669
+          }
+        }
+      },
+      "29feat_n10": {
+        "h2h": {
+          "raw_metrics_default": {
+            "auc": 0.5897905687142508,
+            "log_loss": 1.0668872480795044,
+            "brier": 0.2136835284395349,
+            "n": 3029
+          },
+          "ev_default": {
+            "label": "2025-26/29feat_n10/h2h/default",
+            "n_bets": 1952,
+            "roi": -0.07026127049180328,
+            "ci_lo": -0.15628906250000002,
+            "ci_hi": 0.01854264856557375,
+            "win_rate": 0.24077868852459017,
+            "avg_odds": 5.125578893442623,
+            "avg_ev": 0.2062748089027644
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2025-26/29feat_n10/h2h/warm_ge5",
+              "n_bets": 957,
+              "roi": -0.07197492163009404,
+              "ci_lo": -0.1939028213166144,
+              "ci_hi": 0.05477142110762796,
+              "win_rate": 0.25391849529780564,
+              "avg_odds": 4.778077324973876,
+              "avg_ev": 0.18394536230522202
+            },
+            "cold_lt5": {
+              "label": "2025-26/29feat_n10/h2h/cold_lt5",
+              "n_bets": 995,
+              "roi": -0.06861306532663314,
+              "ci_lo": -0.19166306532663316,
+              "ci_hi": 0.058829396984924606,
+              "win_rate": 0.22814070351758794,
+              "avg_odds": 5.459809045226131,
+              "avg_ev": 0.2277514726151745
+            },
+            "warm_ge10": {
+              "label": "2025-26/29feat_n10/h2h/warm_ge10",
+              "n_bets": 922,
+              "roi": -0.05522776572668114,
+              "ci_lo": -0.17882293926247286,
+              "ci_hi": 0.07540509761388284,
+              "win_rate": 0.25704989154013014,
+              "avg_odds": 4.800184381778743,
+              "avg_ev": 0.18466219224426095
+            },
+            "cold_lt10": {
+              "label": "2025-26/29feat_n10/h2h/cold_lt10",
+              "n_bets": 1030,
+              "roi": -0.08371844660194175,
+              "ci_lo": -0.2102871359223301,
+              "ci_hi": 0.04400970873786408,
+              "win_rate": 0.2262135922330097,
+              "avg_odds": 5.4168543689320385,
+              "avg_ev": 0.2256212482805704
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "btts": {
+          "raw_metrics_default": {
+            "auc": 0.520566825938087,
+            "log_loss": 0.7120464518458297,
+            "brier": 0.2581254036060031,
+            "n": 3029
+          },
+          "ev_default": {
+            "label": "2025-26/29feat_n10/btts/default",
+            "n_bets": 117,
+            "roi": 0.1282905982905983,
+            "ci_lo": -0.09860470085470084,
+            "ci_hi": 0.3679102564102562,
+            "win_rate": 0.4444444444444444,
+            "avg_odds": 2.585641025641026,
+            "avg_ev": 0.10763964044747824
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2025-26/29feat_n10/btts/warm_ge5",
+              "n_bets": 36,
+              "roi": 0.01833333333333335,
+              "ci_lo": -0.36170138888888886,
+              "ci_hi": 0.4402777777777777,
+              "win_rate": 0.4166666666666667,
+              "avg_odds": 2.4819444444444443,
+              "avg_ev": 0.10590738607607984
+            },
+            "cold_lt5": {
+              "label": "2025-26/29feat_n10/btts/cold_lt5",
+              "n_bets": 81,
+              "roi": 0.17716049382716048,
+              "ci_lo": -0.10070987654320986,
+              "ci_hi": 0.48014814814814805,
+              "win_rate": 0.4567901234567901,
+              "avg_odds": 2.6317283950617285,
+              "avg_ev": 0.10840953127921091
+            },
+            "warm_ge10": {
+              "label": "2025-26/29feat_n10/btts/warm_ge10",
+              "n_bets": 29,
+              "roi": 0.09344827586206897,
+              "ci_lo": -0.3207155172413793,
+              "ci_hi": 0.49558620689655136,
+              "win_rate": 0.4827586206896552,
+              "avg_odds": 2.436551724137931,
+              "avg_ev": 0.09994817853110266
+            },
+            "cold_lt10": {
+              "label": "2025-26/29feat_n10/btts/cold_lt10",
+              "n_bets": 88,
+              "roi": 0.1397727272727273,
+              "ci_lo": -0.13103693181818182,
+              "ci_hi": 0.40853977272727265,
+              "win_rate": 0.4318181818181818,
+              "avg_odds": 2.6347727272727273,
+              "avg_ev": 0.11017432676082932
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "ou25": {
+          "raw_metrics_default": {
+            "auc": 0.5698698016685169,
+            "log_loss": 0.6982742268356089,
+            "brier": 0.2519221610838444,
+            "n": 3029
+          },
+          "ev_default": {
+            "label": "2025-26/29feat_n10/ou25/default",
+            "n_bets": 213,
+            "roi": -0.14131455399061033,
+            "ci_lo": -0.29850117370892015,
+            "ci_hi": 0.02655751173708878,
+            "win_rate": 0.352112676056338,
+            "avg_odds": 2.554600938967136,
+            "avg_ev": 0.09250850642753772
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2025-26/29feat_n10/ou25/warm_ge5",
+              "n_bets": 111,
+              "roi": -0.0799099099099099,
+              "ci_lo": -0.28631531531531534,
+              "ci_hi": 0.14400450450450428,
+              "win_rate": 0.40540540540540543,
+              "avg_odds": 2.3863063063063064,
+              "avg_ev": 0.09029514518484034
+            },
+            "cold_lt5": {
+              "label": "2025-26/29feat_n10/ou25/cold_lt5",
+              "n_bets": 102,
+              "roi": -0.20813725490196078,
+              "ci_lo": -0.4334338235294117,
+              "ci_hi": 0.035725490196078215,
+              "win_rate": 0.29411764705882354,
+              "avg_odds": 2.7377450980392153,
+              "avg_ev": 0.09491716425047309
+            },
+            "warm_ge10": {
+              "label": "2025-26/29feat_n10/ou25/warm_ge10",
+              "n_bets": 102,
+              "roi": -0.02176470588235293,
+              "ci_lo": -0.23902205882352942,
+              "ci_hi": 0.19445588235294092,
+              "win_rate": 0.43137254901960786,
+              "avg_odds": 2.360980392156863,
+              "avg_ev": 0.09049848280055302
+            },
+            "cold_lt10": {
+              "label": "2025-26/29feat_n10/ou25/cold_lt10",
+              "n_bets": 111,
+              "roi": -0.25117117117117116,
+              "ci_lo": -0.46875,
+              "ci_hi": -0.029981981981982066,
+              "win_rate": 0.27927927927927926,
+              "avg_odds": 2.732522522522522,
+              "avg_ev": 0.09435555516584798
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        },
+        "ou15": {
+          "raw_metrics_default": {
+            "auc": 0.5706365762230159,
+            "log_loss": 0.5570824201427347,
+            "brier": 0.18525663458463987,
+            "n": 3029
+          },
+          "ev_default": {
+            "label": "2025-26/29feat_n10/ou15/default",
+            "n_bets": 28,
+            "roi": -0.1335714285714286,
+            "ci_lo": -0.46,
+            "ci_hi": 0.19251785714285707,
+            "win_rate": 0.5,
+            "avg_odds": 1.729642857142857,
+            "avg_ev": 0.07684833867448433
+          },
+          "bets_default_per_prior": {
+            "warm_ge5": {
+              "label": "2025-26/29feat_n10/ou15/warm_ge5",
+              "n_bets": 8,
+              "roi": -0.37124999999999997,
+              "ci_lo": -0.8,
+              "ci_hi": 0.22875000000000004,
+              "win_rate": 0.375,
+              "avg_odds": 1.7087500000000002,
+              "avg_ev": 0.073089192660023
+            },
+            "cold_lt5": {
+              "label": "2025-26/29feat_n10/ou15/cold_lt5",
+              "n_bets": 20,
+              "roi": -0.03850000000000001,
+              "ci_lo": -0.4120125,
+              "ci_hi": 0.3300124999999999,
+              "win_rate": 0.55,
+              "avg_odds": 1.738,
+              "avg_ev": 0.07835199708026884
+            },
+            "warm_ge10": {
+              "label": "2025-26/29feat_n10/ou15/warm_ge10",
+              "n_bets": 8,
+              "roi": -0.37124999999999997,
+              "ci_lo": -0.8,
+              "ci_hi": 0.22875000000000004,
+              "win_rate": 0.375,
+              "avg_odds": 1.7087500000000002,
+              "avg_ev": 0.073089192660023
+            },
+            "cold_lt10": {
+              "label": "2025-26/29feat_n10/ou15/cold_lt10",
+              "n_bets": 20,
+              "roi": -0.03850000000000001,
+              "ci_lo": -0.4120125,
+              "ci_hi": 0.3300124999999999,
+              "win_rate": 0.55,
+              "avg_odds": 1.738,
+              "avg_ev": 0.07835199708026884
+            }
+          },
+          "v1_blend": {},
+          "v2_hp": {},
+          "ev_opt_blend": {},
+          "ev_tuned_hp": {}
+        }
+      }
+    }
+  ],
+  "global": {
+    "v3_global": {
+      "n_val_fixtures": 20658,
+      "prior_counts": {
+        "lt_5": {
+          "n": 2535,
+          "frac": 0.12271275050827767
+        },
+        "lt_10": {
+          "n": 3175,
+          "frac": 0.15369348436441088
+        }
+      },
+      "bet_breakdown_by_market": {
+        "h2h": {
+          "warm5": [],
+          "cold5": [],
+          "warm10": [],
+          "cold10": [],
+          "warm5_n": 5664,
+          "cold5_n": 1007,
+          "warm10_n": 5604,
+          "cold10_n": 1067,
+          "warm5_roi_samples": [
+            {
+              "n": 1581,
+              "roi": -0.0726438962681847,
+              "ci_lo": -0.15740907653383934,
+              "ci_hi": 0.011951929158760153
+            },
+            {
+              "n": 3108,
+              "roi": -0.09596525096525096,
+              "ci_lo": -0.1507472651222651,
+              "ci_hi": -0.03516023166023168
+            },
+            {
+              "n": 975,
+              "roi": -0.07963076923076923,
+              "ci_lo": -0.1974551282051282,
+              "ci_hi": 0.03975076923076909
+            }
+          ],
+          "cold5_roi_samples": [
+            {
+              "n": 9,
+              "roi": 0.6966666666666668,
+              "ci_lo": -0.6777777777777777,
+              "ci_hi": 2.155805555555554
+            },
+            {
+              "n": 13,
+              "roi": -0.13461538461538458,
+              "ci_lo": -1.0,
+              "ci_hi": 0.8576923076923078
+            },
+            {
+              "n": 985,
+              "roi": -0.08004060913705582,
+              "ci_lo": -0.2054657360406091,
+              "ci_hi": 0.06358527918781726
+            }
+          ],
+          "warm10_roi_samples": [
+            {
+              "n": 1573,
+              "roi": -0.07676414494596313,
+              "ci_lo": -0.15633343928798477,
+              "ci_hi": 0.004333121424030472
+            },
+            {
+              "n": 3091,
+              "roi": -0.09555483662245229,
+              "ci_lo": -0.15356915237787125,
+              "ci_hi": -0.033110724684568146
+            },
+            {
+              "n": 940,
+              "roi": -0.07379787234042555,
+              "ci_lo": -0.1899662234042553,
+              "ci_hi": 0.053480053191489275
+            }
+          ],
+          "cold10_roi_samples": [
+            {
+              "n": 17,
+              "roi": 0.7158823529411765,
+              "ci_lo": -0.19205882352941173,
+              "ci_hi": 1.7101029411764699
+            },
+            {
+              "n": 30,
+              "roi": -0.15499999999999994,
+              "ci_lo": -0.6933750000000001,
+              "ci_hi": 0.44679166666666603
+            },
+            {
+              "n": 1020,
+              "roi": -0.08540196078431371,
+              "ci_lo": -0.20741642156862747,
+              "ci_hi": 0.04752769607843133
+            }
+          ]
+        },
+        "btts": {
+          "warm5": [],
+          "cold5": [],
+          "warm10": [],
+          "cold10": [],
+          "warm5_n": 31,
+          "cold5_n": 67,
+          "warm10_n": 27,
+          "cold10_n": 71,
+          "warm5_roi_samples": [
+            {
+              "n": 31,
+              "roi": 0.13741935483870968,
+              "ci_lo": -0.34646774193548385,
+              "ci_hi": 0.6271209677419354
+            }
+          ],
+          "cold5_roi_samples": [
+            {
+              "n": 67,
+              "roi": 0.1895522388059702,
+              "ci_lo": -0.11616791044776117,
+              "ci_hi": 0.5053917910447759
+            }
+          ],
+          "warm10_roi_samples": [
+            {
+              "n": 27,
+              "roi": 0.12259259259259261,
+              "ci_lo": -0.31082407407407403,
+              "ci_hi": 0.5618888888888887
+            }
+          ],
+          "cold10_roi_samples": [
+            {
+              "n": 71,
+              "roi": 0.19225352112676058,
+              "ci_lo": -0.12677464788732393,
+              "ci_hi": 0.5141197183098589
+            }
+          ]
+        },
+        "ou25": {
+          "warm5": [],
+          "cold5": [],
+          "warm10": [],
+          "cold10": [],
+          "warm5_n": 1451,
+          "cold5_n": 117,
+          "warm10_n": 1436,
+          "cold10_n": 132,
+          "warm5_roi_samples": [
+            {
+              "n": 54,
+              "roi": -0.20851851851851855,
+              "ci_lo": -0.4863981481481482,
+              "ci_hi": 0.1011527777777775
+            },
+            {
+              "n": 1287,
+              "roi": -0.0713053613053613,
+              "ci_lo": -0.13188908313908315,
+              "ci_hi": -0.013379953379953428
+            },
+            {
+              "n": 110,
+              "roi": -0.0992727272727273,
+              "ci_lo": -0.30460681818181823,
+              "ci_hi": 0.10373181818181765
+            }
+          ],
+          "cold5_roi_samples": [
+            {
+              "n": 1,
+              "roi": 1.0699999999999998,
+              "ci_lo": NaN,
+              "ci_hi": NaN
+            },
+            {
+              "n": 1,
+              "roi": -1.0,
+              "ci_lo": NaN,
+              "ci_hi": NaN
+            },
+            {
+              "n": 115,
+              "roi": -0.10286956521739132,
+              "ci_lo": -0.32957391304347833,
+              "ci_hi": 0.12830217391304327
+            }
+          ],
+          "warm10_roi_samples": [
+            {
+              "n": 54,
+              "roi": -0.20851851851851855,
+              "ci_lo": -0.4863981481481482,
+              "ci_hi": 0.1011527777777775
+            },
+            {
+              "n": 1284,
+              "roi": -0.07287383177570093,
+              "ci_lo": -0.13308528037383177,
+              "ci_hi": -0.007531931464174534
+            },
+            {
+              "n": 98,
+              "roi": -0.025306122448979604,
+              "ci_lo": -0.2476683673469388,
+              "ci_hi": 0.2034770408163265
+            }
+          ],
+          "cold10_roi_samples": [
+            {
+              "n": 1,
+              "roi": 1.0699999999999998,
+              "ci_lo": NaN,
+              "ci_hi": NaN
+            },
+            {
+              "n": 4,
+              "roi": 0.20000000000000007,
+              "ci_lo": -1.0,
+              "ci_hi": 1.4000000000000001
+            },
+            {
+              "n": 127,
+              "roi": -0.15960629921259842,
+              "ci_lo": -0.3724192913385827,
+              "ci_hi": 0.05529330708661406
+            }
+          ]
+        },
+        "ou15": {
+          "warm5": [],
+          "cold5": [],
+          "warm10": [],
+          "cold10": [],
+          "warm5_n": 5,
+          "cold5_n": 18,
+          "warm10_n": 5,
+          "cold10_n": 18,
+          "warm5_roi_samples": [
+            {
+              "n": 5,
+              "roi": -0.6799999999999999,
+              "ci_lo": -1.0,
+              "ci_hi": -0.039999999999999945
+            }
+          ],
+          "cold5_roi_samples": [
+            {
+              "n": 18,
+              "roi": -0.05111111111111112,
+              "ci_lo": -0.44223611111111105,
+              "ci_hi": 0.32
+            }
+          ],
+          "warm10_roi_samples": [
+            {
+              "n": 5,
+              "roi": -0.6799999999999999,
+              "ci_lo": -1.0,
+              "ci_hi": -0.039999999999999945
+            }
+          ],
+          "cold10_roi_samples": [
+            {
+              "n": 18,
+              "roi": -0.05111111111111112,
+              "ci_lo": -0.44223611111111105,
+              "ci_hi": 0.32
+            }
+          ]
+        }
+      }
+    }
+  },
+  "config": {
+    "blend_weight_grid": [
+      0.0,
+      0.15,
+      0.25,
+      0.35,
+      0.5,
+      0.65,
+      1.0
+    ],
+    "hp_grid": [
+      {
+        "num_leaves": 31,
+        "n_estimators": 300
+      },
+      {
+        "num_leaves": 63,
+        "n_estimators": 300
+      },
+      {
+        "num_leaves": 127,
+        "n_estimators": 300
+      },
+      {
+        "num_leaves": 31,
+        "n_estimators": 500
+      },
+      {
+        "num_leaves": 63,
+        "n_estimators": 500
+      },
+      {
+        "num_leaves": 127,
+        "n_estimators": 500
+      }
+    ],
+    "bot_min_ev": 0.05,
+    "v3_thresholds": [
+      5,
+      10
+    ]
+  }
+}

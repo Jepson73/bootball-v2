@@ -1,0 +1,464 @@
+{
+  "roll5": {
+    "2022": {
+      "n_val_preds": 1000,
+      "n_no_xg": 3,
+      "skellam_params": {
+        "39": [
+          1.2291597026730787,
+          1.3635932308817111
+        ],
+        "135": [
+          1.2195495209304705,
+          1.383880767974138
+        ],
+        "140": [
+          1.321637577098795,
+          1.3274442125617791
+        ]
+      },
+      "qual_a": {
+        "n": 997,
+        "auc": 0.66962,
+        "log_loss": 1.08985,
+        "brier": 0.20416
+      },
+      "qual_b": {
+        "n": 997,
+        "auc": 0.67093,
+        "log_loss": 1.06425,
+        "brier": 0.20991
+      },
+      "qual_base": {
+        "n": 997,
+        "auc": 0.69757,
+        "log_loss": 1.00162,
+        "brier": 0.19929
+      },
+      "bt_a_all": {
+        "n": 845,
+        "roi": -12.764,
+        "ci_lo": -24.622,
+        "ci_hi": 0.127,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-A roll5 2022 all"
+      },
+      "bt_a_home": {
+        "n": 416,
+        "roi": -15.986,
+        "ci_lo": -29.665,
+        "ci_hi": -2.067,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-A roll5 2022 home"
+      },
+      "bt_b_all": {
+        "n": 846,
+        "roi": -3.106,
+        "ci_lo": -13.674,
+        "ci_hi": 8.646,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-B roll5 2022 all"
+      },
+      "bt_b_home": {
+        "n": 424,
+        "roi": -4.809,
+        "ci_lo": -18.073,
+        "ci_hi": 8.657,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-B roll5 2022 home"
+      },
+      "bt_base_all": {
+        "n": 740,
+        "roi": -11.592,
+        "ci_lo": -24.633,
+        "ci_hi": 1.642,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Base roll5 2022 all"
+      },
+      "bt_base_home": {
+        "n": 266,
+        "roi": -20.53,
+        "ci_lo": -37.023,
+        "ci_hi": -3.033,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Base roll5 2022 home"
+      },
+      "clv_a": {
+        "n": 839,
+        "clv": 2.2531,
+        "ci_lo": 1.4869,
+        "ci_hi": 3.0292,
+        "ci_gt0": true,
+        "label": "Var-A 2022"
+      },
+      "clv_b": {
+        "n": 840,
+        "clv": 1.6874,
+        "ci_lo": 1.0616,
+        "ci_hi": 2.3538,
+        "ci_gt0": true,
+        "label": "Var-B 2022"
+      },
+      "clv_base": {
+        "n": 735,
+        "clv": 1.083,
+        "ci_lo": 0.2702,
+        "ci_hi": 1.9309,
+        "ci_gt0": true,
+        "label": "Base 2022"
+      }
+    },
+    "2023": {
+      "n_val_preds": 1738,
+      "n_no_xg": 1,
+      "skellam_params": {
+        "39": [
+          1.2302764162896924,
+          1.3722671376838929
+        ],
+        "135": [
+          1.2157710159117026,
+          1.3900810073523882
+        ],
+        "140": [
+          1.3235022350346994,
+          1.3307564476945246
+        ]
+      },
+      "qual_a": {
+        "n": 1737,
+        "auc": 0.68004,
+        "log_loss": 1.07043,
+        "brier": 0.20177
+      },
+      "qual_b": {
+        "n": 1737,
+        "auc": 0.67884,
+        "log_loss": 1.043,
+        "brier": 0.20667
+      },
+      "qual_base": {
+        "n": 1737,
+        "auc": 0.7001,
+        "log_loss": 0.99256,
+        "brier": 0.19731
+      },
+      "bt_a_all": {
+        "n": 1403,
+        "roi": -20.006,
+        "ci_lo": -29.14,
+        "ci_hi": -10.117,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-A roll5 2023 all"
+      },
+      "bt_a_home": {
+        "n": 527,
+        "roi": -12.116,
+        "ci_lo": -25.651,
+        "ci_hi": 2.2,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-A roll5 2023 home"
+      },
+      "bt_b_all": {
+        "n": 1446,
+        "roi": -19.488,
+        "ci_lo": -28.131,
+        "ci_hi": -10.61,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-B roll5 2023 all"
+      },
+      "bt_b_home": {
+        "n": 552,
+        "roi": -9.217,
+        "ci_lo": -21.529,
+        "ci_hi": 3.531,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-B roll5 2023 home"
+      },
+      "bt_base_all": {
+        "n": 1351,
+        "roi": -16.02,
+        "ci_lo": -25.606,
+        "ci_hi": -5.905,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Base roll5 2023 all"
+      },
+      "bt_base_home": {
+        "n": 358,
+        "roi": -14.461,
+        "ci_lo": -31.833,
+        "ci_hi": 3.97,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Base roll5 2023 home"
+      },
+      "clv_a": {
+        "n": 1394,
+        "clv": 1.5137,
+        "ci_lo": 0.8982,
+        "ci_hi": 2.14,
+        "ci_gt0": true,
+        "label": "Var-A 2023"
+      },
+      "clv_b": {
+        "n": 1437,
+        "clv": 1.7576,
+        "ci_lo": 1.1921,
+        "ci_hi": 2.3432,
+        "ci_gt0": true,
+        "label": "Var-B 2023"
+      },
+      "clv_base": {
+        "n": 1345,
+        "clv": 1.0324,
+        "ci_lo": 0.4277,
+        "ci_hi": 1.6359,
+        "ci_gt0": true,
+        "label": "Base 2023"
+      }
+    }
+  },
+  "roll10": {
+    "2022": {
+      "n_val_preds": 1000,
+      "n_no_xg": 3,
+      "skellam_params": {
+        "39": [
+          1.2291597026730787,
+          1.3635932308817111
+        ],
+        "135": [
+          1.2195495209304705,
+          1.383880767974138
+        ],
+        "140": [
+          1.321637577098795,
+          1.3274442125617791
+        ]
+      },
+      "qual_a": {
+        "n": 997,
+        "auc": 0.70668,
+        "log_loss": 1.12755,
+        "brier": 0.19807
+      },
+      "qual_b": {
+        "n": 997,
+        "auc": 0.70796,
+        "log_loss": 1.00421,
+        "brier": 0.19901
+      },
+      "qual_base": {
+        "n": 997,
+        "auc": 0.69757,
+        "log_loss": 1.00162,
+        "brier": 0.19929
+      },
+      "bt_a_all": {
+        "n": 761,
+        "roi": -3.154,
+        "ci_lo": -15.781,
+        "ci_hi": 9.345,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-A roll10 2022 all"
+      },
+      "bt_a_home": {
+        "n": 375,
+        "roi": -6.205,
+        "ci_lo": -19.657,
+        "ci_hi": 8.124,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-A roll10 2022 home"
+      },
+      "bt_b_all": {
+        "n": 764,
+        "roi": -2.542,
+        "ci_lo": -12.882,
+        "ci_hi": 7.956,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-B roll10 2022 all"
+      },
+      "bt_b_home": {
+        "n": 438,
+        "roi": -7.005,
+        "ci_lo": -18.805,
+        "ci_hi": 5.074,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-B roll10 2022 home"
+      },
+      "bt_base_all": {
+        "n": 740,
+        "roi": -11.592,
+        "ci_lo": -24.633,
+        "ci_hi": 1.642,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Base roll10 2022 all"
+      },
+      "bt_base_home": {
+        "n": 266,
+        "roi": -20.53,
+        "ci_lo": -37.023,
+        "ci_hi": -3.033,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Base roll10 2022 home"
+      },
+      "clv_a": {
+        "n": 754,
+        "clv": 2.4559,
+        "ci_lo": 1.6588,
+        "ci_hi": 3.2561,
+        "ci_gt0": true,
+        "label": "Var-A 2022"
+      },
+      "clv_b": {
+        "n": 757,
+        "clv": 2.0734,
+        "ci_lo": 1.3617,
+        "ci_hi": 2.7819,
+        "ci_gt0": true,
+        "label": "Var-B 2022"
+      },
+      "clv_base": {
+        "n": 735,
+        "clv": 1.083,
+        "ci_lo": 0.2702,
+        "ci_hi": 1.9309,
+        "ci_gt0": true,
+        "label": "Base 2022"
+      }
+    },
+    "2023": {
+      "n_val_preds": 1738,
+      "n_no_xg": 1,
+      "skellam_params": {
+        "39": [
+          1.2302764162896924,
+          1.3722671376838929
+        ],
+        "135": [
+          1.2157710159117026,
+          1.3900810073523882
+        ],
+        "140": [
+          1.3235022350346994,
+          1.3307564476945246
+        ]
+      },
+      "qual_a": {
+        "n": 1737,
+        "auc": 0.70168,
+        "log_loss": 1.07433,
+        "brier": 0.19851
+      },
+      "qual_b": {
+        "n": 1737,
+        "auc": 0.70203,
+        "log_loss": 1.00333,
+        "brier": 0.19935
+      },
+      "qual_base": {
+        "n": 1737,
+        "auc": 0.7001,
+        "log_loss": 0.99256,
+        "brier": 0.19731
+      },
+      "bt_a_all": {
+        "n": 1394,
+        "roi": -18.618,
+        "ci_lo": -27.906,
+        "ci_hi": -9.262,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-A roll10 2023 all"
+      },
+      "bt_a_home": {
+        "n": 506,
+        "roi": -7.98,
+        "ci_lo": -22.091,
+        "ci_hi": 7.345,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-A roll10 2023 home"
+      },
+      "bt_b_all": {
+        "n": 1355,
+        "roi": -20.163,
+        "ci_lo": -29.446,
+        "ci_hi": -10.668,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-B roll10 2023 all"
+      },
+      "bt_b_home": {
+        "n": 563,
+        "roi": -11.755,
+        "ci_lo": -24.482,
+        "ci_hi": 1.197,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Var-B roll10 2023 home"
+      },
+      "bt_base_all": {
+        "n": 1351,
+        "roi": -16.02,
+        "ci_lo": -25.606,
+        "ci_hi": -5.905,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Base roll10 2023 all"
+      },
+      "bt_base_home": {
+        "n": 358,
+        "roi": -14.461,
+        "ci_lo": -31.833,
+        "ci_hi": 3.97,
+        "ci_gt0": false,
+        "pass": false,
+        "label": "Base roll10 2023 home"
+      },
+      "clv_a": {
+        "n": 1386,
+        "clv": 1.5554,
+        "ci_lo": 0.9515,
+        "ci_hi": 2.1859,
+        "ci_gt0": true,
+        "label": "Var-A 2023"
+      },
+      "clv_b": {
+        "n": 1348,
+        "clv": 1.6863,
+        "ci_lo": 1.0949,
+        "ci_hi": 2.3086,
+        "ci_gt0": true,
+        "label": "Var-B 2023"
+      },
+      "clv_base": {
+        "n": 1345,
+        "clv": 1.0324,
+        "ci_lo": 0.4277,
+        "ci_hi": 1.6359,
+        "ci_gt0": true,
+        "label": "Base 2023"
+      }
+    }
+  },
+  "source_section": "## Task 1 \u2014 xG Source\n\n**Source used:** Understat via `understatapi` Python package (synchronous interface).\nCloudflare test passed on first attempt \u2014 no blocking encountered at \u22640.8 req/s.\n\n**Coverage:** EPL (league 39), Serie_A (league 135), La_Liga (league 140). Seasons 2014/15\u20132023/24 (understat season keys 2014\u20132023). Total: 11400 completed matches.\n\n**Overlap with fdco backtest windows:**\n- fdco 2022 window (Jan\u2013Dec 2022): E0/I1/SP1 account for 1,000 of 3,540 preds (28%)\n- fdco 2023 window (Jan 2023\u2013Jun 2024): 1,738 of 5,456 preds (32%)\n\nThe other 5 fdco leagues (E1/E2/E3/I2/SP2) are not in Understat's top-6 coverage; this analysis is restricted to the 3 matching leagues.\n\n**Rolling window tested:** 5 and 10 matches. (Wilkens 2026 exact window not recoverable without paper access; both alternatives are reported.)\n",
+  "verdict_text": "\n### Roll window = 5 matches\n\nPre-registered bar: 95% CI > 0, \u2265500 bets, \u22652 windows pass.\n\n| Model | Scope | 2022 pass? | 2023 pass? | Both windows? |\n|-------|-------|-----------|-----------|---------------|\n| DC baseline | all | NO | NO | FAIL |\n| DC baseline | home | NO | NO | FAIL |\n| Var-A Skellam+iso | all | NO | NO | FAIL |\n| Var-A Skellam+iso | home | NO | NO | FAIL |\n| Var-B DC-xG | all | NO | NO | FAIL |\n| Var-B DC-xG | home | NO | NO | FAIL |\n\n### Roll window = 10 matches\n\nPre-registered bar: 95% CI > 0, \u2265500 bets, \u22652 windows pass.\n\n| Model | Scope | 2022 pass? | 2023 pass? | Both windows? |\n|-------|-------|-----------|-----------|---------------|\n| DC baseline | all | NO | NO | FAIL |\n| DC baseline | home | NO | NO | FAIL |\n| Var-A Skellam+iso | all | NO | NO | FAIL |\n| Var-A Skellam+iso | home | NO | NO | FAIL |\n| Var-B DC-xG | all | NO | NO | FAIL |\n| Var-B DC-xG | home | NO | NO | FAIL |\n\n### Home-only underpowering note\n\nThe home-only restriction targets the cell where both Wilkens and our Phase 6 CLV results show concentration. With ~1,000/1,738 covered preds per window and ~35% home-selection rate, the 2022 home-only cell is expected to contain ~300 bets \u2014 below the \u2265500 bar. Any positive home-only 2022 result should be read as 'promising but underpowered' rather than a formal pass. The 2023 window (~610 est.) may clear the bar.\n"
+}
