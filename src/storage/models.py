@@ -886,14 +886,48 @@ class ArchitectureTransitions(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     from_architecture: Mapped[str | None] = mapped_column(String(50), nullable=True)
     to_architecture: Mapped[str] = mapped_column(String(50), nullable=False)
-    
+
     ev_delta: Mapped[float] = mapped_column(Float, default=0.0)
     risk_delta: Mapped[float] = mapped_column(Float, default=0.0)
     calibration_delta: Mapped[float] = mapped_column(Float, default=0.0)
-    
+
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     approved: Mapped[int] = mapped_column(Integer, default=0)
     rolled_back: Mapped[int] = mapped_column(Integer, default=0)
-    
+
     timestamp: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     transition_type: Mapped[str] = mapped_column(String(20), default="upgrade")
+
+
+# ── Forward Collection ────────────────────────────────────────────────────────
+
+class OddsSnapshot(Base):
+    """
+    Time-series odds captures for forward-collection leagues.
+
+    Unlike FixtureOdds (one row per fixture/bookmaker/market, always overwritten),
+    each row here is one capture at a specific point in time — allowing open→close
+    trajectory analysis later. No UniqueConstraint; dedup is done at the script
+    level by checking for captures within the last 2 hours before inserting.
+    """
+    __tablename__ = "odds_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    fixture_id: Mapped[int] = mapped_column(Integer, ForeignKey("fixtures.id"), nullable=False, index=True)
+    bookmaker_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    bookmaker_name: Mapped[str] = mapped_column(String(100), nullable=False)
+    market_type: Mapped[str] = mapped_column(String(20), nullable=False)  # h2h | ou25 | btts
+    captured_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+
+    # 1X2
+    odd_home: Mapped[float | None] = mapped_column(Float, nullable=True)
+    odd_draw: Mapped[float | None] = mapped_column(Float, nullable=True)
+    odd_away: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # O/U 2.5
+    odd_over: Mapped[float | None] = mapped_column(Float, nullable=True)
+    odd_under: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # BTTS
+    odd_btts_yes: Mapped[float | None] = mapped_column(Float, nullable=True)
+    odd_btts_no: Mapped[float | None] = mapped_column(Float, nullable=True)
