@@ -14,6 +14,7 @@
 | `config/forward_leagues.py` | LIVE | Leagues 777/778/779 (Norwegian 3. Div), 648 (Tasmania NPL) |
 | `scripts/capture_forward_odds.py` | LIVE | Run every 4h via cron; captures Pinnacle + Bet365 across h2h/ou25/btts |
 | Fixtures | PENDING | Forward leagues currently show no NS fixtures in DB — will populate when daily_run.py runs post-quota-reset |
+| Bet-name mapping (live path) | **UNVERIFIED** | API quota was exhausted during testing; `_process_odds_response` has never seen a live payload. First cron run must confirm `SELECT count(*) FROM odds_snapshots > 0`. If zero rows: run with `DEBUG` logging to see unrecognised bet_name strings and add aliases. |
 
 **Cron recommendation:**
 ```
@@ -31,7 +32,17 @@ Run `daily_run.py` first (once/day) to populate upcoming fixtures; then `capture
 | --- | --- | --- |
 | `_fetch_upcoming_fixtures()` join fix | LIVE | Removed `.join(FixtureOdds)` that silently dropped fixtures with no odds |
 | `generate()` delegates to `generate_with_fixture_data()` | LIVE | Dead-code path removed; one codepath for all fixtures |
-| `evaluate_track_a(market, records)` static method | LIVE | Log-loss, Brier, AUC from settled PredictionRecord objects |
+| `evaluate_track_a(market, records)` static method | LIVE | Log-loss, Brier, AUC from settled records |
+
+**`evaluate_track_a()` input contract:**
+Each record must supply `actual_outcome` (what the match actually produced) separately from
+`predicted_outcome` (what the model picked). The method derives P(reference) correctly:
+- btts/ou25/ou15: `p_ref = our_prob if predicted==reference else 1-our_prob`
+- h2h: requires `prob_home` key (our_prob alone cannot reconstruct P(Home) from the 3-class collapse);
+  records without `prob_home` are counted in `skipped_no_prob_home` and excluded.
+
+PredictionRecord does not store `prob_home` today — callers must supply it from the model's
+full probability vector at evaluation time.
 
 **Model divergence (explicit):**
 
@@ -56,6 +67,15 @@ Phase 10 research DC+xG model:
 | EV computation | CORRECT (unchanged) | `generate_with_fixture_data()` reads stored prediction object; no re-derivation |
 | CLV computation | FIXED | `capture_closing_lines()` now filters `FixtureOdds.bookmaker == 'Pinnacle'` |
 | Pinnacle gate | ENFORCED | CLV returns None (no capture) if Pinnacle odds are absent |
+
+**CLV gate impact on existing bets:**
+Of 448 `PlacedBet` rows, 368 (82%) have a Pinnacle row in `FixtureOdds` and will receive CLV
+capture. 80 bets (18%) do not — these are fixtures from leagues where Pinnacle is absent from
+the API (Phase 10 finding: EPL/La Liga/Serie A have no Pinnacle coverage via API-Football).
+For these 80 bets CLV will now return `None` rather than a non-Pinnacle reference. This is
+correct behaviour per the Phase 8 requirement (CLV without a sharp reference is meaningless),
+but it is a production behaviour change: those bets previously received a CLV value against
+a soft bookmaker. Confirm this is acceptable before relying on historical CLV numbers.
 
 **One-source-of-truth check:**
 - `generate_with_fixture_data()` produces prediction dicts with `our_prob`, `calibrated_prob`, `blended_prob`

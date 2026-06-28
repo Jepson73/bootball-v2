@@ -182,6 +182,10 @@ def _process_odds_response(
                     "captured_at": now,
                 }
 
+                # NOTE: bet_name strings ("Match Winner", "Goals Over/Under", "Both Teams Score")
+                # were inferred from API-Football docs and prior FixtureOdds data. Verify on
+                # first live run: SELECT DISTINCT bet_name FROM raw API response logs.
+                # If Pinnacle uses a different name (e.g. "1x2"), add it to the tuple.
                 if bet_name in ("Match Winner", "1x2"):
                     if _already_captured_within_stale(s, fixture_id, "h2h", bm_name):
                         continue
@@ -220,6 +224,7 @@ def _process_odds_response(
                         odd_btts_no=no,
                     )
                 else:
+                    logger.debug("Unrecognised bet_name=%r for fixture=%d bm=%r — skipping", bet_name, fixture_id, bm_name)
                     continue
 
                 if not dry_run:

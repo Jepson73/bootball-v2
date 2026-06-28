@@ -97,6 +97,7 @@ Core execution (predictions → bets) runs separately:
 |------|---------|
 | `config/settings.py` | All env-based settings: API keys, scheduling, model dirs, runtime mode |
 | `config/leagues.py` | `ALL_LEAGUE_IDS` — 1,225 leagues; league metadata; season definitions |
+| `config/forward_leagues.py` | Forward-collection leagues (Pinnacle-covered, high goal-rate); capture bookmakers (Pinnacle, Bet365); market types (h2h, o/u 2.5, BTTS); stale-window constant |
 | `config/markets.py` | Market definitions (h2h, btts, ou25, ou15); outcome mappings |
 | `config/drift_thresholds.py` | Drift detection thresholds; retrain triggers |
 | `.env.example` | Template for required environment variables |
@@ -192,6 +193,7 @@ Key models:
 | `Bankroll` | balance, currency, updated_at |
 | `Calibration` | market, method, params_json, calibrated_at |
 | `EloRating` | team_id, league_id, rating, updated_at |
+| `OddsSnapshot` | fixture_id, bookmaker_id, bookmaker_name, market_type, captured_at, odd_home, odd_draw, odd_away, odd_over, odd_under, odd_btts_yes, odd_btts_no |
 
 ### `src/agents/coordinator.py`
 
@@ -485,5 +487,6 @@ Key test files:
 | `scripts/check_model.py` | Inspect trained model metadata | Diagnostic tool |
 | `scripts/diagnostics.py` | Connectivity checks, backfill config validation | Diagnostic tool |
 | `scripts/daily_sanity_check.py` | Sanity checks run by scheduler | Active |
+| `scripts/capture_forward_odds.py` | Capture open→close odds time-series for forward-collection leagues (Pinnacle + Bet365) | Active |
 | `scripts/auto_bet.py` | Legacy betting pipeline — **DEPRECATED** (not in live path) | Dead — kept for reference |
 | `scripts/live_monitor.py` | Watch live matches in real-time | Likely dead |

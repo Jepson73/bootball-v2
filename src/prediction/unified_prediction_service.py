@@ -485,78 +485,101 @@ class UnifiedPredictionService:
 
     @staticmethod
     def evaluate_track_a(market: str, settled_records: list) -> dict:
-        """Compute Track-A proper scoring metrics for a batch of settled predictions.
+        """Compute Track-A proper scoring metrics on settled predictions.
 
-        Args:
-            market: one of "h2h", "ou25", "btts"
-            settled_records: list of PredictionRecord objects (or dicts with the same
-                keys) that have both our_prob and the actual outcome populated.
-                Records with no outcome are silently skipped.
+        Each record must be a dict or ORM object with:
+          - our_prob:          model probability of the PREDICTED outcome
+          - predicted_outcome: model's pick ("Home", "Draw", "Away", "Over", "Under", "Yes", "No")
+          - actual_outcome:    what actually happened (same label space as predicted_outcome)
+          For h2h, also provide `prob_home` (float); our_prob alone cannot reconstruct
+          P(Home) after the 3-class output collapses to a scalar.
 
-        Returns dict with keys: n, log_loss, brier, auc (all floats), plus
-        base_rate (fraction of positive outcomes in this sample).
+        For binary markets (btts, ou25, ou15):
+          P(reference) = our_prob if predicted==reference else 1 - our_prob
+          actual_binary = 1 if actual_outcome==reference else 0
 
-        NOTE on models: production uses LGBMClassifier on standings features
-        (feature_pipeline_version="v1.0.0"). The Phase 10 DC+xG research model
-        achieved 1X2 AUC~0.71; the standings-only LGBM is a weaker baseline.
-        Track-A scores here reflect the PRODUCTION model, not Phase 10 research.
+        For h2h:
+          P(Home) must be in `prob_home`; records without it are counted in
+          `skipped_no_prob_home` and excluded from metrics.
+
+        NOTE: production uses LGBMClassifier on standings features (AUC ~0.56–0.58).
+        Phase 10 DC+xG achieved 0.71; Track-A scores here reflect the weaker
+        production baseline, not the research model.
         """
         import math
 
-        def _get(r, key):
-            return r.get(key) if isinstance(r, dict) else getattr(r, key, None)
+        def _get(r, key, default=None):
+            return r.get(key, default) if isinstance(r, dict) else getattr(r, key, default)
 
-        OUTCOME_MAP = {
-            "h2h":  {"1": 1, "Home": 1, "X": 0, "Draw": 0, "2": 0, "Away": 0},
-            "btts":  {"Yes": 1, "No": 0},
-            "ou25":  {"Over": 1, "Under": 0},
-            "ou15":  {"Over": 1, "Under": 0},
-        }
-        label_map = OUTCOME_MAP.get(market, {})
+        BINARY_REFERENCE = {"btts": "Yes", "ou25": "Over", "ou15": "Over"}
 
-        probs, actuals = [], []
+        probs: list[float] = []
+        actuals: list[int] = []
+        skipped_no_outcome = 0
+        skipped_no_prob_home = 0
+
         for r in settled_records:
-            p = _get(r, "our_prob")
-            outcome = _get(r, "predicted_outcome") or _get(r, "outcome")
-            if p is None or outcome is None:
+            our_prob = _get(r, "our_prob")
+            predicted = str(_get(r, "predicted_outcome") or "")
+            actual_outcome = str(_get(r, "actual_outcome") or "")
+
+            if our_prob is None or not predicted or not actual_outcome:
+                skipped_no_outcome += 1
                 continue
-            actual = label_map.get(str(outcome))
-            if actual is None:
+
+            if market in BINARY_REFERENCE:
+                ref = BINARY_REFERENCE[market]
+                p_ref = float(our_prob) if predicted == ref else 1.0 - float(our_prob)
+                actual_bin = 1 if actual_outcome == ref else 0
+            elif market == "h2h":
+                prob_home = _get(r, "prob_home")
+                if prob_home is None:
+                    skipped_no_prob_home += 1
+                    continue
+                p_ref = float(prob_home)
+                actual_bin = 1 if actual_outcome == "Home" else 0
+            else:
+                skipped_no_outcome += 1
                 continue
-            probs.append(float(p))
-            actuals.append(int(actual))
+
+            probs.append(p_ref)
+            actuals.append(actual_bin)
 
         n = len(probs)
+        result: dict = {
+            "n": n,
+            "market": market,
+            "log_loss": None,
+            "brier": None,
+            "auc": None,
+            "base_rate": None,
+        }
+        if skipped_no_outcome:
+            result["skipped_no_outcome"] = skipped_no_outcome
+        if skipped_no_prob_home:
+            result["skipped_no_prob_home"] = skipped_no_prob_home
+
         if n == 0:
-            return {"n": 0, "log_loss": None, "brier": None, "auc": None, "base_rate": None}
+            return result
 
         eps = 1e-9
-        log_loss = -sum(
-            a * math.log(max(p, eps)) + (1 - a) * math.log(max(1 - p, eps))
-            for p, a in zip(probs, actuals)
-        ) / n
+        result["log_loss"] = round(
+            -sum(
+                a * math.log(max(p, eps)) + (1 - a) * math.log(max(1 - p, eps))
+                for p, a in zip(probs, actuals)
+            ) / n,
+            5,
+        )
+        result["brier"] = round(sum((p - a) ** 2 for p, a in zip(probs, actuals)) / n, 5)
 
-        brier = sum((p - a) ** 2 for p, a in zip(probs, actuals)) / n
-
-        # AUC via Mann-Whitney U
         pos = [p for p, a in zip(probs, actuals) if a == 1]
         neg = [p for p, a in zip(probs, actuals) if a == 0]
         if pos and neg:
             u = sum(1 if pp > pn else 0.5 if pp == pn else 0 for pp in pos for pn in neg)
-            auc = u / (len(pos) * len(neg))
-        else:
-            auc = None
+            result["auc"] = round(u / (len(pos) * len(neg)), 5)
 
-        base_rate = sum(actuals) / n
-
-        return {
-            "n": n,
-            "market": market,
-            "log_loss": round(log_loss, 5),
-            "brier": round(brier, 5),
-            "auc": round(auc, 5) if auc is not None else None,
-            "base_rate": round(base_rate, 4),
-        }
+        result["base_rate"] = round(sum(actuals) / n, 4)
+        return result
 
 
 # Global service
