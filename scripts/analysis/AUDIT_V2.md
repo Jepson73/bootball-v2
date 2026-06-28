@@ -1,7 +1,8 @@
 # Bootball V2 — Consolidation Audit
 
-**Date:** 2026-06-27  
-**Scope:** Phases 1–7. This document replaces seven separate phase reports as the single authoritative verdict on the research arc.
+**Date:** 2026-06-28 (updated)  
+**Original date:** 2026-06-27  
+**Scope:** Phases 1–8. This document replaces seven separate phase reports as the single authoritative verdict on the research arc.
 
 ---
 
@@ -30,6 +31,7 @@ CLV metric (Phase 5 onward): `(open_odds − close_odds) / close_odds`. Bar for 
 | 5 T2 | Weather + referee | GLM correction on DC λ/μ using wind, precipitation, temp deviation, referee tendency | Referee significant (p<10⁻²⁸); ±1.5pp ROI effect. Weather not significant. No EV improvement in either window. | **FAIL** |
 | 6 | CLV decomp + league regime | h2h CLV by direction/odds/league/overround; OU25 directional diagnosis; league-regime GLM; gap quantification | No CLV subset shows positive closing ROI. Gap = margin 5.5pp + selection penalty 4–6pp ≈ 10pp vs B365. League regime: 0 AUC improvement. | **FAIL** — no subset passes |
 | 7 | xG (Understat) | Rolling xG as DC input (EPL, Serie A, La Liga; 10-season Understat data); Var-A Skellam+isotonic vs Var-B DC-bivariate | CLV doubles: +1.1% → +1.7–2.5% (CI>0 both windows, all xG variants). EV ROI: best 2022 Var-B −2.5% CI[−12.9%,+8.0%], 2023 −20.2% CI[−29.4%,−10.7%] — unstable. Selection penalty near-zero 2022, +16pp 2023. | **FAIL** — EV bar not met in any model/scope/window combination |
+| 8 | Selective prediction | Conformal abstention on Var-B roll=10: threshold calibrated on prior-in-time training bets; tested at 0/25/50/75% abstention rates; Pinnacle closing-line CLV as sharp-market cross-check | Pinnacle CLV **negative in both windows at all abstention rates** (2022: −2.02%; 2023: −3.77%). B365 CLV (+2%) is a retail artifact. ROI not monotone vs abstention in 2022. Pre-registered stopping rule: **STOP_ENTIRELY**. | **STOP** — penalty is diffuse; no genuine edge against sharp market |
 
 \* Phase 1a ou result used a wrong EV formula (`p×(d+1)−1` instead of `p×d−1`) and is not comparable to later phases; retained for completeness.
 
@@ -57,11 +59,11 @@ Realized ROI = CLV − Market margin − Selection penalty
 **1. Market margin (~5.5pp vs B365, ~3pp vs Pinnacle) — structural.**  
 This is the cost of betting into B365. To break even at B365, CLV must exceed 5.5% *before* accounting for the selection penalty. Current best CLV (xG, Phase 7) is ~2%. This alone is a 3.5pp deficit even with perfect calibration.
 
-**2. CLV edge (now ~+2% with xG, +0.55% without) — real but too small.**  
-The h2h CLV signal is positive, statistically significant, and reproducible across windows. It demonstrates that the DC model genuinely identifies directional mispricing. Phase 7's xG addition doubles this to ~2%. This is the component that has been improving across phases.
+**2. CLV edge (now ~+2% vs B365 close, −2% to −4% vs Pinnacle close) — not genuine.**  
+Phase 8 confirmed the B365 CLV signal is a retail artifact. The DC+xG model's selections beat B365's *own closing line* (+2.07% in 2022, +1.69% in 2023, CI>0 both) but *lose* against Pinnacle's closing line (−2.02% in 2022, −3.77% in 2023, CI<0 both, tight intervals). This means the model's selections align with retail/public action: B365 shortens on them (confirming apparent B365 CLV), while Pinnacle's sharps move in the opposite direction. The CLV improvement across Phases 5–7 was measuring B365's retail dynamics, not the model's ability to identify genuine market mispricing.
 
-**3. Selection penalty (4–16pp, highly unstable) — the binding constraint.**  
-This is the gap between what the model's selections earn in realized outcomes and what the de-vigged closing probability says they should earn. The selection penalty reflects that the bets the model selects are the bets where the model is most overconfident at the moment of selection — the model's calibration is worst exactly where it picks most aggressively. Phase 7's paradox (2022 penalty ≈ 0, 2023 penalty = 16pp) shows this penalty is not a stable property of the architecture: it varies dramatically across market regimes. No tested refinement has reliably reduced it.
+**3. Selection penalty (4–16pp, highly unstable) — diffuse, not addressable by abstention.**  
+Phase 8 tested whether concentrating on high-confidence bets (conformal abstention) would reduce the penalty. The ROI path was not monotone in 2022 (−2.5% → −4.4% → −5.2% → +2.0% at 75% abs/n=257) and collapsed at 75% abstention in 2023 (n=69). The penalty is diffuse — not concentrated in any identifiable confidence band. No conformal threshold produces a selective set that clears the 500-bet floor AND the Pinnacle CLV bar simultaneously.
 
 **Gap to profitability:**
 - Against B365 closing: ~10pp (Phase 1d through Phase 7 realized ROI range)
@@ -119,8 +121,8 @@ How much did each successive refinement move the key metrics? This is the eviden
 
 | Lever | Status | Why it remains open |
 |-------|--------|---------------------|
-| Strength-adjusted xG (rolling xG / opponent xGA percentile) | Proposed Phase 8 | Phase 7 used raw rolling xG; strength adjustment is the most direct fix for the window-to-window instability in selection penalty |
-| Sharp/exchange access (Betfair, Pinnacle) | Untested | At Pinnacle's ~3% margin, current CLV of +0.55% is much closer to break-even than B365's 5.5%; xG's +2% CLV would be nearly sufficient. No exchange integration exists. |
+| Strength-adjusted xG (rolling xG / opponent xGA percentile) | Deprioritized | Phase 8 confirmed Pinnacle CLV is negative throughout — the model's selections do not beat the sharp market at all. Strength adjustments may improve B365 CLV but would still face the negative Pinnacle CLV problem. |
+| Sharp/exchange access (Betfair, Pinnacle) | Ruled out by Phase 8 | Phase 8's Pinnacle CLV evidence (−2% to −4%, tight CIs, all abstention levels) shows the model's selections systematically lose against the efficient market. Exchange access would not help if the selections are on the wrong side of sharp money. |
 | Early-market timing (opening odds access) | Untested as strategy | fdco data has only closing prices; opening-to-closing movement was measured but betting *at open* vs *at close* was not tested. Need API with opening odds series. |
 | Promoted-team / early-season markets | Untested | Structural information gap: newly promoted clubs lack standings history; model may have larger edge here. Requires targeted feature engineering or niche-league analysis. |
 | Asian handicap markets | Untested | Different payout structure; potentially tighter effective margins than 1X2. No odds data available in current schema for this market. |
@@ -129,27 +131,24 @@ How much did each successive refinement move the key metrics? This is the eviden
 
 ---
 
-## 5. Stopping Rule for Phase 8 (Strength-Adjusted xG)
+## 5. Phase 8 Results and Stopping Rule Outcome
 
-Phase 8 will test rolling xG normalized by opponent xGA percentile (strength-adjusted xG) as the DC model input, using the same DC-bivariate architecture (no isotonic calibration — Phase 7 finding), on EPL/Serie A/La Liga, same two fdco windows.
+Phase 8 (Selective Prediction / Calibrated Abstention) ran on 2026-06-28. Full results: `scripts/analysis/phase8_results.json` and `v8_selective_report.md`.
 
-The test is specified **before running it**:
+**Pre-registered criteria and outcomes:**
 
-**Continue prediction-side work** if ALL of:
-1. h2h CLV > 3.0% in both fdco 2022 and 2023 windows (i.e., +1pp above Phase 7's ~2% baseline)
-2. Selection penalty is stable and < 6pp in both windows (i.e., both windows consistent; no single-window collapse like Phase 7's 2023)
-3. ROI 95% CI upper bound > −4% in at least one window (approaching the threshold where exchange/market-structure add-on could bridge remaining gap)
+| Criterion | 2022 result | 2023 result | Met? |
+|-----------|-------------|-------------|------|
+| Pinnacle CLV CI > 0 at best abstention level | −1.68% CI [−2.37%,−1.01%] at 75% abs | −0.50% CI [−2.10%,+1.14%] at 75% abs (n=69) | NO both |
+| ROI monotone in abstention rate | NO (path: −2.5%, −4.4%, −5.2%, +2.0%) | YES at 0–50% then collapses at 75% (n=69) | NO both |
+| ≥500 bets in improving selective set | 257 at best ROI level | 527 at 25% abs; 249 at 50% abs | NO 2022 / mixed 2023 |
+| Selection penalty < 4pp at best ROI | 6.5pp at 75% abs | 5.4pp at 25% abs | NO both |
 
-If all three criteria are met, the remaining path is: (a) expand to Betfair/Pinnacle odds access, (b) test strength-adjusted xG on full fdco-8 leagues, (c) run EV backtest against exchange prices.
+**Verdict: STOP_ENTIRELY** (pre-registered criterion: abstention does NOT monotonically improve ROI in both windows).
 
-**Pivot to market-structure work** if EITHER:
-1. CLV improvement from strength-adjusted xG is < +0.5pp above Phase 7 baseline (i.e., CLV < 2.5%) — signals that xG variants have exhausted the publicly-derivable signal
-2. Selection penalty collapses in 2023 window again (> 8pp) even if 2022 looks good — signals that 2022's near-zero penalty was a lucky draw, not a property of the architecture
+**Key finding — Pinnacle CLV:** The negative Pinnacle CLV (B365 opening bets lose against Pinnacle's efficient final price at all abstention levels) is the most decisive evidence. It reveals that the positive B365 CLV measured in Phases 5–7 was a retail artifact. The model's selections align with public/retail money: B365 shortens on them (visible as positive B365 CLV), but Pinnacle's sharps disagree and price the opposite direction. No level of confidence filtering produces selections that beat Pinnacle's market.
 
-Market-structure pivot means: shift research focus to (a) characterizing line-movement patterns on DC-identified disagreements, (b) testing a timing-based strategy (bet only on DC selections that move in the predicted direction from open to close), and (c) live CLV accumulation from the production pipeline to build a real dataset.
-
-**Stop prediction-side work entirely** if:
-- Phase 8 meets both pivot criteria above AND the post-pivot market-structure investigation finds that the CLV signal is too diffuse to identify reliable timing entry points (i.e., no identifiable structural pattern in when/how DC-detected mispricings get corrected)
+**Calibration note:** 2022 window calibrated on 2,230 pre-2022 fdco training bets (team-name match 100%, 0 skipped teams). 2023 window calibrated on 764 2022 validation bets. Reconciliation with Phase 7 published numbers passed exactly (n=764/1355, ROI=−2.542%/−20.163%, CLV=+2.073%/+1.686%).
 
 ---
 
@@ -163,14 +162,14 @@ The evidence from seven phases is consistent: the DC + xG model generates real d
 
 The gap to B365 profitability is approximately 10pp of realized ROI improvement. The seven phases have collectively moved the needle by less than 2pp (from the Phase 1d −1.4% baseline to the best Phase 7 window at −2.5% for a 3-league subset). The rate of improvement is far below what's needed.
 
-**Against Pinnacle or Betfair (untested): Possible but unconfirmed.**
+**Against Pinnacle or Betfair (tested by Phase 8 cross-check): No, not with the current selection process.**
 
-At Pinnacle's 3% margin, the arithmetic changes significantly. The current CLV of +0.55% (Phase 6, DC goals) requires closing only a 2.45pp selection-penalty gap instead of 9.5pp. Phase 7's xG-boosted CLV of ~2% at Pinnacle would require only a 1pp selection-penalty improvement for break-even. This is in the range of achievable. Whether it is actually achievable depends on (a) whether the selection penalty is systematically reduceable through better calibration, and (b) whether Pinnacle's sharper market would eliminate the CLV signal before it can be exploited.
+Phase 8 measured Pinnacle CLV directly. The DC+xG model's selections have *negative* Pinnacle CLV in both windows at every abstention level (2022: −2.02% to −1.68%; 2023: −3.77% to −0.50%). The B365 CLV signal from Phases 5–7 does not survive against Pinnacle's closing line. The model's selections systematically align with retail action — sides that B365 shortens on but Pinnacle does not confirm. Access to a sharper book would not improve outcomes; it would expose the full extent of negative CLV.
 
 ### What is the salvageable value of the prediction engine?
 
-**1. As a CLV signal for exchange/sharp-book access.**  
-The DC model's positive, statistically significant h2h CLV (+0.55% on goals, ~+2% with xG) is genuine evidence of directional accuracy. At a sharper market, this is the closest thing to a viable core. The research record defines exactly what the signal is and its current size — which is the prerequisite for any exchange-based strategy proposal.
+**1. As a CLV signal for exchange/sharp-book access: No longer viable.**  
+Phase 8 showed the B365 CLV was a retail artifact. The DC+xG selections have negative Pinnacle CLV (−2% to −4%). Exchange access would not improve outcomes — the model is on the wrong side of sharp market consensus. The CLV signal from Phases 5–7 does not transfer to efficient markets.
 
 **2. As an analytics tool.**  
 The DC model with xG produces probability estimates better than the standings-only baseline (h2h AUC 0.70 vs 0.56 for the top-3-league subset). These estimates have value for pre-match tactical analysis, match-quality assessment, or commercial prediction services where the bar is accuracy, not profitability.
@@ -191,7 +190,7 @@ All analysis artifacts in `scripts/analysis/` fall into three categories:
 - All Python scripts (`*.py`)
 - All phase reports (`v2_phase1_report.md` through `v7_xg_report.md`)
 - This audit (`AUDIT_V2.md`)
-- Small result JSONs (phase-level summaries: `dc_results.json`, `phase4*.json`, `phase5*.json`, `phase6_results.json`, `phase7_results.json`, `v1b_supplement_results.json`, `fdco_backfill_report.json`)
+- Small result JSONs (phase-level summaries: `dc_results.json`, `phase4*.json`, `phase5*.json`, `phase6_results.json`, `phase7_results.json`, `phase8_results.json`, `v1b_supplement_results.json`, `fdco_backfill_report.json`)
 - Large result JSONs (`backtest_results.json`, `backtest_results_v2.json`, `backtest_results_v3.json`, `backtest_results_v4.json`, `diagnostic_results.json`) — kept for completeness as bet-level logs
 
 **Exclude (gitignored — regenerable):**
@@ -207,4 +206,4 @@ All analysis artifacts in `scripts/analysis/` fall into three categories:
 
 ---
 
-*This document was written on 2026-06-27 and covers all research through Phase 7 (xG). The next planned activity is Phase 8 (strength-adjusted xG), governed by the stopping rule in Section 5.*
+*This document was last updated 2026-06-28 and covers all research through Phase 8 (Selective Prediction). The pre-registered stopping rule in Section 5 was triggered: STOP_ENTIRELY. No further phases are planned. The research record is complete.*

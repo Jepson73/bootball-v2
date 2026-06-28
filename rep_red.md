@@ -332,3 +332,47 @@ Settlement and execution engine have no automated tests despite being the highes
 | Lines in web_ui.py | ~8,090 | −16 (inline feature builder replaced) |
 | Models defined but unused in live pipeline | 8 | unchanged — backlog |
 | Settlement tested by automated tests | No | unchanged — backlog |
+
+---
+
+## 2026-05-25 Findings
+
+Full codebase re-audit completed 2026-05-25. New issues identified beyond backlog items 8–12:
+
+### New Critical
+
+**C1.** `src/agents/coordinator.py:35,47` — `PolicyDecision` imported twice: first from `src/governance/policy_engine` then immediately shadowed by `src/contracts/pipeline_contracts`. The second import silently overwrites the first. Any downstream code that relies on the `policy_engine` version gets the `contracts` version instead. Likely harmless today (both define the same named type) but a correctness landmine if the two diverge.
+
+**C2.** `src/governance/policy_engine.py:358` vs `src/betting/portfolio/portfolio_engine.py:482` — three different exposure concentration limits in active code:
+  - `ExposureConcentrationConstraint` dataclass default: `max_market_exposure=0.35`
+  - `policy_engine.py` instantiates it at `0.75`
+  - `portfolio_engine.py._enforce_market_caps()` uses `max_market_fraction=0.60`
+  All three run on every cycle. The loosest limit (0.75) is in the hard-constraint governor.
+
+### New High
+
+**H1.** `backend/execution_engine.py:115–128` — `_run_retrain_models()` calls `_train_market_with_calibration` imported directly from `scripts/web_ui`. A backend module importing a private function from an 8,600-line scripts file is a severe architectural inversion. This path is only exercised when `job_retrain_models` is active (currently unregistered), but the import is live.
+
+**H2.** `backend/scheduler.py:571` — `fetch_odds` interval hardcoded as `hours: 1`, ignoring `settings.fetch_odds_interval_hours` (default 2). Every other interval job respects its settings variable. Inconsistency will be confusing when someone tunes `fetch_odds_interval_hours` in `.env` and sees no effect.
+
+**H3.** `src/agents/coordinator.py:224,268,739,881,916` — `from backend.experiment_tracker import get_tracker` repeated 5 times inside method bodies (deferred import pattern). Should be a module-level import once.
+
+**H4.** `src/betting/portfolio/portfolio_engine.py:337–347` — `_apply_adaptive_weights()` method is defined but never called; the live code path calls `_apply_learning_weights()` (line 209). Dead method in the primary execution path creates a maintenance hazard if someone "fixes" the wrong one.
+
+**H5.** `src/agents/coordinator.py:486–501` — Monte Carlo simulation is mocked: instead of calling `self.monte_carlo` (a real `MonteCarloEngine` loaded in `__init__`), `_run_internal()` constructs a stub `MonteCarloResults` from a single state. The `src/simulation/monte_carlo_engine.py` module exists and is never invoked in the live cycle.
+
+### New Medium
+
+**M1.** `src/agents/coordinator.py:280–301` — `FixtureStub` class defined inline inside `_run_internal()` method body. Should be a module-level dataclass or NamedTuple.
+
+**M2.** `src/agents/coordinator.py:358–378` and `:600–619` — bankroll sync runs twice per cycle: once near the start and again inside the execution block, with nearly identical BankrollRound queries. One consolidated call would suffice.
+
+**M3.** `src/governance/policy_engine.py:307–318` — `RegimeCompatibilityConstraint.evaluate()` sets `self.severity` as a side effect during evaluation. Constraints should be pure functions of their inputs.
+
+**M4.** `reports/latest_report.md` and `reports/system_evolution_report.md` are auto-generated every cycle (by `src/notifications/agent_reporter.py:177` and `src/governance/temporal_consistency_engine.py:542` respectively). They are tracked in git, causing noisy diffs. Both should be added to `.gitignore`.
+
+**M5.** `backend/execution_engine.py:78–89` — registers event handlers for `DAILY_PREDICTIONS`, `BETTING_PIPELINE`, and `RETRAIN_MODELS` job types that APScheduler no longer dispatches. Dead event registrations create ghost listeners.
+
+### Still-Open Backlog (items 8–12 from 2026-05-08 remain undone)
+
+All items 8–12 listed in §8 above are still pending. Item 9 (`auto_bet._get_market_result` → import from `src/settlement`) is still not done; `auto_bet.py` is still imported by `backend/execution_engine.py:81` despite being DEPRECATED.

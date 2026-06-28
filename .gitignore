@@ -32,6 +32,8 @@ logs/
 # ── Generated reports (auto-produced at runtime) ───────
 reports/pipeline_trace_*.md
 reports/report_*.md
+reports/latest_report.md
+reports/system_evolution_report.md
 reports/calibration/
 reports/closed_loop_validation_*.json
 
