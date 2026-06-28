@@ -42,6 +42,10 @@ KICKOFF_HOURS_AHEAD = 168  # 7 days — match the prediction window
 STALE_THRESHOLD_HOURS = 2.0   # Re-poll when odds are older than this
 NEAR_KICKOFF_HOURS = 6.0      # Unsettled-prediction bucket: only within this window
 
+# Phase 8 gate: CLV must be measured against Pinnacle as the sharp reference.
+# If Pinnacle odds are absent for a fixture the CLV capture returns None (no closure).
+SHARP_BOOKMAKER = "Pinnacle"
+
 
 def find_fixtures_needing_odds(s, league_ids=None):
     """Find fixtures that need fresh odds polling, ordered by priority then kickoff date.
@@ -363,13 +367,20 @@ def capture_closing_lines(s, fixture_ids=None, dry_run=False):
     captured = 0
     for bet, fixture in rows:
         bet_type = MARKET_BET_TYPE_MAP.get(bet.market, bet.market)
+        # Phase 8 gate: CLV reference MUST be Pinnacle (sharp book).
+        # Without Pinnacle odds the closing-line comparison is meaningless.
         odds_row = s.execute(
             select(FixtureOdds).where(
                 FixtureOdds.fixture_id == bet.fixture_id,
                 FixtureOdds.bet_type == bet_type,
+                FixtureOdds.bookmaker == SHARP_BOOKMAKER,
             )
         ).scalars().first()
         if not odds_row:
+            logger.debug(
+                "[CLV] No Pinnacle row for fixture %d market %s — skipping (Pinnacle gate)",
+                bet.fixture_id, bet.market,
+            )
             continue
 
         odd_field = _CLV_FIELD_MAP.get(bet.market, {}).get(bet.outcome)
