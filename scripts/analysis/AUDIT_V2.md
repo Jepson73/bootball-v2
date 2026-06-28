@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28 (updated)  
 **Original date:** 2026-06-27  
-**Scope:** Phases 1–8. This document replaces seven separate phase reports as the single authoritative verdict on the research arc.
+**Scope:** Phases 1–9. This document replaces seven separate phase reports as the single authoritative verdict on the research arc.
 
 ---
 
@@ -32,6 +32,7 @@ CLV metric (Phase 5 onward): `(open_odds − close_odds) / close_odds`. Bar for 
 | 6 | CLV decomp + league regime | h2h CLV by direction/odds/league/overround; OU25 directional diagnosis; league-regime GLM; gap quantification | No CLV subset shows positive closing ROI. Gap = margin 5.5pp + selection penalty 4–6pp ≈ 10pp vs B365. League regime: 0 AUC improvement. | **FAIL** — no subset passes |
 | 7 | xG (Understat) | Rolling xG as DC input (EPL, Serie A, La Liga; 10-season Understat data); Var-A Skellam+isotonic vs Var-B DC-bivariate | CLV doubles: +1.1% → +1.7–2.5% (CI>0 both windows, all xG variants). EV ROI: best 2022 Var-B −2.5% CI[−12.9%,+8.0%], 2023 −20.2% CI[−29.4%,−10.7%] — unstable. Selection penalty near-zero 2022, +16pp 2023. | **FAIL** — EV bar not met in any model/scope/window combination |
 | 8 | Selective prediction | Conformal abstention on Var-B roll=10: threshold calibrated on prior-in-time training bets; tested at 0/25/50/75% abstention rates; Pinnacle closing-line CLV as sharp-market cross-check | Pinnacle CLV **negative in both windows at all abstention rates** (2022: −2.02%; 2023: −3.77%). B365 CLV (+2%) is a retail artifact. ROI not monotone vs abstention in 2022. Pre-registered stopping rule: **STOP_ENTIRELY**. | **STOP** — penalty is diffuse; no genuine edge against sharp market |
+| 9 | Alternative-market scoping | Gate check (no modeling): 338 API-Football bet types inventoried; sharp-gate (Pinnacle=id 4; Betfair=id 3 confirmed sportsbook, not exchange); fdco AH/O/U columns audited; DB outcome coverage checked | Goals O/U 2.5 and Asian Handicap pass all three gates. Corners/cards fail gate 2 (no historical odds in fdco or free sources). Both passing markets are downstream of the same DC+xG goal signal — Phase 8's negative Pinnacle CLV transfers. No independent path found. | **STOP confirmed** — market expansion does not escape the structural constraint |
 
 \* Phase 1a ou result used a wrong EV formula (`p×(d+1)−1` instead of `p×d−1`) and is not comparable to later phases; retained for completeness.
 
@@ -125,7 +126,7 @@ How much did each successive refinement move the key metrics? This is the eviden
 | Sharp/exchange access (Betfair, Pinnacle) | Ruled out by Phase 8 | Phase 8's Pinnacle CLV evidence (−2% to −4%, tight CIs, all abstention levels) shows the model's selections systematically lose against the efficient market. Exchange access would not help if the selections are on the wrong side of sharp money. |
 | Early-market timing (opening odds access) | Untested as strategy | fdco data has only closing prices; opening-to-closing movement was measured but betting *at open* vs *at close* was not tested. Need API with opening odds series. |
 | Promoted-team / early-season markets | Untested | Structural information gap: newly promoted clubs lack standings history; model may have larger edge here. Requires targeted feature engineering or niche-league analysis. |
-| Asian handicap markets | Untested | Different payout structure; potentially tighter effective margins than 1X2. No odds data available in current schema for this market. |
+| Asian handicap markets | Ruled out by Phase 9 | fdco has Pinnacle closing (PCAHH/PCAHA, ~5,700 rows); passes all three scoping gates. But AH is a transformation of the same DC+xG μ_home − μ_away signal — the negative Pinnacle CLV from Phase 8 transfers. No additional edge vs 1X2. |
 | In-play / live models | Untested | Model uses pre-match features only; live score + possession state + shot count = substantially different information set. Out of scope for current architecture. |
 | Referee-segmented analysis at high confidence | Partially tested | Phase 5 T2 showed referee is a significant GLM predictor. Phase 6 didn't break down CLV by referee tier. Referee-concentration analysis (bet only when DC + referee signal align strongly) is untested. |
 
@@ -190,7 +191,7 @@ All analysis artifacts in `scripts/analysis/` fall into three categories:
 - All Python scripts (`*.py`)
 - All phase reports (`v2_phase1_report.md` through `v7_xg_report.md`)
 - This audit (`AUDIT_V2.md`)
-- Small result JSONs (phase-level summaries: `dc_results.json`, `phase4*.json`, `phase5*.json`, `phase6_results.json`, `phase7_results.json`, `phase8_results.json`, `v1b_supplement_results.json`, `fdco_backfill_report.json`)
+- Small result JSONs (phase-level summaries: `dc_results.json`, `phase4*.json`, `phase5*.json`, `phase6_results.json`, `phase7_results.json`, `phase8_results.json`, `phase9_results.json`, `v1b_supplement_results.json`, `fdco_backfill_report.json`)
 - Large result JSONs (`backtest_results.json`, `backtest_results_v2.json`, `backtest_results_v3.json`, `backtest_results_v4.json`, `diagnostic_results.json`) — kept for completeness as bet-level logs
 
 **Exclude (gitignored — regenerable):**
@@ -206,4 +207,4 @@ All analysis artifacts in `scripts/analysis/` fall into three categories:
 
 ---
 
-*This document was last updated 2026-06-28 and covers all research through Phase 8 (Selective Prediction). The pre-registered stopping rule in Section 5 was triggered: STOP_ENTIRELY. No further phases are planned. The research record is complete.*
+*This document was last updated 2026-06-28 and covers all research through Phase 9 (Alternative-Market Scoping). The pre-registered stopping rule from Phase 8 was triggered (STOP_ENTIRELY) and Phase 9 confirms no alternative market escapes the structural constraint. The research record is complete.*

@@ -1,0 +1,630 @@
+{
+  "meta": {
+    "phase": 9,
+    "title": "Alternative-Market Scoping",
+    "date": "2026-06-28",
+    "gates": [
+      "sharp_reference",
+      "historical_backfill",
+      "outcome_data"
+    ]
+  },
+  "task1": {
+    "total_bet_types": 338,
+    "total_bookmakers": 33,
+    "pinnacle_registered": true,
+    "betfair_registered": true,
+    "sample_fixture_coverage": [
+      {
+        "fixture_id": 1520517,
+        "desc": "K3 League (domestic, lower tier): Dangjin vs Gangneung",
+        "pinnacle_markets": [
+          {
+            "id": 1,
+            "name": "Match Winner"
+          },
+          {
+            "id": 4,
+            "name": "Asian Handicap"
+          },
+          {
+            "id": 5,
+            "name": "Goals Over/Under"
+          },
+          {
+            "id": 6,
+            "name": "Goals Over/Under First Half"
+          },
+          {
+            "id": 13,
+            "name": "First Half Winner"
+          },
+          {
+            "id": 16,
+            "name": "Total - Home"
+          },
+          {
+            "id": 17,
+            "name": "Total - Away"
+          },
+          {
+            "id": 19,
+            "name": "Asian Handicap First Half"
+          },
+          {
+            "id": 105,
+            "name": "Home Team Total Goals(1st Half)"
+          },
+          {
+            "id": 106,
+            "name": "Away Team Total Goals(1st Half)"
+          }
+        ],
+        "betfair_markets": [
+          {
+            "id": 1,
+            "name": "Match Winner"
+          },
+          {
+            "id": 5,
+            "name": "Goals Over/Under"
+          },
+          {
+            "id": 6,
+            "name": "Goals Over/Under First Half"
+          },
+          {
+            "id": 7,
+            "name": "HT/FT Double"
+          },
+          {
+            "id": 8,
+            "name": "Both Teams Score"
+          },
+          {
+            "id": 9,
+            "name": "Handicap Result"
+          },
+          {
+            "id": 10,
+            "name": "Exact Score"
+          },
+          {
+            "id": 12,
+            "name": "Double Chance"
+          },
+          {
+            "id": 13,
+            "name": "First Half Winner"
+          },
+          {
+            "id": 25,
+            "name": "Result/Total Goals"
+          }
+        ],
+        "all_bookmakers": [
+          {
+            "id": 1,
+            "name": "10Bet"
+          },
+          {
+            "id": 7,
+            "name": "William Hill"
+          },
+          {
+            "id": 8,
+            "name": "Bet365"
+          },
+          {
+            "id": 2,
+            "name": "Marathonbet"
+          },
+          {
+            "id": 16,
+            "name": "Unibet"
+          },
+          {
+            "id": 3,
+            "name": "Betfair"
+          },
+          {
+            "id": 36,
+            "name": "BetVictor"
+          },
+          {
+            "id": 4,
+            "name": "Pinnacle"
+          },
+          {
+            "id": 11,
+            "name": "1xBet"
+          },
+          {
+            "id": 32,
+            "name": "Betano"
+          },
+          {
+            "id": 9,
+            "name": "Dafabet"
+          }
+        ],
+        "betfair_1x2_margin_pct": 11.97,
+        "pinnacle_1x2_margin_pct": 7.85
+      },
+      {
+        "fixture_id": 1561329,
+        "desc": "World Cup 2026: South Africa vs Canada",
+        "pinnacle_markets": [
+          {
+            "id": 1,
+            "name": "Match Winner"
+          },
+          {
+            "id": 4,
+            "name": "Asian Handicap"
+          },
+          {
+            "id": 5,
+            "name": "Goals Over/Under"
+          },
+          {
+            "id": 6,
+            "name": "Goals Over/Under First Half"
+          },
+          {
+            "id": 10,
+            "name": "Exact Score"
+          },
+          {
+            "id": 31,
+            "name": "Correct Score - First Half"
+          },
+          {
+            "id": 13,
+            "name": "First Half Winner"
+          },
+          {
+            "id": 16,
+            "name": "Total - Home"
+          },
+          {
+            "id": 17,
+            "name": "Total - Away"
+          },
+          {
+            "id": 19,
+            "name": "Asian Handicap First Half"
+          },
+          {
+            "id": 55,
+            "name": "Corners 1x2"
+          },
+          {
+            "id": 45,
+            "name": "Corners Over Under"
+          },
+          {
+            "id": 105,
+            "name": "Home Team Total Goals(1st Half)"
+          },
+          {
+            "id": 106,
+            "name": "Away Team Total Goals(1st Half)"
+          },
+          {
+            "id": 56,
+            "name": "Corners Asian Handicap"
+          },
+          {
+            "id": 57,
+            "name": "Home Corners Over/Under"
+          },
+          {
+            "id": 58,
+            "name": "Away Corners Over/Under"
+          },
+          {
+            "id": 77,
+            "name": "Total Corners (1st Half)"
+          },
+          {
+            "id": 80,
+            "name": "Cards Over/Under"
+          },
+          {
+            "id": 81,
+            "name": "Cards Asian Handicap"
+          }
+        ],
+        "betfair_markets": [
+          {
+            "id": 1,
+            "name": "Match Winner"
+          },
+          {
+            "id": 2,
+            "name": "Home/Away"
+          },
+          {
+            "id": 4,
+            "name": "Asian Handicap"
+          },
+          {
+            "id": 5,
+            "name": "Goals Over/Under"
+          },
+          {
+            "id": 6,
+            "name": "Goals Over/Under First Half"
+          },
+          {
+            "id": 7,
+            "name": "HT/FT Double"
+          },
+          {
+            "id": 8,
+            "name": "Both Teams Score"
+          },
+          {
+            "id": 9,
+            "name": "Handicap Result"
+          },
+          {
+            "id": 10,
+            "name": "Exact Score"
+          },
+          {
+            "id": 31,
+            "name": "Correct Score - First Half"
+          },
+          {
+            "id": 12,
+            "name": "Double Chance"
+          },
+          {
+            "id": 13,
+            "name": "First Half Winner"
+          },
+          {
+            "id": 16,
+            "name": "Total - Home"
+          },
+          {
+            "id": 17,
+            "name": "Total - Away"
+          },
+          {
+            "id": 25,
+            "name": "Result/Total Goals"
+          },
+          {
+            "id": 55,
+            "name": "Corners 1x2"
+          },
+          {
+            "id": 45,
+            "name": "Corners Over Under"
+          }
+        ],
+        "all_bookmakers": [
+          {
+            "id": 1,
+            "name": "10Bet"
+          },
+          {
+            "id": 7,
+            "name": "William Hill"
+          },
+          {
+            "id": 8,
+            "name": "Bet365"
+          },
+          {
+            "id": 2,
+            "name": "Marathonbet"
+          },
+          {
+            "id": 16,
+            "name": "Unibet"
+          },
+          {
+            "id": 3,
+            "name": "Betfair"
+          },
+          {
+            "id": 36,
+            "name": "BetVictor"
+          },
+          {
+            "id": 4,
+            "name": "Pinnacle"
+          },
+          {
+            "id": 5,
+            "name": "SBO"
+          },
+          {
+            "id": 11,
+            "name": "1xBet"
+          },
+          {
+            "id": 32,
+            "name": "Betano"
+          },
+          {
+            "id": 21,
+            "name": "888Sport"
+          },
+          {
+            "id": 9,
+            "name": "Dafabet"
+          }
+        ],
+        "betfair_1x2_margin_pct": 5.06,
+        "pinnacle_1x2_margin_pct": 3.02
+      }
+    ]
+  },
+  "task2": {
+    "betfair_1x2_margin_pct": 11.97,
+    "pinnacle_1x2_margin_pct": 3.02,
+    "pinnacle_confirmed_sharp": true,
+    "betfair_confirmed_soft": true,
+    "markets": [
+      {
+        "market": "1X2 (Match Winner)",
+        "api_id": 1,
+        "pinnacle_domestic": true,
+        "pinnacle_intl": true,
+        "sharp_gate": "PASS",
+        "note": "Pinnacle prices on all tested tiers"
+      },
+      {
+        "market": "Asian Handicap",
+        "api_id": 4,
+        "pinnacle_domestic": true,
+        "pinnacle_intl": true,
+        "sharp_gate": "PASS",
+        "note": "Pinnacle prices on all tested tiers"
+      },
+      {
+        "market": "Goals O/U (all lines)",
+        "api_id": 5,
+        "pinnacle_domestic": true,
+        "pinnacle_intl": true,
+        "sharp_gate": "PASS",
+        "note": "Pinnacle prices on all tested tiers"
+      },
+      {
+        "market": "Goals O/U 1st Half",
+        "api_id": 6,
+        "pinnacle_domestic": true,
+        "pinnacle_intl": true,
+        "sharp_gate": "PASS",
+        "note": "Pinnacle prices on all tested tiers"
+      },
+      {
+        "market": "Corners O/U",
+        "api_id": 45,
+        "pinnacle_domestic": false,
+        "pinnacle_intl": true,
+        "sharp_gate": "FAIL*",
+        "note": "Pinnacle only on World Cup, not K3. EPL unconfirmed (off-season)."
+      },
+      {
+        "market": "Corners AH",
+        "api_id": 56,
+        "pinnacle_domestic": false,
+        "pinnacle_intl": true,
+        "sharp_gate": "FAIL*",
+        "note": "Same as Corners O/U"
+      },
+      {
+        "market": "Cards O/U",
+        "api_id": 80,
+        "pinnacle_domestic": false,
+        "pinnacle_intl": true,
+        "sharp_gate": "FAIL*",
+        "note": "Pinnacle only on World Cup, not K3. Soft-book segment."
+      },
+      {
+        "market": "Cards AH",
+        "api_id": 81,
+        "pinnacle_domestic": false,
+        "pinnacle_intl": true,
+        "sharp_gate": "FAIL*",
+        "note": "Same as Cards O/U"
+      },
+      {
+        "market": "Both Teams Score",
+        "api_id": 8,
+        "pinnacle_domestic": false,
+        "pinnacle_intl": false,
+        "sharp_gate": "FAIL",
+        "note": "Not priced by Pinnacle (soft-book exotic)"
+      },
+      {
+        "market": "Double Chance",
+        "api_id": 12,
+        "pinnacle_domestic": false,
+        "pinnacle_intl": false,
+        "sharp_gate": "FAIL",
+        "note": "Not priced by Pinnacle"
+      },
+      {
+        "market": "HT/FT Double",
+        "api_id": 7,
+        "pinnacle_domestic": false,
+        "pinnacle_intl": false,
+        "sharp_gate": "FAIL",
+        "note": "Not priced by Pinnacle on either tier"
+      },
+      {
+        "market": "Player markets (scorer, assists)",
+        "api_id": 92,
+        "pinnacle_domestic": false,
+        "pinnacle_intl": false,
+        "sharp_gate": "FAIL",
+        "note": "Pinnacle does not price player markets"
+      },
+      {
+        "market": "Betfair (any market)",
+        "api_id": null,
+        "pinnacle_domestic": null,
+        "pinnacle_intl": null,
+        "sharp_gate": "FAIL",
+        "note": "API-Football 'Betfair' is the Sportsbook, not Exchange. Margin=11.97% (Exchange \u22642%); ~12% confirms soft book. Betfair Exchange requires separate API (funded account, no free historical odds)."
+      }
+    ]
+  },
+  "task3": {
+    "fdco_total_rows_pin_ou25": 5691,
+    "fdco_total_rows_pin_ah": 5700,
+    "fdco_has_corner_odds": false,
+    "fdco_has_card_odds": false,
+    "fdco_has_corner_outcomes": true,
+    "historical_odds_db_empty": true,
+    "historical_odds_db_tables": [],
+    "other_sources": {
+      "betexplorer": "Historical odds available for some markets (scraping, terms unclear)",
+      "oddsportal": "Historical odds archive (scraping required, rate-limited, terms unclear)",
+      "football_data_co_uk": "fdco \u2014 already included above",
+      "betfair_exchange_historical": "Betfair provides historical exchange data via Data Catalogue (subscription required, ~\u00a350/mo or per-file purchase)"
+    }
+  },
+  "task4": {
+    "fixture_stats_total": 131674,
+    "fixture_stats_corners_pct": 98.2,
+    "fixture_stats_yellows_pct": 96.1,
+    "fixture_stats_red_cards_rows": 37919,
+    "fixture_events_card_events": [
+      {
+        "type": "Card",
+        "detail": null,
+        "count": 133
+      },
+      {
+        "type": "Card",
+        "detail": "Red Card",
+        "count": 107189
+      },
+      {
+        "type": "Card",
+        "detail": "Second Yellow Card",
+        "count": 32
+      },
+      {
+        "type": "Card",
+        "detail": "Yellow Card",
+        "count": 1235725
+      }
+    ],
+    "target_league_coverage": {
+      "EPL": {
+        "total_fixtures_3seasons": 1140,
+        "with_corners": 1140,
+        "pct": 100.0
+      },
+      "Serie A": {
+        "total_fixtures_3seasons": 1141,
+        "with_corners": 1140,
+        "pct": 99.9
+      },
+      "La Liga": {
+        "total_fixtures_3seasons": 1140,
+        "with_corners": 1140,
+        "pct": 100.0
+      }
+    },
+    "market_outcome_sources": {
+      "1X2": "fixtures.home_goals + away_goals \u2014 100%",
+      "O/U 2.5": "same scoreline \u2014 100%",
+      "Asian Handicap": "same scoreline \u2014 100%",
+      "Corners O/U": "fixture_stats.home_corners + away_corners \u2014 98.2%",
+      "Cards O/U (total)": "fixture_stats.home_yellow_cards + home_red_cards \u2014 96.1%",
+      "Yellow O/U": "fixture_stats \u2014 96.1%",
+      "Player markets": "fixture_events (player_name) \u2014 partial, inconsistent"
+    }
+  },
+  "task5": {
+    "shortlist_passing_all_gates": [
+      "Goals O/U 2.5",
+      "Asian Handicap"
+    ],
+    "candidates": [
+      {
+        "rank": 1,
+        "market": "Goals O/U 2.5",
+        "gate1_sharp": "PASS",
+        "gate1_evidence": "Pinnacle prices PC>2.5 / PC<2.5; confirmed K3 and World Cup",
+        "gate2_backfill": "PASS",
+        "gate2_evidence": "fdco PC>2.5 closing: 5691 rows across 3 leagues \u00d7 5 seasons",
+        "gate3_outcomes": "PASS",
+        "gate3_evidence": "Scoreline \u2192 total goals; 100% from fixtures table",
+        "verdict": "PASS all gates",
+        "structural_note": "Downstream of same DC+xG signal as 1X2. P(>2.5 goals) is a transformation of \u03bc_home + \u03bc_away from Poisson. Phase 8's negative Pinnacle CLV on 1X2 would likely transfer: Pinnacle's O/U price already subsumes its superior goal estimate. Not independent of 1X2 finding."
+      },
+      {
+        "rank": 2,
+        "market": "Asian Handicap",
+        "gate1_sharp": "PASS",
+        "gate1_evidence": "Pinnacle prices PCAHH / PCAHA; confirmed K3 and World Cup",
+        "gate2_backfill": "PASS",
+        "gate2_evidence": "fdco PCAHH/PCAHA closing: 5700 rows across 3 leagues \u00d7 5 seasons",
+        "gate3_outcomes": "PASS",
+        "gate3_evidence": "Scoreline \u2192 AH winner; 100% settleable from fixtures",
+        "verdict": "PASS all gates",
+        "structural_note": "Eliminates draw and re-prices on Pinnacle's expected goal difference. Same underlying signal (\u03bc_home \u2212 \u03bc_away) as DC model. More efficient than 1X2 due to tighter spread; edge harder to find, not easier."
+      },
+      {
+        "rank": 3,
+        "market": "Corners O/U",
+        "gate1_sharp": "FAIL*",
+        "gate1_evidence": "Pinnacle corners on World Cup: YES. On K3 (domestic): NO. EPL/Serie A/La Liga unconfirmed (off-season). Even if confirmed, historical corner odds not in fdco \u2192 gate 2 fails.",
+        "gate2_backfill": "FAIL",
+        "gate2_evidence": "fdco has no corner betting odds (only HC/AC outcome counts). historical_odds.db empty. No free historical source identified.",
+        "gate3_outcomes": "PASS",
+        "gate3_evidence": "fixture_stats corners: 98.2% coverage; EPL/Serie A/La Liga ~98%+ over 3 seasons",
+        "verdict": "FAIL gates 1+2",
+        "structural_note": "Even if Pinnacle prices EPL corners: no historical odds to build or validate a model against the sharp line. Cannot reproduce Phase-8-style Pinnacle CLV check. Hard gate blocks this path."
+      },
+      {
+        "rank": 4,
+        "market": "Cards O/U",
+        "gate1_sharp": "FAIL*",
+        "gate1_evidence": "Pinnacle cards on World Cup: YES. On K3: NO. Domestic coverage uncertain. High-margin, soft-book segment historically.",
+        "gate2_backfill": "FAIL",
+        "gate2_evidence": "No historical card odds in any identified free source.",
+        "gate3_outcomes": "PASS",
+        "gate3_evidence": "fixture_stats yellows: 96.1% + fixture_events individual card events; robust coverage",
+        "verdict": "FAIL gates 1+2",
+        "structural_note": "Even with Pinnacle coverage: no historical reference price for CLV. Cards are influenced by referee, match stakes, late substitutions \u2014 poor fit for DC+xG model family."
+      },
+      {
+        "rank": 5,
+        "market": "Both Teams Score / Double Chance / HT-FT",
+        "gate1_sharp": "FAIL",
+        "gate1_evidence": "Pinnacle does not price BTTS, DC, or HT/FT on any tested fixture.",
+        "gate2_backfill": "FAIL",
+        "gate2_evidence": "No Pinnacle closing available in fdco for these markets.",
+        "gate3_outcomes": "PASS",
+        "gate3_evidence": "All settleable from scoreline.",
+        "verdict": "FAIL gates 1+2",
+        "structural_note": "Soft-book exotics; no sharp reference available."
+      },
+      {
+        "rank": 6,
+        "market": "Player markets (scorer, assists, bookings)",
+        "gate1_sharp": "FAIL",
+        "gate1_evidence": "Pinnacle does not price player markets.",
+        "gate2_backfill": "FAIL",
+        "gate2_evidence": "No historical player market odds in free sources.",
+        "gate3_outcomes": "PARTIAL",
+        "gate3_evidence": "fixture_events has player names + events; player_season_stats exists. Inconsistent minute-level data.",
+        "verdict": "FAIL gates 1+2",
+        "structural_note": "Player markets require player-level model; entirely out of scope."
+      }
+    ],
+    "overall_verdict": "Two markets pass all three gates: Goals O/U 2.5 and Asian Handicap. Both have Pinnacle closing prices in fdco (5 seasons \u00d7 3 leagues, ~5,700 rows each). Both are outcome-settleable from the scoreline. HOWEVER: both are downstream of the same DC+xG expected-goal signal as 1X2. Phase 8 showed negative Pinnacle CLV on 1X2 because the model tracks public/retail money. That structural problem transfers to O/U and AH \u2014 Pinnacle's AH and O/U lines already encode its superior goal estimate. No independent modeling path exists without a fundamentally different signal source (player data, line-movement, market microstructure)."
+  }
+}
