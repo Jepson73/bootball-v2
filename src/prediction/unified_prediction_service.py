@@ -67,107 +67,42 @@ class UnifiedPredictionService:
             }
         """
         logger.info("[PREDICTION] Generating predictions via unified service")
-        
-        # Fetch fixtures if not provided
+
         if fixtures is None:
             fixtures = self._fetch_upcoming_fixtures()
-        
+
         if not fixtures:
             raise RuntimeError("PIPELINE FAILURE: No fixtures available for prediction pipeline")
-        
-        predictions = []
-        
-        for fixture in fixtures:
-            fixture_id = fixture.id if hasattr(fixture, 'id') else fixture
-            
-            # Generate predictions for each market
-            market_predictions = self._generate_for_fixture(fixture_id)
-            predictions.extend(market_predictions)
-        
-        if not predictions:
-            raise RuntimeError("PIPELINE FAILURE: No predictions generated - pipeline broken")
-        
-        # Emit predictions ready event
-        event_bus.emit(Events.PREDICTIONS_GENERATED, {
-            "count": len(predictions),
-            "timestamp": datetime.utcnow().isoformat(),
-        })
-        
-        logger.info(f"[PREDICTION] Generated {len(predictions)} predictions")
-        
-        return predictions
+
+        return self.generate_with_fixture_data(fixtures)
     
     def _fetch_upcoming_fixtures(self) -> list:
-        """Fetch upcoming fixtures that have odds."""
+        """Fetch all upcoming NS fixtures — no odds filter.
+
+        Predictions are generated for every fixture regardless of odds availability.
+        EV/Kelly are None/0 (preliminary=True) when odds are absent; that is the
+        value layer's concern, not the prediction engine's.
+        """
+        from sqlalchemy import select
+
+        class _Stub:
+            __slots__ = ("id", "home_team_id", "away_team_id", "league_id", "date", "status")
+            def __init__(self, f):
+                self.id = f.id
+                self.home_team_id = f.home_team_id
+                self.away_team_id = f.away_team_id
+                self.league_id = f.league_id
+                self.date = f.date
+                self.status = f.status
+
         with get_session() as s:
-            fixtures = s.execute(
-                Fixture.query.filter(
-                    Fixture.status == "NS",
-                    Fixture.date >= datetime.utcnow()
-                ).join(FixtureOdds).limit(50).all()
+            rows = s.execute(
+                select(Fixture)
+                .where(Fixture.status == "NS")
+                .where(Fixture.date >= datetime.utcnow())
+                .order_by(Fixture.date.asc())
             ).scalars().all()
-        
-        return fixtures
-    
-    def _generate_for_fixture(self, fixture_id: int) -> list[dict]:
-        """Generate predictions for a single fixture."""
-        predictions = []
-        
-        markets = ["h2h", "btts", "ou25", "ou15"]
-        
-        for market in markets:
-            try:
-                normalized_market = normalize_market(market)
-                
-                model_probs = get_model_prediction(
-                    market=normalized_market,
-                    home_team_id=None,
-                    away_team_id=None
-                )
-                
-                if not model_probs:
-                    continue
-                
-                best_outcome = max(model_probs.items(), key=lambda x: x[1])
-                raw_outcome = best_outcome[0]
-                our_prob = best_outcome[1]
-                
-                normalized_outcome = normalize_market_pick(normalized_market, raw_outcome)
-                
-                odds, odds_snapshot = self._get_odds_for_market(fixture_id, normalized_market)
-                
-                if not odds or odds < 1.0:
-                    continue
-                
-                ev = (our_prob * odds) - (1 - our_prob)
-                
-                b = odds - 1
-                q = 1 - our_prob
-                kelly = max(0, (b * our_prob - q) / b) if b > 0 else 0
-                kelly = kelly * 0.25
-                
-                prediction_id = str(uuid.uuid4())
-                
-                predictions.append({
-                    "prediction_id": prediction_id,
-                    "fixture_id": fixture_id,
-                    "market": normalized_market,
-                    "outcome": normalized_outcome,
-                    "raw_outcome": raw_outcome,
-                    "odds": odds,
-                    "odds_snapshot": odds_snapshot,
-                    "our_prob": our_prob,
-                    "predicted_probs": model_probs,
-                    "ev": ev,
-                    "kelly": kelly,
-                    "timestamp": datetime.utcnow().isoformat(),
-                })
-                
-            except Exception as e:
-                logger.warning(f"[PREDICTION] Failed for fixture {fixture_id}, market {market}: {e}")
-                continue
-        
-        return predictions
+            return [_Stub(f) for f in rows]
     
     def _get_odds_for_market(self, fixture_id: int, market: str, outcome: str = None) -> tuple[Optional[float], Optional[str]]:
         """Get odds for a market and specific outcome."""
@@ -545,6 +480,83 @@ class UnifiedPredictionService:
 
         assert verified_count > 0, f"PREDICTIONS NOT PERSISTED: verified={verified_count}"
         return saved_ids
+
+    # ── Track-A Evaluation (proper scoring rules) ─────────────────────────────
+
+    @staticmethod
+    def evaluate_track_a(market: str, settled_records: list) -> dict:
+        """Compute Track-A proper scoring metrics for a batch of settled predictions.
+
+        Args:
+            market: one of "h2h", "ou25", "btts"
+            settled_records: list of PredictionRecord objects (or dicts with the same
+                keys) that have both our_prob and the actual outcome populated.
+                Records with no outcome are silently skipped.
+
+        Returns dict with keys: n, log_loss, brier, auc (all floats), plus
+        base_rate (fraction of positive outcomes in this sample).
+
+        NOTE on models: production uses LGBMClassifier on standings features
+        (feature_pipeline_version="v1.0.0"). The Phase 10 DC+xG research model
+        achieved 1X2 AUC~0.71; the standings-only LGBM is a weaker baseline.
+        Track-A scores here reflect the PRODUCTION model, not Phase 10 research.
+        """
+        import math
+
+        def _get(r, key):
+            return r.get(key) if isinstance(r, dict) else getattr(r, key, None)
+
+        OUTCOME_MAP = {
+            "h2h":  {"1": 1, "Home": 1, "X": 0, "Draw": 0, "2": 0, "Away": 0},
+            "btts":  {"Yes": 1, "No": 0},
+            "ou25":  {"Over": 1, "Under": 0},
+            "ou15":  {"Over": 1, "Under": 0},
+        }
+        label_map = OUTCOME_MAP.get(market, {})
+
+        probs, actuals = [], []
+        for r in settled_records:
+            p = _get(r, "our_prob")
+            outcome = _get(r, "predicted_outcome") or _get(r, "outcome")
+            if p is None or outcome is None:
+                continue
+            actual = label_map.get(str(outcome))
+            if actual is None:
+                continue
+            probs.append(float(p))
+            actuals.append(int(actual))
+
+        n = len(probs)
+        if n == 0:
+            return {"n": 0, "log_loss": None, "brier": None, "auc": None, "base_rate": None}
+
+        eps = 1e-9
+        log_loss = -sum(
+            a * math.log(max(p, eps)) + (1 - a) * math.log(max(1 - p, eps))
+            for p, a in zip(probs, actuals)
+        ) / n
+
+        brier = sum((p - a) ** 2 for p, a in zip(probs, actuals)) / n
+
+        # AUC via Mann-Whitney U
+        pos = [p for p, a in zip(probs, actuals) if a == 1]
+        neg = [p for p, a in zip(probs, actuals) if a == 0]
+        if pos and neg:
+            u = sum(1 if pp > pn else 0.5 if pp == pn else 0 for pp in pos for pn in neg)
+            auc = u / (len(pos) * len(neg))
+        else:
+            auc = None
+
+        base_rate = sum(actuals) / n
+
+        return {
+            "n": n,
+            "market": market,
+            "log_loss": round(log_loss, 5),
+            "brier": round(brier, 5),
+            "auc": round(auc, 5) if auc is not None else None,
+            "base_rate": round(base_rate, 4),
+        }
 
 
 # Global service
