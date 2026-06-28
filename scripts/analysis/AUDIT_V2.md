@@ -2,7 +2,7 @@
 
 **Date:** 2026-06-28 (updated)  
 **Original date:** 2026-06-27  
-**Scope:** Phases 1–9. This document replaces seven separate phase reports as the single authoritative verdict on the research arc.
+**Scope:** Phases 1–10. This document replaces seven separate phase reports as the single authoritative verdict on the research arc.
 
 ---
 
@@ -33,6 +33,7 @@ CLV metric (Phase 5 onward): `(open_odds − close_odds) / close_odds`. Bar for 
 | 7 | xG (Understat) | Rolling xG as DC input (EPL, Serie A, La Liga; 10-season Understat data); Var-A Skellam+isotonic vs Var-B DC-bivariate | CLV doubles: +1.1% → +1.7–2.5% (CI>0 both windows, all xG variants). EV ROI: best 2022 Var-B −2.5% CI[−12.9%,+8.0%], 2023 −20.2% CI[−29.4%,−10.7%] — unstable. Selection penalty near-zero 2022, +16pp 2023. | **FAIL** — EV bar not met in any model/scope/window combination |
 | 8 | Selective prediction | Conformal abstention on Var-B roll=10: threshold calibrated on prior-in-time training bets; tested at 0/25/50/75% abstention rates; Pinnacle closing-line CLV as sharp-market cross-check | Pinnacle CLV **negative in both windows at all abstention rates** (2022: −2.02%; 2023: −3.77%). B365 CLV (+2%) is a retail artifact. ROI not monotone vs abstention in 2022. Pre-registered stopping rule: **STOP_ENTIRELY**. | **STOP** — penalty is diffuse; no genuine edge against sharp market |
 | 9 | Alternative-market scoping | Gate check (no modeling): 338 API-Football bet types inventoried; sharp-gate (Pinnacle=id 4; Betfair=id 3 confirmed sportsbook, not exchange); fdco AH/O/U columns audited; DB outcome coverage checked | Goals O/U 2.5 and Asian Handicap pass all three gates. Corners/cards fail gate 2 (no historical odds in fdco or free sources). Both passing markets are downstream of the same DC+xG goal signal — Phase 8's negative Pinnacle CLV transfers. No independent path found. | **STOP confirmed** — market expansion does not escape the structural constraint |
+| 10 | Two-track evaluation + long-tail testability + forward collection | (1) Two-track framework (Track A = proper scoring rules on all fixtures; Track B = EV/ROI/CLV on selected bets with Pinnacle gate). Demonstrated on 3-league xG dataset. (2) Pinnacle long-tail coverage on 2026-06-28: 170/333 fixtures (51%) and 58/90 leagues (64%) — substantially broader than Phase 9 K3 test. (3) High-goal/BTTS senior professional leagues from DB ranked; virtually all fail sharp gate or lack fdco history. (4) Forward-collection scope: ~5 calls/day/league; CLV-usable sample ~5 months at 5 leagues. | Track A confirms genuine predictive skill (AUC 0.70–0.71 on 1X2, 0.58–0.60 on O/U 2.5, 0.55–0.56 on BTTS) — systematically below Pinnacle opening odds on all markets. Track A skill does not transfer to Track B viability: negative Pinnacle CLV at all abstention levels. **Gap between accuracy and profitability is the core structural barrier.** Forward collection is viable technically (negligible quota); wait 5–8 months for actionable sample. |
 
 \* Phase 1a ou result used a wrong EV formula (`p×(d+1)−1` instead of `p×d−1`) and is not comparable to later phases; retained for completeness.
 
@@ -191,7 +192,7 @@ All analysis artifacts in `scripts/analysis/` fall into three categories:
 - All Python scripts (`*.py`)
 - All phase reports (`v2_phase1_report.md` through `v7_xg_report.md`)
 - This audit (`AUDIT_V2.md`)
-- Small result JSONs (phase-level summaries: `dc_results.json`, `phase4*.json`, `phase5*.json`, `phase6_results.json`, `phase7_results.json`, `phase8_results.json`, `phase9_results.json`, `v1b_supplement_results.json`, `fdco_backfill_report.json`)
+- Small result JSONs (phase-level summaries: `dc_results.json`, `phase4*.json`, `phase5*.json`, `phase6_results.json`, `phase7_results.json`, `phase8_results.json`, `phase9_results.json`, `phase10_results.json`, `v1b_supplement_results.json`, `fdco_backfill_report.json`)
 - Large result JSONs (`backtest_results.json`, `backtest_results_v2.json`, `backtest_results_v3.json`, `backtest_results_v4.json`, `diagnostic_results.json`) — kept for completeness as bet-level logs
 
 **Exclude (gitignored — regenerable):**
@@ -207,4 +208,4 @@ All analysis artifacts in `scripts/analysis/` fall into three categories:
 
 ---
 
-*This document was last updated 2026-06-28 and covers all research through Phase 9 (Alternative-Market Scoping). The pre-registered stopping rule from Phase 8 was triggered (STOP_ENTIRELY) and Phase 9 confirms no alternative market escapes the structural constraint. The research record is complete.*
+*This document was last updated 2026-06-28 and covers all research through Phase 10 (Two-Track Evaluation + Long-Tail Testability + Forward Collection). The pre-registered stopping rule from Phase 8 was triggered (STOP_ENTIRELY), Phase 9 confirmed no alternative market escapes the structural constraint, and Phase 10 formalised the Track A / Track B distinction: the DC+xG model has genuine predictive skill (AUC 0.70) but that skill does not survive the Pinnacle CLV gate. The research record is complete.*
