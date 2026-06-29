@@ -28,10 +28,33 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from sqlalchemy import select, func
 
+import csv
+
 from config.leagues import ALL_LEAGUE_IDS, LEAGUES
-from src.ingestion.client import APIFootballClient
+from config.settings import settings
+from src.ingestion.client import APIFootballClient, calls_used_today, get_api_status
 from src.storage.db import get_session, init_db
 from src.storage.models import Fixture, FixtureOdds, PredictionRecord, PlacedBet, Team, League
+
+QUOTA_LOG = Path(__file__).resolve().parent.parent / "logs" / "quota_log.csv"
+
+
+def _log_quota(event: str, used: int) -> None:
+    """Append one row to logs/quota_log.csv (created on first use)."""
+    QUOTA_LOG.parent.mkdir(parents=True, exist_ok=True)
+    is_new = not QUOTA_LOG.exists()
+    with QUOTA_LOG.open("a", newline="") as f:
+        w = csv.writer(f)
+        if is_new:
+            w.writerow(["timestamp_utc", "event", "calls_used", "calls_remaining", "daily_limit", "backfill_cap"])
+        w.writerow([
+            datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S"),
+            event,
+            used,
+            settings.api_calls_per_day - used,
+            settings.api_calls_per_day,
+            settings.backfill_daily_cap,
+        ])
 
 from src.alerts.event_bus import event_bus as EventBus, Events
 
@@ -130,7 +153,15 @@ class DailyBaselinePipeline:
 
         now = datetime.now(ZoneInfo("UTC"))
         run_id = self.context.get("run_id")
-        
+
+        # Log quota at pipeline start
+        used_start = calls_used_today()
+        _log_quota("run_start", used_start)
+        logger.info(
+            "[QUOTA] Start: %d used / %d cap / %d limit",
+            used_start, settings.backfill_daily_cap, settings.api_calls_per_day,
+        )
+
         # Emit run started
         EventBus.emit(
             Events.RUN_STARTED,
@@ -198,7 +229,12 @@ class DailyBaselinePipeline:
         )
         
         logger.info(f"[BASELINE] Complete: {self.fixtures_backfilled} backfilled, {self.upcoming_count} upcoming, {self.settled_count} settled")
-        
+
+        # Log quota at pipeline end
+        used_end = calls_used_today()
+        _log_quota("run_end", used_end)
+        logger.info("[QUOTA] End: %d used this run, %d total today", used_end - used_start, used_end)
+
         if self.errors:
             logger.warning(f"[BASELINE] Errors: {self.errors}")
     
@@ -207,6 +243,16 @@ class DailyBaselinePipeline:
         days_back = max(1, self.catchup_days)
 
         for league_id in self.league_ids:
+            # Enforce backfill daily cap — forward-collection and real-time calls have
+            # first claim on the full 75k quota; backfill stops when the soft cap is hit.
+            if calls_used_today() >= settings.backfill_daily_cap:
+                _log_quota("backfill_paused", calls_used_today())
+                logger.info(
+                    "[QUOTA] Backfill paused: %d calls used >= cap %d",
+                    calls_used_today(), settings.backfill_daily_cap,
+                )
+                break
+
             season = self._league_season(league_id, now)
             try:
                 raw = self.client.get_fixtures(

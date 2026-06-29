@@ -353,6 +353,12 @@ class PredictionRecord(Base):
     market_prob: Mapped[float | None] = mapped_column(Float, nullable=True)   # de-vigged (Shin) market-implied prob
     blended_prob: Mapped[float | None] = mapped_column(Float, nullable=True)  # final — drives EV/Kelly/betting
     implied_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Full h2h probability vector — required by evaluate_track_a() for h2h scoring.
+    # Keys map to API-Football notation: "1"=Home, "X"=Draw, "2"=Away.
+    # NULL for binary markets (btts, ou25, ou15).
+    prob_home: Mapped[float | None] = mapped_column(Float, nullable=True)
+    prob_draw: Mapped[float | None] = mapped_column(Float, nullable=True)
+    prob_away: Mapped[float | None] = mapped_column(Float, nullable=True)
     ev: Mapped[float | None] = mapped_column(Float, nullable=True)
     edge: Mapped[float | None] = mapped_column(Float, nullable=True)
     odds_decimal: Mapped[float | None] = mapped_column(Float, nullable=True)

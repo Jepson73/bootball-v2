@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     api_football_key: str = Field(default="")
     api_football_base_url: str = Field(default="https://v3.football.api-sports.io")
     api_calls_per_day: int = Field(default=75000)
+    # Soft cap for backfill jobs — forward-collection and real-time calls may use the full limit.
+    # Set to 80% of the daily quota, leaving ≥20% headroom (≥15 000 calls) for forward collection.
+    backfill_daily_cap: int = Field(default=60000)
     api_interval_seconds: float = Field(default=0.15)
 
     # ── Database ────────────────────────────────────────────
@@ -96,6 +99,9 @@ class Settings(BaseSettings):
             114,  # Superettan (Sweden)
             103,  # Eliteserien (Norway)
             104,  # 1. Division (Norway)
+            777,  # 3. Division Gr.4 (Norway) — forward-collection league
+            778,  # 3. Division Gr.5 (Norway) — forward-collection league
+            779,  # 3. Division Gr.6 (Norway) — forward-collection league
             # South America
             128,  # Liga Profesional Argentina
             129,  # Primera Nacional (Argentina)
@@ -128,6 +134,8 @@ class Settings(BaseSettings):
             171,  # FA Cup
             929,  # League Two
             972,  # Super Cup
+            # Australia — NPL/state leagues run calendar year (Mar–Oct)
+            648,  # Tasmania NPL — forward-collection league
             # Other
             422,  # Premier League (Barbados)
             # 119 and 120 (Danish Superliga / 1. Division) run Aug–May like European leagues

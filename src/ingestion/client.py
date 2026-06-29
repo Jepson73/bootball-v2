@@ -22,8 +22,8 @@ from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
-# Raw response cache directory
-CACHE_DIR = Path("data/raw/api_cache")
+# Raw response cache directory — all cache files live in the api_cache/ subdirectory
+CACHE_DIR = Path("data/raw/api_cache/api_cache")
 CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Daily call counter file

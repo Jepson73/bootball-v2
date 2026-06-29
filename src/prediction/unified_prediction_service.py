@@ -437,6 +437,14 @@ class UnifiedPredictionService:
                 record.market_prob = pred.get("market_prob")
                 record.blended_prob = pred.get("blended_prob")
 
+                # h2h probability vector — used by evaluate_track_a() to reconstruct P(Home).
+                # predicted_probs keys are "1" (Home), "X" (Draw), "2" (Away) for h2h.
+                _pprobs = pred.get("predicted_probs") or {}
+                if market == "h2h" and _pprobs:
+                    record.prob_home = _pprobs.get("1")
+                    record.prob_draw = _pprobs.get("X")
+                    record.prob_away = _pprobs.get("2")
+
                 # Versioning tuple — written explicitly so no row relies on column defaults
                 if pred.get("feature_pipeline_version"):
                     record.feature_pipeline_version = pred["feature_pipeline_version"]
