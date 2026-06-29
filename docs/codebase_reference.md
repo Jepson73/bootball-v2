@@ -95,7 +95,7 @@ Core execution (predictions → bets) runs separately:
 
 | File | Purpose |
 |------|---------|
-| `config/settings.py` | All env-based settings: API keys, scheduling, model dirs, runtime mode |
+| `config/settings.py` | All env-based settings: API keys, scheduling, model dirs, runtime mode; `backfill_daily_cap` (default 60 000) soft-caps backfill quota; leagues 777/778/779/648 added to `calendar_year_leagues` |
 | `config/leagues.py` | `ALL_LEAGUE_IDS` — 1,225 leagues; league metadata; season definitions |
 | `config/forward_leagues.py` | Forward-collection leagues (Pinnacle-covered, high goal-rate); capture bookmakers (Pinnacle, Bet365); market types (h2h, o/u 2.5, BTTS); stale-window constant |
 | `config/markets.py` | Market definitions (h2h, btts, ou25, ou15); outcome mappings |
@@ -187,7 +187,7 @@ Key models:
 | `Team` | id, name, country, logo_url |
 | `League` | id, name, country, season |
 | `FixtureOdds` | fixture_id, market, bookmaker, outcome, decimal_odds, updated_at |
-| `PredictionRecord` | fixture_id, market, our_prob, implied_prob, ev, kelly, run_id |
+| `PredictionRecord` | fixture_id, market, our_prob, calibrated_prob, blended_prob, implied_prob, ev, run_id, prob_home, prob_draw, prob_away (h2h only) |
 | `PlacedBet` | fixture_id, market, outcome, stake, odds, placed_at, settled_at, result, pnl |
 | `ModelVersion` | market, version_label, is_active, brier_score, log_loss, trained_at |
 | `Bankroll` | balance, currency, updated_at |
@@ -218,6 +218,8 @@ Single source of truth for all predictions.
 - `UnifiedPredictionService.generate_with_fixture_data(fixture_objects)` — primary method called by coordinator; takes pre-loaded fixture ORM objects
 - Applies `LeagueCalibrationEngine.apply()` to calibrate raw model probabilities before returning
 - Standardizes prediction format; emits `PREDICTION_CREATED` events
+- `save_predictions()` — writes h2h prob vector to `prob_home/prob_draw/prob_away` (keys "1"/"X"/"2") for use by `evaluate_track_a()`
+- `evaluate_track_a(market, settled_records)` — scores settled predictions: log-loss, Brier, AUC; h2h requires `prob_home` on each record
 
 ### `src/betting/portfolio/portfolio_engine.py`
 
@@ -319,7 +321,8 @@ API-Football v3 client.
 
 - `APIFootballClient` — rate-limited, response-cached client
 - `calls_used_today()` / `calls_remaining_today()` — API quota tracking
-- Caches responses to avoid redundant API calls
+- `get_api_status()` — live quota from `/status` endpoint (cached 2 min)
+- Cache files live at `data/raw/api_cache/api_cache/` (`CACHE_DIR`); cache reads/writes both target this path
 
 ### `src/security/safe_load.py`
 
@@ -476,7 +479,7 @@ Key test files:
 |--------|---------|--------|
 | `scripts/web_ui.py` | **Main entry point** — Flask + APScheduler (auxiliary jobs only) | Active |
 | `scripts/run_continuous_cycle.py` | Core execution pipeline — called by `ExecutionRuntime` | Active |
-| `scripts/daily_run.py` | Data pipeline only (no prediction/betting) | Active |
+| `scripts/daily_run.py` | Data pipeline only (no prediction/betting); enforces `backfill_daily_cap` in `_fetch_completed()`; logs per-run quota snapshots to `logs/quota_log.csv` | Active |
 | `scripts/backfill_all.py` | Historical data ingestion (multi-season) | Active |
 | `scripts/backfill_cron.py` | Nightly incremental backfill (4am cron) | Active |
 | `scripts/backfill_odds.py` | Odds-specific backfill | Active |
