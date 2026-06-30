@@ -46,7 +46,7 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 ├── tests/             Pytest test suites
 ├── migrations/        Database migration scripts
 ├── data/              Runtime data: DB, trained models, logs
-├── docs/              Documentation
+├── docs/              Documentation (codebase_reference.md, deployment_state.md)
 ├── logs/              Application logs
 └── reports/           Closed-loop validation and calibration reports
 ```
