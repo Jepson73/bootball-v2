@@ -64,10 +64,10 @@ WantedBy=multi-user.target
 - The `fetch_results` job is the primary API consumer: ~2,480 calls for the first daily run (cache fill), ~40 calls per subsequent run.
 - `Restart=always` with `RestartSec=5` — **if it restarts after midnight before the first hourly run, the first run costs 2,480 calls (acceptable).**
 
-### `bootball-web.service` — Flask web UI
+### `bootball-web.service` — V1 Flask UI (port 5001, reference)
 ```ini
 [Unit]
-Description=Bootball Web UI
+Description=Bootball Web UI (V1 — reference, port 5001)
 After=network.target
 
 [Service]
@@ -75,7 +75,8 @@ Type=simple
 User=bootball
 Group=bootball
 WorkingDirectory=/opt/projects/bootball
-ExecStart=/opt/projects/bootball/.venv/bin/python3 scripts/web_ui.py
+Environment="PYTHONPATH=/opt/projects/bootball"
+ExecStart=/opt/projects/bootball/.venv/bin/gunicorn -w 1 -b 0.0.0.0:5001 --timeout 120 scripts.web_ui:app
 Restart=always
 RestartSec=3
 
@@ -83,7 +84,35 @@ RestartSec=3
 WantedBy=multi-user.target
 ```
 
-### `bootball.service` — Gunicorn alternative (less used)
+**Phase 13 change (2026-06-30):** V1 moved from port 5000 to 5001 via gunicorn.
+`scripts/__init__.py` (empty) was added to make `scripts` a Python package importable by gunicorn.
+V1's `app.run(port=5000)` is inside `if __name__ == '__main__':` — gunicorn bypasses it.
+
+### `bootball-web-v2.service` — V2 Web UI (port 5000, primary)
+```ini
+[Unit]
+Description=Bootball Web UI V2 (two-track, port 5000)
+After=network.target
+
+[Service]
+Type=simple
+User=bootball
+Group=bootball
+WorkingDirectory=/opt/projects/bootball
+Environment="PYTHONPATH=/opt/projects/bootball"
+ExecStart=/opt/projects/bootball/.venv/bin/python3 scripts/web_ui_v2.py
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**Routes:** `/` (Status), `/track-a` (Track A accuracy), `/predictions` (per-fixture), `/collection` (forward-collection), `/health` (unauthenticated).  
+**Auth:** Basic auth — username `bootball`, password from `BOOTBALL_PASSWORD` env, cookie `authenticated_v2` (separate from V1's `authenticated` cookie).  
+**V1 isolation:** Does NOT import from `scripts/web_ui.py`. Shared DB only via `src/storage/db.py`.
+
+### `bootball.service` — legacy gunicorn service (superseded)
 ```ini
 [Unit]
 Description=Bootball Web UI
@@ -101,7 +130,7 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-**Note:** `bootball.service` runs as root (no `User=`). If switching to this, ensure `.env` is readable by root.
+**Note:** `bootball.service` is superseded by `bootball-web.service` (5001) + `bootball-web-v2.service` (5000). Runs as root (no `User=`). Keep disabled unless reverting to single-service layout.
 
 ---
 
