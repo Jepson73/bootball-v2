@@ -73,7 +73,7 @@ Two web services run in parallel (both managed by systemd):
 
 ```
 bootball-web-v2.service  →  scripts/web_ui_v2.py (port 5000, primary)
-  1. Flask app created; blueprints registered (home, track_a, predictions, collection)
+  1. Flask app created; blueprints registered (home, track_a, predictions, collection, explorer)
   2. init_db() via src/storage/db.py
   3. All routes protected by require_auth() from v2/auth_v2.py
      (cookie: authenticated_v2; no V1 cookie collision)
@@ -483,7 +483,7 @@ Key test files:
 
 | Script | Purpose | Status |
 |--------|---------|--------|
-| `scripts/web_ui_v2.py` | **Primary UI (V2)** — two-track Flask app on port 5000; strict V1 isolation; registers v2/ blueprints | Active |
+| `scripts/web_ui_v2.py` | **Primary UI (V2)** — two-track Flask app on port 5000; strict V1 isolation; registers v2/ blueprints (home, track_a, predictions, collection, explorer) | Active |
 | `scripts/web_ui.py` | V1 Flask UI + APScheduler on port 5001 (via gunicorn in `bootball-web.service`); reference build | Active |
 | `scripts/run_continuous_cycle.py` | Core execution pipeline — called by `ExecutionRuntime` | Active |
 | `scripts/daily_run.py` | Data pipeline only (no prediction/betting); enforces `backfill_daily_cap` in `_fetch_completed()`; logs per-run quota snapshots to `logs/quota_log.csv` | Active |

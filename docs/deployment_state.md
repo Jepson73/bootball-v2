@@ -108,7 +108,7 @@ RestartSec=3
 WantedBy=multi-user.target
 ```
 
-**Routes:** `/` (Status), `/track-a` (Track A accuracy), `/predictions` (per-fixture), `/collection` (forward-collection), `/health` (unauthenticated).  
+**Routes:** `/` (Status), `/track-a` (Track A accuracy), `/predictions` (per-fixture), `/explorer` (Prediction Explorer — browsable/filterable/paginated), `/collection` (forward-collection), `/health` (unauthenticated).  
 **Auth:** Basic auth — username `bootball`, password from `BOOTBALL_PASSWORD` env, cookie `authenticated_v2` (separate from V1's `authenticated` cookie).  
 **V1 isolation:** Does NOT import from `scripts/web_ui.py`. Shared DB only via `src/storage/db.py`.
 
