@@ -9,11 +9,13 @@ from __future__ import annotations
 import math
 import csv
 import logging
+import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import select, func, text
+from sqlalchemy import select, func, text, case as sa_case, or_
+from sqlalchemy.orm import aliased
 
 from src.storage.db import get_session
 from src.storage.models import Fixture, OddsSnapshot, League
@@ -337,3 +339,265 @@ def get_predictions_for_upcoming() -> list[dict]:
         })
 
     return list(fixtures.values())
+
+
+# ── Prediction Explorer ────────────────────────────────────────────────────────
+
+def get_league_country_map() -> dict[str, list[dict]]:
+    """Return {country: [{id, name}]} for all leagues that have at least one prediction."""
+    try:
+        from src.storage.models import PredictionRecord, Team
+    except ImportError:
+        return {}
+    with get_session() as s:
+        rows = s.execute(
+            select(League.id, League.name, League.country)
+            .join(Fixture, Fixture.league_id == League.id)
+            .join(PredictionRecord, PredictionRecord.fixture_id == Fixture.id)
+            .where(League.country.isnot(None))
+            .distinct()
+            .order_by(League.country, League.name)
+        ).all()
+    result: dict[str, list[dict]] = {}
+    for r in rows:
+        cty = r.country
+        if cty not in result:
+            result[cty] = []
+        result[cty].append({"id": r.id, "name": r.name})
+    return result
+
+
+def get_explorer_data(
+    tab: str = "all",
+    country: str | None = None,
+    league_id: int | None = None,
+    market: str | None = None,
+    team: str | None = None,
+    date_from: str | None = None,
+    date_to: str | None = None,
+    sort: str = "date",
+    sort_dir: str = "desc",
+    page: int = 0,
+    page_size: int = 50,
+) -> dict:
+    """
+    Server-side filtered, sorted, paginated prediction explorer.
+
+    Uses minimal JOINs — only joins League and Team tables when those filters
+    are actually active, so the unfiltered 'all' tab stays fast.
+
+    Inner query: GROUP BY fixture_id, LIMIT/OFFSET on fixtures.
+    Outer query: expands those fixture IDs to all market rows for display.
+    Count query: COUNT(DISTINCT fixture_id) with same WHERE.
+
+    Returns {fixtures: [...], total: int, page: int, page_size: int, query_ms: float}.
+    """
+    try:
+        from src.storage.models import PredictionRecord, Team
+    except ImportError:
+        return {"fixtures": [], "total": 0, "page": page, "page_size": page_size, "query_ms": 0}
+
+    HomeTeam = aliased(Team)
+    AwayTeam = aliased(Team)
+
+    t0 = time.time()
+
+    # Parse date range
+    date_from_dt: datetime | None = None
+    date_to_dt: datetime | None = None
+    if date_from:
+        try:
+            date_from_dt = datetime.strptime(date_from, "%Y-%m-%d")
+        except ValueError:
+            pass
+    if date_to:
+        try:
+            date_to_dt = datetime.strptime(date_to, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59
+            )
+        except ValueError:
+            pass
+
+    # Flags for which tables are needed in inner/count queries
+    need_league = bool(country or league_id or sort == "league")
+    need_teams = bool(team)
+    need_fixture = bool(date_from_dt or date_to_dt or league_id or need_league)
+    # Date sort always via Fixture.date
+    if sort == "date":
+        need_fixture = True
+
+    # Sort column
+    if sort in ("accuracy", "brier") and tab != "settled":
+        sort = "date"  # accuracy/brier only meaningful for settled
+        need_fixture = True
+
+    if sort == "confidence":
+        sort_col = (
+            func.max(PredictionRecord.our_prob)
+            if market
+            else func.max(
+                sa_case((PredictionRecord.market == "h2h", PredictionRecord.our_prob), else_=None)
+            )
+        )
+    elif sort == "accuracy":
+        sort_col = func.avg(
+            sa_case((PredictionRecord.won == True, 1.0), else_=0.0)  # noqa: E712
+        )
+    elif sort == "brier":
+        won_int = sa_case((PredictionRecord.won == True, 1.0), else_=0.0)  # noqa: E712
+        diff = PredictionRecord.our_prob - won_int
+        sort_col = func.avg(diff * diff)
+    elif sort == "league":
+        sort_col = League.name
+    else:  # date
+        sort_col = Fixture.date
+
+    order_expr = sort_col.desc() if sort_dir == "desc" else sort_col.asc()
+
+    # ── Count query — minimal joins ────────────────────────────────────────────
+    # Start from PredictionRecord; only join what filters require.
+    count_q = select(func.count(func.distinct(PredictionRecord.fixture_id))).select_from(
+        PredictionRecord
+    )
+    count_conds = []
+    if tab == "upcoming":
+        count_conds.append(PredictionRecord.settled == False)  # noqa: E712
+    elif tab == "settled":
+        count_conds.append(PredictionRecord.settled == True)  # noqa: E712
+    if market:
+        count_conds.append(PredictionRecord.market == market)
+
+    if need_fixture or need_league or need_teams:
+        count_q = count_q.join(Fixture, Fixture.id == PredictionRecord.fixture_id)
+    if need_league:
+        count_q = count_q.join(League, Fixture.league_id == League.id)
+    if need_teams:
+        count_q = count_q.join(HomeTeam, Fixture.home_team_id == HomeTeam.id)
+        count_q = count_q.join(AwayTeam, Fixture.away_team_id == AwayTeam.id)
+
+    if date_from_dt:
+        count_conds.append(Fixture.date >= date_from_dt)
+    if date_to_dt:
+        count_conds.append(Fixture.date <= date_to_dt)
+    if league_id:
+        count_conds.append(Fixture.league_id == league_id)
+    if country:
+        count_conds.append(League.country == country)
+    if team:
+        count_conds.append(
+            or_(
+                HomeTeam.name.ilike(f"%{team}%"),
+                AwayTeam.name.ilike(f"%{team}%"),
+            )
+        )
+    if count_conds:
+        count_q = count_q.where(*count_conds)
+
+    # ── Inner query — paged fixture IDs ───────────────────────────────────────
+    # Always joins PredictionRecord → Fixture (needed for GROUP BY + sort).
+    # Only adds League/Team when their filters are active.
+    inner_base = (
+        select(Fixture.id.label("fid"), sort_col.label("sort_key"))
+        .select_from(PredictionRecord)
+        .join(Fixture, Fixture.id == PredictionRecord.fixture_id)
+    )
+    if need_league:
+        inner_base = inner_base.join(League, Fixture.league_id == League.id)
+    if need_teams:
+        inner_base = inner_base.join(HomeTeam, Fixture.home_team_id == HomeTeam.id)
+        inner_base = inner_base.join(AwayTeam, Fixture.away_team_id == AwayTeam.id)
+
+    # Reuse count conditions for inner (they reference the same column expressions)
+    inner_q = (
+        inner_base
+        .where(*count_conds)
+        .group_by(Fixture.id)
+        .order_by(order_expr)
+        .limit(page_size)
+        .offset(page * page_size)
+        .subquery("pf")
+    )
+
+    # ── Outer query — full market rows for paged fixtures ─────────────────────
+    HomeTeam2 = aliased(Team)
+    AwayTeam2 = aliased(Team)
+    outer_conds = []
+    if tab == "upcoming":
+        outer_conds.append(PredictionRecord.settled == False)  # noqa: E712
+    elif tab == "settled":
+        outer_conds.append(PredictionRecord.settled == True)  # noqa: E712
+
+    outer_q = (
+        select(
+            inner_q.c.sort_key,
+            Fixture.id.label("fixture_id"),
+            Fixture.date,
+            League.name.label("league_name"),
+            League.country,
+            HomeTeam2.name.label("home_team"),
+            AwayTeam2.name.label("away_team"),
+            PredictionRecord.market,
+            PredictionRecord.our_prob,
+            PredictionRecord.predicted_outcome,
+            PredictionRecord.actual_outcome,
+            PredictionRecord.won,
+            PredictionRecord.settled,
+            PredictionRecord.prob_home,
+            PredictionRecord.prob_draw,
+            PredictionRecord.prob_away,
+        )
+        .select_from(inner_q)
+        .join(Fixture, Fixture.id == inner_q.c.fid)
+        .join(PredictionRecord, PredictionRecord.fixture_id == Fixture.id)
+        .join(League, Fixture.league_id == League.id)
+        .join(HomeTeam2, Fixture.home_team_id == HomeTeam2.id)
+        .join(AwayTeam2, Fixture.away_team_id == AwayTeam2.id)
+        .where(*outer_conds)
+        .order_by(
+            inner_q.c.sort_key.desc() if sort_dir == "desc" else inner_q.c.sort_key.asc(),
+            Fixture.id,
+            PredictionRecord.market,
+        )
+    )
+
+    with get_session() as s:
+        total = s.execute(count_q).scalar() or 0
+        rows = s.execute(outer_q).all()
+
+    t1 = time.time()
+
+    # Assemble per-fixture dicts preserving sort order from inner query
+    fixtures_map: dict[int, dict] = {}
+    fixture_order: list[int] = []
+    for r in rows:
+        fid = r.fixture_id
+        if fid not in fixtures_map:
+            fixtures_map[fid] = {
+                "fixture_id": fid,
+                "date": r.date,
+                "league_name": r.league_name or "",
+                "country": r.country or "",
+                "home_team": r.home_team or "?",
+                "away_team": r.away_team or "?",
+                "markets": {},
+            }
+            fixture_order.append(fid)
+        fixtures_map[fid]["markets"][r.market] = {
+            "market": r.market,
+            "our_prob": round(float(r.our_prob), 3) if r.our_prob is not None else None,
+            "predicted_outcome": r.predicted_outcome,
+            "actual_outcome": r.actual_outcome,
+            "won": r.won,
+            "settled": r.settled,
+            "prob_home": round(float(r.prob_home), 3) if r.prob_home is not None else None,
+            "prob_draw": round(float(r.prob_draw), 3) if r.prob_draw is not None else None,
+            "prob_away": round(float(r.prob_away), 3) if r.prob_away is not None else None,
+        }
+
+    return {
+        "fixtures": [fixtures_map[fid] for fid in fixture_order],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "query_ms": (t1 - t0) * 1000,
+    }

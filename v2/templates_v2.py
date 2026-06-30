@@ -77,6 +77,25 @@ tr:hover td{background:#161b22}
 .cal-predicted{height:8px;background:#58a6ff44;border-radius:2px}
 .cal-actual{height:8px;background:#3fb95066;border-radius:2px;margin-top:2px}
 .cal-pct{min-width:36px;text-align:right;color:#8b949e}
+/* Explorer */
+.explorer-tabs{display:flex;gap:0;margin-bottom:14px;border-bottom:1px solid #30363d}
+.explorer-tab{padding:8px 16px;color:#8b949e;font-size:13px;border-bottom:2px solid transparent;transition:color .15s}
+.explorer-tab:hover{color:#e6edf3;text-decoration:none}
+.explorer-tab.active{color:#e6edf3;border-bottom-color:#58a6ff}
+.explorer-filters{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
+.flt-ctrl{background:#161b22;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;
+          font-size:12px;padding:4px 8px;height:28px}
+.flt-ctrl:focus{outline:none;border-color:#58a6ff}
+.flt-btn{background:#1f6feb;border:none;border-radius:4px;color:#fff;cursor:pointer;
+         font-size:12px;font-weight:600;padding:4px 12px;height:28px}
+.flt-btn:hover{background:#388bfd}
+.flt-clear{color:#8b949e;font-size:12px;padding:4px 6px}
+.flt-clear:hover{color:#c9d1d9}
+.explorer-summary{font-size:12px;color:#8b949e;margin-bottom:8px;padding:4px 0}
+.pg-btn{display:inline-block;padding:3px 10px;font-size:12px;border-radius:4px;
+        background:#161b22;border:1px solid #30363d;color:#8b949e}
+.pg-btn:hover{color:#e6edf3;text-decoration:none;border-color:#58a6ff}
+.pg-active{background:#1f6feb!important;border-color:#1f6feb!important;color:#fff!important}
 """
 
 _NAV = """
@@ -85,6 +104,7 @@ _NAV = """
   <a href="/" class="nav-link {h}">Status</a>
   <a href="/track-a" class="nav-link {ta}">Track A · Accuracy</a>
   <a href="/predictions" class="nav-link {pr}">Predictions</a>
+  <a href="/explorer" class="nav-link {ex}">Explorer</a>
   <a href="/collection" class="nav-link {co}">Collection</a>
   <span class="nav-spacer"></span>
   <span class="nav-tag">bot_enabled=False</span>
@@ -99,6 +119,7 @@ def page(title: str, content: str, active: str = "") -> str:
         h="active" if active == "home" else "",
         ta="active" if active == "track_a" else "",
         pr="active" if active == "predictions" else "",
+        ex="active" if active == "explorer" else "",
         co="active" if active == "collection" else "",
     )
     return render_template_string(f"""<!DOCTYPE html>

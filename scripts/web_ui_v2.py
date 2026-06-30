@@ -45,11 +45,13 @@ from v2.routes.home_v2 import bp_home
 from v2.routes.track_a_v2 import bp_track_a
 from v2.routes.predictions_v2 import bp_predictions
 from v2.routes.collection_v2 import bp_collection
+from v2.routes.explorer_v2 import bp_explorer
 
 app.register_blueprint(bp_home)
 app.register_blueprint(bp_track_a)
 app.register_blueprint(bp_predictions)
 app.register_blueprint(bp_collection)
+app.register_blueprint(bp_explorer)
 
 
 @app.route("/health")
