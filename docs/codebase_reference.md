@@ -41,7 +41,8 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 │   ├── state/         Betting state, snapshot store, state reconstructor
 │   └── storage/       SQLAlchemy ORM models and DB session factory
 ├── config/            Settings, leagues, markets, drift thresholds
-├── scripts/           Executable scripts and CLI utilities
+├── scripts/           Executable scripts and CLI utilities (scripts/__init__.py makes it a package for gunicorn)
+├── v2/                Bootball V2 web UI package (auth_v2, db_v2, templates_v2, routes/)
 ├── frontend/          Static assets and legacy React scaffold (inactive — UI is served by Flask via render_template_string)
 ├── tests/             Pytest test suites
 ├── migrations/        Database migration scripts
@@ -57,7 +58,8 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 
 | Command | Purpose |
 |---------|---------|
-| `python scripts/web_ui.py` | **Primary** — Flask UI + embedded APScheduler on port 5000 |
+| `python scripts/web_ui_v2.py` | **Primary UI (V2)** — two-track Flask UI on port 5000; Track A accuracy + forward-collection + predictions; no V1 imports |
+| `gunicorn -w 1 -b 0.0.0.0:5001 scripts.web_ui:app` | **V1 UI (reference)** — legacy Flask UI on port 5001 via `bootball-web.service` |
 | `python backend/runtime/execution_runtime.py` | Core execution process — runs `AgentCoordinator.run_cycle()` every 20 minutes |
 | `python backend/app.py` | Alternative Flask entry point |
 | `python scripts/migrate.py` | Run database schema migrations |
@@ -67,20 +69,24 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 
 ### Startup Sequence
 
-```
-1. scripts/web_ui.py loaded (Flask + APScheduler)
-2. config/settings.py initializes from .env (Pydantic)
-3. RuntimeModeManager loads RUNTIME_MODE
-4. Database initialized (src/storage/db.py)
-5. APScheduler starts (backend/scheduler.py) — 6 auxiliary jobs only:
-     fetch_fixtures (6h), fetch_results (1h), fetch_odds (1h),
-     cleanup_matches (5m), live_settle (2m), daily_sanity_check (24h)
-6. Flask routes exposed (/predictions, /betting, /admin, ...)
-7. Event bus initialized (src/alerts/event_bus.py)
+Two web services run in parallel (both managed by systemd):
 
-Core execution (predictions → bets) runs separately:
+```
+bootball-web-v2.service  →  scripts/web_ui_v2.py (port 5000, primary)
+  1. Flask app created; blueprints registered (home, track_a, predictions, collection)
+  2. init_db() via src/storage/db.py
+  3. All routes protected by require_auth() from v2/auth_v2.py
+     (cookie: authenticated_v2; no V1 cookie collision)
+
+bootball-web.service  →  gunicorn scripts.web_ui:app (port 5001, V1 reference)
+  1. scripts/web_ui.py loaded (Flask + embedded APScheduler)
+  2. APScheduler starts (backend/scheduler.py) — 6 auxiliary jobs:
+       fetch_fixtures (6h), fetch_results (1h), fetch_odds (1h),
+       cleanup_matches (5m), live_settle (2m), daily_sanity_check (24h)
+
+bootball-runtime.service (separate process):
   backend/runtime/execution_runtime.py → AgentCoordinator.run_cycle()
-  (every 20 minutes, as a separate process)
+  (every 20 minutes; all predictions → portfolio → bets)
 ```
 
 ---
@@ -477,7 +483,8 @@ Key test files:
 
 | Script | Purpose | Status |
 |--------|---------|--------|
-| `scripts/web_ui.py` | **Main entry point** — Flask + APScheduler (auxiliary jobs only) | Active |
+| `scripts/web_ui_v2.py` | **Primary UI (V2)** — two-track Flask app on port 5000; strict V1 isolation; registers v2/ blueprints | Active |
+| `scripts/web_ui.py` | V1 Flask UI + APScheduler on port 5001 (via gunicorn in `bootball-web.service`); reference build | Active |
 | `scripts/run_continuous_cycle.py` | Core execution pipeline — called by `ExecutionRuntime` | Active |
 | `scripts/daily_run.py` | Data pipeline only (no prediction/betting); enforces `backfill_daily_cap` in `_fetch_completed()`; logs per-run quota snapshots to `logs/quota_log.csv` | Active |
 | `scripts/backfill_all.py` | Historical data ingestion (multi-season) | Active |
