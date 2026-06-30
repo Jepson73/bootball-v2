@@ -490,6 +490,7 @@ Key test files:
 | `scripts/check_model.py` | Inspect trained model metadata | Diagnostic tool |
 | `scripts/diagnostics.py` | Connectivity checks, backfill config validation | Diagnostic tool |
 | `scripts/daily_sanity_check.py` | Sanity checks run by scheduler | Active |
-| `scripts/capture_forward_odds.py` | Capture open→close odds time-series for forward-collection leagues (Pinnacle + Bet365) | Active |
+| `scripts/capture_forward_odds.py` | Capture open→close odds time-series for forward-collection leagues (Pinnacle + Bet365 only) | Active |
+| `scripts/probe_forward_odds.py` | One-shot bookmaker-detection probe: fetches raw odds for a given `--league-ids` list, logs ALL bookmaker names and raw `bet_name` strings, writes to `odds_snapshots` only if Pinnacle present, writes `logs/soft_book_decision_needed.txt` flag if only soft books found | Active |
 | `scripts/auto_bet.py` | Legacy betting pipeline — **DEPRECATED** (not in live path) | Dead — kept for reference |
 | `scripts/live_monitor.py` | Watch live matches in real-time | Likely dead |
