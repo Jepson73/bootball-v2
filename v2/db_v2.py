@@ -250,46 +250,64 @@ def get_track_a_stats() -> dict:
 # ── Predictions (Track A + B overlay) ─────────────────────────────────────────
 
 def get_predictions_for_upcoming() -> list[dict]:
-    """Upcoming predictions for NS fixtures across all leagues."""
+    """
+    Upcoming predictions for NS fixtures — includes home/away team names and full
+    h2h probability vector where stored.
+
+    Data-gap note: prob_home/prob_draw/prob_away are NULL for all current records
+    (columns added in Phase 11b schema but never populated by the prediction engine).
+    The view falls back to predicted_outcome + our_prob for H2H labelling.
+    """
     try:
-        from src.storage.models import PredictionRecord
+        from src.storage.models import PredictionRecord, Team
     except ImportError:
         return []
+
+    from sqlalchemy.orm import aliased
+    HomeTeam = aliased(Team)
+    AwayTeam = aliased(Team)
 
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     cutoff = now + timedelta(days=7)
 
     with get_session() as s:
+        # Subquery: count Pinnacle snapshots per fixture (avoids GROUP BY explosion)
+        from sqlalchemy import literal_column
+        pin_sub = (
+            select(OddsSnapshot.fixture_id, func.count(OddsSnapshot.id).label("snap_count"))
+            .where(OddsSnapshot.bookmaker_name == "Pinnacle")
+            .group_by(OddsSnapshot.fixture_id)
+            .subquery()
+        )
+
         rows = s.execute(
             select(
                 Fixture.id.label("fixture_id"),
                 Fixture.date,
                 Fixture.league_id,
                 League.name.label("league_name"),
+                HomeTeam.name.label("home_team_name"),
+                AwayTeam.name.label("away_team_name"),
                 PredictionRecord.market,
                 PredictionRecord.our_prob,
                 PredictionRecord.predicted_outcome,
+                PredictionRecord.prob_home,
+                PredictionRecord.prob_draw,
+                PredictionRecord.prob_away,
                 PredictionRecord.ev,
                 PredictionRecord.odds_decimal,
-                func.count(OddsSnapshot.id).label("has_pinnacle"),
+                func.coalesce(pin_sub.c.snap_count, 0).label("has_pinnacle"),
             )
             .join(PredictionRecord, PredictionRecord.fixture_id == Fixture.id)
             .join(League, Fixture.league_id == League.id)
-            .outerjoin(
-                OddsSnapshot,
-                (OddsSnapshot.fixture_id == Fixture.id) & (OddsSnapshot.bookmaker_name == "Pinnacle"),
-            )
+            .join(HomeTeam, Fixture.home_team_id == HomeTeam.id)
+            .join(AwayTeam, Fixture.away_team_id == AwayTeam.id)
+            .outerjoin(pin_sub, pin_sub.c.fixture_id == Fixture.id)
             .where(Fixture.status == "NS")
             .where(Fixture.date >= now)
             .where(Fixture.date <= cutoff)
             .where(PredictionRecord.settled == False)
-            .group_by(
-                Fixture.id, Fixture.date, Fixture.league_id, League.name,
-                PredictionRecord.market, PredictionRecord.our_prob,
-                PredictionRecord.predicted_outcome, PredictionRecord.ev,
-                PredictionRecord.odds_decimal,
-            )
-            .order_by(Fixture.date, Fixture.league_id)
+            .order_by(Fixture.date, Fixture.league_id, Fixture.id, PredictionRecord.market)
             .limit(500)
         ).all()
 
@@ -302,12 +320,17 @@ def get_predictions_for_upcoming() -> list[dict]:
                 "date": r.date,
                 "league_id": r.league_id,
                 "league_name": r.league_name,
+                "home_team": r.home_team_name or f"Team {fid}",
+                "away_team": r.away_team_name or f"Team {fid}",
                 "markets": [],
             }
         fixtures[fid]["markets"].append({
             "market": r.market,
             "our_prob": round(float(r.our_prob), 3) if r.our_prob else None,
             "predicted_outcome": r.predicted_outcome,
+            "prob_home": round(float(r.prob_home), 3) if r.prob_home else None,
+            "prob_draw": round(float(r.prob_draw), 3) if r.prob_draw else None,
+            "prob_away": round(float(r.prob_away), 3) if r.prob_away else None,
             "ev": round(float(r.ev), 4) if r.ev else None,
             "odds_decimal": round(float(r.odds_decimal), 2) if r.odds_decimal else None,
             "has_pinnacle": r.has_pinnacle > 0,
