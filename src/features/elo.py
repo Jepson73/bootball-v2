@@ -125,17 +125,44 @@ class EloEngine:
             return result
 
 
+# Senior national-team competitions used to build the national Elo pool.
+# Excludes: women, youth (U17/U19/U21), club competitions, CHAN (locally-based players).
+# Includes Friendlies (10) — 42 of 2492 FT fixtures involve a club-rated team (1.7%).
+# Bridge teams are incidental: Hull City, Alanyaspor, etc. in one-off national warmups.
+# Their presence does not meaningfully affect national-team ratings.
+NATIONAL_POOL_LEAGUES: frozenset[int] = frozenset({
+    1,    # World Cup
+    4,    # Euro Championship
+    5,    # UEFA Nations League
+    6,    # Africa Cup of Nations
+    7,    # Asian Cup
+    9,    # Copa America
+    10,   # Friendlies (national — see contamination note above)
+    22,   # CONCACAF Gold Cup
+    29,   # World Cup - Qualification Africa
+    30,   # World Cup - Qualification Asia
+    31,   # World Cup - Qualification CONCACAF
+    32,   # World Cup - Qualification Europe
+    34,   # World Cup - Qualification South America
+    35,   # Asian Cup - Qualification
+    36,   # Africa Cup of Nations - Qualification
+    536,  # CONCACAF Nations League
+    858,  # CONCACAF Gold Cup - Qualification
+    960,  # Euro Championship - Qualification
+})
+
+
 def update_all_ratings(pool: str = "club") -> int:
     """
     Rebuild Elo ratings for all teams in *pool* from FT fixtures.
 
-    Club pool: uses only fixtures from leagues with country != 'World', which
-    excludes all national-team competitions (World Cup, Nations League, etc.)
-    while retaining domestic leagues for all club sides.
+    Club pool:     fixtures from leagues with country != 'World' (domestic only).
+    National pool: fixtures from NATIONAL_POOL_LEAGUES whitelist.
 
     Processes fixtures in date order (Elo is path-dependent). Stores one row per
     team representing their final rating + cumulative games_played. Clears the
-    pool first, so repeated runs are idempotent.
+    pool first (pool-scoped DELETE), so repeated runs are idempotent and the
+    other pool is never touched.
 
     Returns the number of FT fixtures processed.
     """
@@ -159,8 +186,15 @@ def update_all_ratings(pool: str = "club") -> int:
                 .order_by(Fixture.date)
             ).scalars().all()
         else:
-            # national pool — not implemented yet (Part B)
-            return 0
+            fixtures = session.execute(
+                select(Fixture)
+                .join(League, Fixture.league_id == League.id)
+                .where(Fixture.status == "FT")
+                .where(Fixture.goals_home.isnot(None))
+                .where(Fixture.goals_away.isnot(None))
+                .where(League.id.in_(NATIONAL_POOL_LEAGUES))
+                .order_by(Fixture.date)
+            ).scalars().all()
 
         # In-memory Elo pass — no per-fixture DB writes
         ratings: dict[int, float] = {}

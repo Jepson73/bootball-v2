@@ -24,6 +24,91 @@ logger = logging.getLogger(__name__)
 
 QUOTA_LOG = Path("logs/quota_log.csv")
 
+_SOFT_BOOK_PRIORITY = {
+    "Bet365": 1, "Unibet": 2, "William Hill": 3,
+    "Betfair": 4, "Marathonbet": 5, "1xBet": 6,
+}
+
+
+def _fetch_soft_odds(fixture_ids: list[int]) -> dict[int, dict]:
+    """
+    Per-fixture consolidated soft-book odds from fixture_odds.
+    One bookmaker per fixture (Bet365 preferred). Returns empty dict entry
+    when no soft odds exist for a fixture.
+
+    Keys: book, home, draw, away, over, under, over15, under15, btts_yes, btts_no
+    """
+    if not fixture_ids:
+        return {}
+
+    fid_str = ",".join(str(int(x)) for x in fixture_ids)
+
+    with get_session() as s:
+        rows = s.execute(text(f"""
+            SELECT fixture_id, bookmaker,
+                   MAX(odd_home)     AS odd_home,
+                   MAX(odd_draw)     AS odd_draw,
+                   MAX(odd_away)     AS odd_away,
+                   MAX(odd_over)     AS odd_over,
+                   MAX(odd_under)    AS odd_under,
+                   MAX(odd_over15)   AS odd_over15,
+                   MAX(odd_under15)  AS odd_under15,
+                   MAX(odd_btts_yes) AS odd_btts_yes,
+                   MAX(odd_btts_no)  AS odd_btts_no
+            FROM fixture_odds
+            WHERE fixture_id IN ({fid_str})
+              AND bookmaker NOT IN ('Pinnacle', 'Pinnacle Sports')
+            GROUP BY fixture_id, bookmaker
+            ORDER BY fixture_id, bookmaker
+        """)).fetchall()
+
+    result: dict[int, dict] = {}
+    for r in rows:
+        fid = r.fixture_id
+        if fid in result:
+            existing_priority = _SOFT_BOOK_PRIORITY.get(result[fid]["book"], 99)
+            new_priority = _SOFT_BOOK_PRIORITY.get(r.bookmaker, 99)
+            if new_priority >= existing_priority:
+                continue
+        result[fid] = {
+            "book": r.bookmaker,
+            "home": r.odd_home,
+            "draw": r.odd_draw,
+            "away": r.odd_away,
+            "over": r.odd_over,
+            "under": r.odd_under,
+            "over15": r.odd_over15,
+            "under15": r.odd_under15,
+            "btts_yes": r.odd_btts_yes,
+            "btts_no": r.odd_btts_no,
+        }
+    return result
+
+
+def _attach_soft_odds(fix_dict: dict[int, dict], markets_key: str = "markets") -> None:
+    """
+    Merge soft odds into market dicts in-place.
+    fix_dict: {fixture_id: {"markets": [...]}} for predictions view
+              {fixture_id: {"markets": {name: {...}}}} for explorer.
+    markets_key is always "markets".
+    """
+    soft = _fetch_soft_odds(list(fix_dict.keys()))
+    for fid, fix_data in fix_dict.items():
+        s = soft.get(fid, {})
+        mkt_container = fix_data[markets_key]
+        items = mkt_container.values() if isinstance(mkt_container, dict) else mkt_container
+        for mkt in items:
+            mkt["soft_book"] = s.get("book")
+            mkt["soft_home"] = s.get("home")
+            mkt["soft_draw"] = s.get("draw")
+            mkt["soft_away"] = s.get("away")
+            mkt["soft_over"] = s.get("over")
+            mkt["soft_under"] = s.get("under")
+            mkt["soft_over15"] = s.get("over15")
+            mkt["soft_under15"] = s.get("under15")
+            mkt["soft_btts_yes"] = s.get("btts_yes")
+            mkt["soft_btts_no"] = s.get("btts_no")
+
 
 # ── Forward-collection ─────────────────────────────────────────────────────────
 
@@ -343,6 +428,7 @@ def get_predictions_for_upcoming() -> list[dict]:
             "data_context": r.data_context,
         })
 
+    _attach_soft_odds(fixtures)
     return list(fixtures.values())
 
 
@@ -604,6 +690,7 @@ def get_explorer_data(
             "data_context": r.data_context,
         }
 
+    _attach_soft_odds(fixtures_map)
     return {
         "fixtures": [fixtures_map[fid] for fid in fixture_order],
         "total": total,

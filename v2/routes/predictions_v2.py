@@ -20,33 +20,33 @@ bp_predictions = Blueprint("predictions_v2", __name__)
 _H2H_LABELS = {"1": "Home", "X": "Draw", "2": "Away", "H": "Home", "D": "Draw", "A": "Away"}
 
 
-def _soft_odds_tag(market: dict) -> str:
-    """Inline soft-book odds tag for non-Pinnacle markets. Empty string if Pinnacle or no odds."""
-    is_pinnacle = market.get("is_pinnacle", False) or market.get("has_pinnacle", False)
-    if is_pinnacle:
+def _price_tag(val: float | None) -> str:
+    """Format a decimal odds value as a subtle inline span, or empty string."""
+    if val is None:
         return ""
-    odds = market.get("odds_decimal")
-    if odds is None:
+    return f'<span style="color:#6e7681;font-size:10px"> ({val:.2f})</span>'
+
+
+def _book_tag(book: str | None, has_price: bool) -> str:
+    """Compact bookmaker label shown once per cell when soft prices are present."""
+    if not book or not has_price:
         return ""
-    bk = market.get("bookmaker") or "soft"
     return (
-        f'&nbsp;<span style="color:#8b949e;font-size:10px" '
-        f'title="indicative — not sharp-verified">'
-        f'&middot;&nbsp;{bk}&nbsp;{odds:.2f}</span>'
+        f'<br><span style="color:#484f58;font-size:9px" title="indicative — not sharp-verified">'
+        f'{book}</span>'
     )
 
 
 def _format_market(market: dict) -> str:
     """
-    Return a labelled probability string for one market row.
-    Every probability states the outcome it refers to.
+    Return a labelled probability string for one market cell.
 
-    H2H with full vector: "H 56% D 24% A 20%"
-    H2H scalar fallback:  "Home 54% *" (vector missing)
-    ou25/ou15/btts:       "Over 52%" / "Yes 86%"
+    H2H full vector: H 56% (1.78) · D 24% (3.60) · A 20% (4.20)  [Bet365]
+    H2H scalar:      Home 54% (1.78) *
+    ou25/ou15/btts:  Over 55% (1.90)  [Bet365]
 
-    For non-Pinnacle markets with stored odds, appends "· Bookmaker 1.85" inline.
-    EV computation against soft odds is suppressed (Track B is Pinnacle-only).
+    Soft prices are per-outcome from fixture_odds (not prediction_records.odds_decimal).
+    Track B (EV) is Pinnacle-only and unchanged — soft prices never feed EV logic.
     """
     m = market["market"]
     p = market["our_prob"]
@@ -56,48 +56,69 @@ def _format_market(market: dict) -> str:
         return '<span style="color:#8b949e">—</span>'
 
     pct = round(p * 100)
-    soft = _soft_odds_tag(market)
+    book = market.get("soft_book")
 
     if m == "h2h":
         ph = market.get("prob_home")
         pd_ = market.get("prob_draw")
         pa = market.get("prob_away")
         if ph is not None and pd_ is not None and pa is not None:
-            # Full 3-way vector available
             def _col(v):
                 c = "#3fb950" if v >= 0.5 else ("#d29922" if v >= 0.35 else "#8b949e")
                 return f'<span style="color:{c};font-weight:600">{round(v*100)}%</span>'
+            sh = _price_tag(market.get("soft_home"))
+            sd = _price_tag(market.get("soft_draw"))
+            sa = _price_tag(market.get("soft_away"))
+            has_price = any([market.get("soft_home"), market.get("soft_draw"), market.get("soft_away")])
             return (
-                f'H {_col(ph)} &nbsp;'
-                f'D {_col(pd_)} &nbsp;'
-                f'A {_col(pa)}'
-                + soft
+                f'H {_col(ph)}{sh}&nbsp;'
+                f'D {_col(pd_)}{sd}&nbsp;'
+                f'A {_col(pa)}{sa}'
+                + _book_tag(book, has_price)
             )
         else:
-            # Scalar fallback — label the predicted side
             label = _H2H_LABELS.get(str(outcome), outcome or "?")
             colour = "#3fb950" if pct >= 55 else ("#d29922" if pct >= 45 else "#8b949e")
+            if outcome in ("1", "H"):
+                price = market.get("soft_home")
+            elif outcome in ("X", "D"):
+                price = market.get("soft_draw")
+            else:
+                price = market.get("soft_away")
             return (
                 f'<span style="color:{colour};font-weight:600">{label} {pct}%</span>'
-                f'<span style="color:#8b949e;font-size:10px" title="Full 3-way vector not stored — showing predicted side only"> *</span>'
-                + soft
+                + _price_tag(price)
+                + f'<span style="color:#8b949e;font-size:10px" title="Full 3-way vector not stored"> *</span>'
+                + _book_tag(book, bool(price))
             )
 
     elif m in ("ou25", "ou15"):
-        # predicted_outcome is "Over" or "Under"
         label = str(outcome).capitalize() if outcome else "?"
         colour = "#3fb950" if pct >= 55 else ("#d29922" if pct >= 45 else "#8b949e")
-        return f'<span style="color:{colour};font-weight:600">{label} {pct}%</span>' + soft
+        is_over = outcome.lower() == "over"
+        if m == "ou25":
+            price = market.get("soft_over") if is_over else market.get("soft_under")
+        else:
+            price = market.get("soft_over15") if is_over else market.get("soft_under15")
+        return (
+            f'<span style="color:{colour};font-weight:600">{label} {pct}%</span>'
+            + _price_tag(price)
+            + _book_tag(book, bool(price))
+        )
 
     elif m == "btts":
-        # predicted_outcome is "Yes" or "No"
         label = str(outcome).capitalize() if outcome else "?"
         colour = "#3fb950" if pct >= 55 else ("#d29922" if pct >= 45 else "#8b949e")
-        return f'<span style="color:{colour};font-weight:600">{label} {pct}%</span>' + soft
+        price = market.get("soft_btts_yes") if outcome.lower() == "yes" else market.get("soft_btts_no")
+        return (
+            f'<span style="color:{colour};font-weight:600">{label} {pct}%</span>'
+            + _price_tag(price)
+            + _book_tag(book, bool(price))
+        )
 
     else:
         colour = "#3fb950" if pct >= 55 else ("#d29922" if pct >= 45 else "#8b949e")
-        return f'<span style="color:{colour};font-weight:600">{pct}%</span>' + soft
+        return f'<span style="color:{colour};font-weight:600">{pct}%</span>'
 
 
 _CTX_BADGE = {

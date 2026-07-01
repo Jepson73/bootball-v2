@@ -20,6 +20,12 @@ bp_explorer = Blueprint("explorer_v2", __name__)
 _H2H = {"1": "Home", "X": "Draw", "2": "Away"}
 
 
+def _ex_price(val: float | None) -> str:
+    if val is None:
+        return ""
+    return f'<span style="color:#6e7681;font-size:9px"> ({val:.2f})</span>'
+
+
 def _mkt_cell(m: dict | None) -> str:
     """Render one market <td> for the explorer table."""
     if not m:
@@ -34,6 +40,7 @@ def _mkt_cell(m: dict | None) -> str:
     outcome = str(m.get("predicted_outcome") or "")
     settled = m.get("settled", False)
     won = m.get("won")
+    book = m.get("soft_book")
 
     if mkt == "h2h":
         label = _H2H.get(outcome, outcome or "?")
@@ -42,10 +49,20 @@ def _mkt_cell(m: dict | None) -> str:
         pa = m.get("prob_away")
         if ph is not None and pd_ is not None and pa is not None:
             star = ""
+            sh = _ex_price(m.get("soft_home"))
+            sd = _ex_price(m.get("soft_draw"))
+            sa = _ex_price(m.get("soft_away"))
+            has_price = any([m.get("soft_home"), m.get("soft_draw"), m.get("soft_away")])
+            bk = (
+                f'<span style="color:#484f58;font-size:8px" title="indicative"> {book}</span>'
+                if book and has_price else ""
+            )
             dist = (
                 f'<br><small style="color:#636e7b;font-size:0.78em">'
-                f'H&nbsp;{round(ph*100)}%&nbsp;D&nbsp;{round(pd_*100)}%&nbsp;A&nbsp;{round(pa*100)}%'
-                f"</small>"
+                f'H&nbsp;{round(ph*100)}%{sh}&nbsp;'
+                f'D&nbsp;{round(pd_*100)}%{sd}&nbsp;'
+                f'A&nbsp;{round(pa*100)}%{sa}'
+                f'{bk}</small>'
             )
         else:
             star = " *"
@@ -53,7 +70,20 @@ def _mkt_cell(m: dict | None) -> str:
     else:
         label = outcome.capitalize() if outcome else "?"
         star = ""
-        dist = ""
+        # Per-outcome price for binary markets
+        if mkt in ("ou25", "ou15"):
+            is_over = outcome.lower() == "over"
+            if mkt == "ou25":
+                price = m.get("soft_over") if is_over else m.get("soft_under")
+            else:
+                price = m.get("soft_over15") if is_over else m.get("soft_under15")
+        elif mkt == "btts":
+            price = m.get("soft_btts_yes") if outcome.lower() == "yes" else m.get("soft_btts_no")
+        else:
+            price = None
+        dist = _ex_price(price)
+        if book and price:
+            dist += f'<span style="color:#484f58;font-size:8px" title="indicative"> {book}</span>'
 
     color = "#3fb950" if pct >= 60 else ("#d29922" if pct >= 50 else "#8b949e")
     pred = f'<span style="color:{color};font-weight:600">{label}&nbsp;{pct}%{star}</span>{dist}'
