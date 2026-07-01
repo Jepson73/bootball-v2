@@ -418,16 +418,25 @@ is_job_allowed_in_mode("retrain_models", LIVE) → False → skip
 
 All markets use `GradientBoostingClassifier` with Platt calibration. Features include Elo ratings, recent form, head-to-head stats, expected goals, and league-normalized strength metrics.
 
-**Phase 16b — Elo hybrid gap predictions (club pool)**
+**Phase 16b–19 — Elo hybrid predictions (club + national pools)**
 
-`src/features/elo.py` — `EloEngine` with fixed draw model (exponential decay: `p_draw = 0.30 * exp(-|delta| / 400)`), pool-scoped `_get_current_rating()`, `predict(pool=)`, and `predict_from_ratings()`. `update_all_ratings(pool='club')` processes 750K+ FT domestic-league fixtures chronologically in-memory (no per-fixture DB writes) and bulk-inserts one row per team. Club pool filter: `league.country != 'World'`. **20,930 club team ratings stored.**
+`src/features/elo.py` — `EloEngine` with fixed draw model (exponential decay: `p_draw = 0.30 * exp(-|delta| / 400)`), pool-scoped `_get_current_rating()`, `predict(pool=)`, and `predict_from_ratings()`. `update_all_ratings(pool)` clears and rebuilds one pool without touching the other:
+- `pool='club'`: filter `league.country != 'World'`; processes 750K+ domestic-league FT fixtures; **20,930 teams rated**.
+- `pool='national'`: filter `league.id IN NATIONAL_POOL_LEAGUES` (18 competitions: WC, WC quals by confederation, UEFA/CONCACAF Nations Leagues, Euro, AFCON, Copa America, Asian Cup, senior Friendlies); processes ~7K FT fixtures; **583 national teams rated** (range 1037–1922).
 
-`scripts/generate_gap_predictions.py` — one-shot script: writes h2h `PredictionRecord`s for NS fixtures missing a prediction (teams with no Standings row bypass the normal model gate). Hybrid decision logic:
-- both rated → `elo_both`
-- Friendlies, one unrated → `flat_prior` (H43/D27/A30)
-- non-Friendly, one unrated → `elo_partial` (1500 default)
-- league name contains U17/U19/U20/Youth → abstain (no record)
-Uses `INSERT OR IGNORE` for idempotency. Run after new fixture ingestion when gap fixtures appear.
+`scripts/generate_gap_predictions.py` — one-shot: writes h2h `PredictionRecord`s for club NS fixtures missing a prediction. Hybrid logic: both rated → `elo_both`; Friendlies + one unrated → `flat_prior` (H43/D27/A30); non-Friendly + one unrated → `elo_partial` (1500 default); Youth keyword → abstain. `INSERT OR IGNORE` for idempotency.
+
+`scripts/update_national_ratings.py` — rebuilds `pool='national'` Elo ratings from the `NATIONAL_POOL_LEAGUES` whitelist. Prints isolation report (bridge teams, club-pool row count unchanged). Run before `generate_wc_predictions.py`.
+
+`scripts/generate_wc_predictions.py` — writes national Elo predictions for the 11 World Cup NS fixtures via `predict(pool='national')`, `data_context='national_elo'`. Uses UPDATE (not INSERT) since records already exist from the ensemble pipeline. Youth competitions (league_id 493/918) are abstained.
+
+**Phase 18 — per-outcome soft-book odds display**
+
+`v2/db_v2.py` — `_fetch_soft_odds(fixture_ids)` consolidates `fixture_odds` rows (one bookmaker per fixture; Bet365 preferred). `_attach_soft_odds()` merges the result into market dicts for both `get_predictions_for_upcoming()` and `get_explorer_data()`. Fields added to each market dict: `soft_book`, `soft_home/draw/away`, `soft_over/under`, `soft_over15/under15`, `soft_btts_yes/no`. Pinnacle is always excluded from soft odds.
+
+`v2/routes/predictions_v2.py` — `_format_market()` renders per-outcome prices inline beside their probabilities: H2H shows `H 56% (1.78) D 24% (3.60) A 20% (4.20)` with a compact bookmaker label; O/U and BTTS show the predicted-side price. Soft prices never appear in Track B (EV column remains Pinnacle-only and unchanged).
+
+`v2/routes/explorer_v2.py` — `_mkt_cell()` extended: H2H distribution line shows per-outcome prices; binary markets show the predicted-side price inline. Same bookmaker label treatment as predictions view.
 
 ---
 
@@ -505,7 +514,9 @@ Key test files:
 | `scripts/make_predictions.py` | Manual prediction generation | Active |
 | `scripts/odds_poll.py` | Poll odds; recalculate EV | Active |
 | `scripts/migrate.py` | Database schema migration runner | Active |
-| `scripts/generate_gap_predictions.py` | Elo hybrid h2h predictions for gap fixtures (no Standings row). Run ad-hoc after ingestion. `--dry-run` flag available | Active |
+| `scripts/generate_gap_predictions.py` | Elo hybrid h2h predictions for club gap fixtures (no Standings row). `--dry-run` flag available | Active |
+| `scripts/update_national_ratings.py` | Rebuild `pool='national'` Elo ratings from the 18-competition whitelist; prints isolation report | Active |
+| `scripts/generate_wc_predictions.py` | National Elo predictions for World Cup NS fixtures (`data_context=national_elo`); UPDATE not INSERT | Active |
 | `scripts/check_model.py` | Inspect trained model metadata | Diagnostic tool |
 | `scripts/diagnostics.py` | Connectivity checks, backfill config validation | Diagnostic tool |
 | `scripts/daily_sanity_check.py` | Sanity checks run by scheduler | Active |
