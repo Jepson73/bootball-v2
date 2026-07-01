@@ -5,8 +5,10 @@ Used by:
 - scripts/settle_fixtures.py (standalone script)
 - scripts/web_ui.py (betting dashboard settle)
 """
+import json
 import logging
 from datetime import datetime, timedelta
+from pathlib import Path
 from sqlalchemy import select
 
 from src.ingestion.client import APIFootballClient
@@ -1087,6 +1089,74 @@ def settle_predictions(days: int | None = None) -> int:
 # unplayed markets should be excluded from Track A, not scored as losses.
 VOID_STATUSES = ("PST", "CANC", "ABD", "WO", "SUSP")
 
+# Consecutive empty-response resyncs before a stale NS fixture is marked DEAD.
+# Phase 22 investigation found the API-Football provider re-issues fixture IDs
+# for playoff/knockout-bracket and provisional lower-tier schedules once the
+# real pairing is finalized — the old ID returns an empty response forever.
+# This is a recurring provider behavior (not one-off historical residue), so
+# untraceable IDs need an ongoing rule, not just a one-time cleanup. 3 misses
+# (~3 daily resync cycles) filters out a single transient API hiccup while
+# still bounding the leak within days rather than letting it accumulate.
+DEAD_THRESHOLD = 3
+_STALE_FAILURE_FILE = Path("data/raw/.stale_fetch_failures.json")
+
+
+def _load_stale_failures() -> dict[str, int]:
+    if _STALE_FAILURE_FILE.exists():
+        try:
+            return json.loads(_STALE_FAILURE_FILE.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {}
+    return {}
+
+
+def _save_stale_failures(counts: dict[str, int]) -> None:
+    _STALE_FAILURE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _STALE_FAILURE_FILE.with_suffix(".tmp")
+    tmp.write_text(json.dumps(counts))
+    tmp.replace(_STALE_FAILURE_FILE)
+
+
+def mark_fixtures_dead(fixture_ids: list[int]) -> int:
+    """Mark fixtures as permanently untraceable (API returns empty response).
+
+    Sets Fixture.status='DEAD' — excludes them from resync_stale_fixtures()'s
+    query (status='NS' only) so they can no longer occupy a slot at the head
+    of the oldest-first resync queue. Voids their unsettled predictions with
+    actual_outcome='untraceable' (distinct from PST/CANC/AWD — there is no
+    real-world event here, just data the provider no longer serves).
+
+    Returns count of predictions voided.
+    """
+    from src.storage.models import Fixture, PredictionRecord
+
+    if not fixture_ids:
+        return 0
+
+    voided = 0
+    with get_session() as s:
+        for fid in fixture_ids:
+            fix = s.get(Fixture, fid)
+            if fix:
+                fix.status = "DEAD"
+
+        preds = s.execute(
+            select(PredictionRecord)
+            .where(PredictionRecord.fixture_id.in_(fixture_ids))
+            .where(PredictionRecord.settled == False)
+        ).scalars().all()
+        for pred in preds:
+            pred.actual_outcome = "untraceable"
+            pred.won = None
+            pred.settled = True
+            pred.settled_at = datetime.utcnow()
+            voided += 1
+
+        s.commit()
+
+    logger.info("Marked %d fixtures DEAD, voided %d predictions", len(fixture_ids), voided)
+    return voided
+
 
 def void_unplayable_predictions(fixture_ids: list[int] | None = None) -> int:
     """Void unsettled predictions for PST/CANC/ABD/WO/SUSP fixtures.
@@ -1248,8 +1318,14 @@ def resync_stale_fixtures(limit: int = 100) -> dict:
       - AWD: immediately settles via settle_awarded_predictions() (1 extra
         API call batch, only for fixtures that actually resolved to AWD).
 
+    Fixtures that come back with an empty API response (fixture ID no longer
+    exists — see mark_fixtures_dead docstring) are tracked across calls; after
+    DEAD_THRESHOLD consecutive empty responses they're auto-marked DEAD and
+    excluded from future resync queries, so a permanently-untraceable ID can't
+    sit at the head of the oldest-first queue forever.
+
     Returns counts: fixtures_checked, api_calls, updated, unchanged,
-    resolved_ft, resolved_void, resolved_awd, still_ns_unresolved.
+    resolved_ft, resolved_void, resolved_awd, still_ns_unresolved, marked_dead.
     """
     from src.storage.models import Fixture
 
@@ -1266,12 +1342,35 @@ def resync_stale_fixtures(limit: int = 100) -> dict:
     if not stale_ids:
         return {
             "fixtures_checked": 0, "api_calls": 0, "updated": 0, "unchanged": 0,
-            "resolved_ft": 0, "resolved_void": 0, "resolved_awd": 0, "still_ns_unresolved": 0,
+            "resolved_ft": 0, "resolved_void": 0, "resolved_awd": 0,
+            "still_ns_unresolved": 0, "marked_dead": 0,
         }
 
     client = APIFootballClient()
     raw_fixtures = client.get_fixtures_batch(list(stale_ids))
     api_calls = -(-len(stale_ids) // 20)
+
+    found_ids = {raw.get("fixture", {}).get("id") for raw in raw_fixtures if raw.get("fixture", {}).get("id")}
+    missing_ids = [fid for fid in stale_ids if fid not in found_ids]
+
+    # Track consecutive empty-response misses per fixture; auto-mark DEAD at
+    # DEAD_THRESHOLD so a permanently-untraceable ID stops occupying a slot
+    # in the oldest-first resync queue after a few confirmed-empty cycles.
+    failures = _load_stale_failures()
+    newly_dead: list[int] = []
+    for fid in missing_ids:
+        key = str(fid)
+        failures[key] = failures.get(key, 0) + 1
+        if failures[key] >= DEAD_THRESHOLD:
+            newly_dead.append(fid)
+            del failures[key]
+    for fid in found_ids:
+        failures.pop(str(fid), None)  # reset on any successful response
+    _save_stale_failures(failures)
+
+    dead_voided = 0
+    if newly_dead:
+        dead_voided = mark_fixtures_dead(newly_dead)
 
     updated = 0
     unchanged = 0
@@ -1353,9 +1452,10 @@ def resync_stale_fixtures(limit: int = 100) -> dict:
 
     logger.info(
         "resync_stale_fixtures: checked %d, updated %d, unchanged %d, "
-        "resolved_ft=%d resolved_void=%d resolved_awd=%d still_ns_unresolved=%d, %d+%d API calls",
+        "resolved_ft=%d resolved_void=%d resolved_awd=%d still_ns_unresolved=%d "
+        "marked_dead=%d, %d+%d API calls",
         len(stale_ids), updated, unchanged, len(resolved_ft), len(resolved_void),
-        len(resolved_awd), still_ns_unresolved, api_calls, awd_result["api_calls"],
+        len(resolved_awd), still_ns_unresolved, len(newly_dead), api_calls, awd_result["api_calls"],
     )
     return {
         "fixtures_checked": len(stale_ids),
@@ -1366,6 +1466,7 @@ def resync_stale_fixtures(limit: int = 100) -> dict:
         "resolved_void": len(resolved_void),
         "resolved_awd": len(resolved_awd),
         "still_ns_unresolved": still_ns_unresolved,
+        "marked_dead": len(newly_dead),
     }
 
 

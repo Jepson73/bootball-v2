@@ -92,7 +92,15 @@ def _mkt_cell(m: dict | None) -> str:
             )
         else:
             star = " *"
-            dist = ""
+            if outcome in ("1", "H"):
+                price = m.get("soft_home")
+            elif outcome in ("X", "D"):
+                price = m.get("soft_draw")
+            else:
+                price = m.get("soft_away")
+            dist = _ex_price(price)
+            if book and price:
+                dist += f'<span style="color:#484f58;font-size:8px" title="indicative"> {book}</span>'
     else:
         label = outcome.capitalize() if outcome else "?"
         star = ""

@@ -460,6 +460,21 @@ Investigation revealed 153 fixtures with unsettled predictions not visible in th
 
 One-time cleanup run: voided 105 PST/CANC + 63 AWD goal-market predictions (168 total), settled 17 AWD h2h predictions against the awarded winner (3 AWD fixtures had no API winner flag, voided), resynced 81 stale NS fixtures (35 resolved to FT, 2 to void, 28 had simply not kicked off yet by the API's clock, ~16 fixture IDs no longer exist in the API — untraceable, left unchanged). Total: 9 API calls.
 
+**Phase 22 — dispose of untraceable fixtures; fix stale-service deployment gap in soft odds**
+
+Investigation found the "untraceable" fixtures from Phase 21 (empty API response) are not random old data — every one belongs to a playoff/knockout-bracket competition (`Liga III - Play-offs` Romania, `Segunda División RFEF - Play-offs` Spain) or a provisional lower-tier/youth/women's schedule (Eredivisie/Eredivisie Women, Gabon `Championnat D1`, `U19 Divisie 1`). Re-querying the same league/date via the list endpoint (not `id=`) shows the API-Football provider re-issued the round with brand-new fixture IDs and, in several cases, entirely different team pairings (e.g. stored "Mangasport vs Vautour Club" (id 1533202) → live API now has "Mangasport vs Lozo" (id 1554020)) — the provider replaces provisional/bracket fixtures once the real matchup is finalized, orphaning the old ID permanently. This is a **recurring provider behavior**, not one-off historical residue — it will keep happening for any competition with provisional bracket scheduling.
+
+`src/settlement.py`:
+- `DEAD_THRESHOLD = 3` / `_load_stale_failures()` / `_save_stale_failures()` — JSON counter file (`data/raw/.stale_fetch_failures.json`, same pattern as `client.py`'s call counter) tracking consecutive empty-API-response misses per fixture ID across `resync_stale_fixtures()` calls. Reset to zero on any successful response.
+- `mark_fixtures_dead(fixture_ids)` — sets `Fixture.status='DEAD'` (excludes the fixture from `resync_stale_fixtures()`'s `status='NS'` query permanently) and voids unsettled predictions with `actual_outcome='untraceable'`.
+- `resync_stale_fixtures()` now diffs requested IDs against the batch response; any ID absent from the response increments its failure counter, and IDs reaching `DEAD_THRESHOLD` are auto-marked dead within the same call — no manual cleanup needed for future occurrences. Return dict gained a `marked_dead` count.
+
+One-time cleanup: 16 already-confirmed-untraceable fixtures (verified via repeated force-refresh probes) marked `DEAD` directly, voiding 61 predictions. Resync queue dropped from 42 to 26 (later 24 as new fixtures naturally passed kickoff).
+
+**Soft odds — root cause was a stale, unrestarted service, not a code defect.** `bootball-web-v2.service` (systemd, port 5000) had been running since 07:25 UTC — 5+ hours before the Phase 18 commit (12:39 UTC) landed. Flask's `app.run(debug=False)` does not hot-reload, so the live process was still serving pre-Phase-18 code: bare probabilities in the market columns (`H 38% D 30% A 33%`, no prices) and a stray soft-book price detached from any market crammed into the Track B cell (`10Bet 1.53 · No sharp odds`) — exactly Phase 15's original problem. Verified the data layer (`get_predictions_for_upcoming()`) and rendering (`_format_market()`) were already correct by calling them directly in a Python shell before touching the service. `systemctl restart bootball-web-v2.service` made the Phase 18 code live; confirmed via `curl` against the running port that both views now render per-outcome prices (e.g. `H 38% (2.15) D 28% (3.20) A 34% (3.70) Bet365`) with Track B showing only the Pinnacle verdict.
+
+A second, real gap was found and fixed during verification: `v2/routes/explorer_v2.py`'s `_mkt_cell()` h2h **scalar-fallback** branch (used when the full H/D/A vector isn't stored, only `predicted_outcome`) never attached a price — unlike `predictions_v2.py`'s equivalent branch. Fixed to look up the outcome-matched price (`soft_home`/`soft_draw`/`soft_away`) the same way the predictions view does. Required a second service restart, since the first restart predated this fix.
+
 ---
 
 ## Architecture Patterns
