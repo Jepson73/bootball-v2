@@ -139,6 +139,9 @@ def explorer():
     team = request.args.get("team") or None
     date_from = request.args.get("date_from") or None
     date_to = request.args.get("date_to") or None
+    data_context = request.args.get("data_context") or None
+    if data_context not in (None, "full", "elo_both", "elo_partial", "flat_prior", "national_elo"):
+        data_context = None
 
     sort = request.args.get("sort", "date")
     if sort not in ("date", "league", "confidence", "accuracy", "brier"):
@@ -177,6 +180,7 @@ def explorer():
         team=team,
         date_from=date_from,
         date_to=date_to,
+        data_context=data_context,
         sort=sort,
         sort_dir=sort_dir,
         page=page_num,
@@ -223,6 +227,14 @@ def explorer():
         + opt("btts", "Both Teams Score", market)
     )
 
+    ctx_opts = (
+        opt("", "All Tiers", data_context)
+        + opt("full", "Full (standings)", data_context)
+        + opt("elo_both", "Elo: both rated", data_context)
+        + opt("elo_partial", "Elo: partial (1 unrated)", data_context)
+        + opt("flat_prior", "Flat prior", data_context)
+    )
+
     sort_choices = [
         ("date", "Date"),
         ("league", "League"),
@@ -245,6 +257,7 @@ def explorer():
           {league_opts}
         </select>
         <select name="market" class="flt-ctrl">{market_opts}</select>
+        <select name="data_context" class="flt-ctrl" title="Prediction tier">{ctx_opts}</select>
         <input name="team" type="text" id="team-inp" class="flt-ctrl"
                placeholder="Team name..." value="{team or ''}">
         <input name="date_from" type="date" value="{date_from or ''}" class="flt-ctrl"

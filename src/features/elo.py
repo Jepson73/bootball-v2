@@ -1,202 +1,220 @@
 # src/features/elo.py - Rolling Elo ratings
 """
-Elo rating system implementation for football teams.
+Elo rating system for football teams.
 
-Based on: Hvattum & Arntzen (2010) - "Elo-based rating systems for predicting 
-football matches"
+Draw model (Hvattum & Arntzen 2010 style):
+  p_draw = BASE_DRAW * exp(-|home_adj - away| / 400)
+  p_home = E(home) * (1 - p_draw)
+  p_away = E(away) * (1 - p_draw)
+  where E(h) + E(a) == 1 by logistic complement, so the three probs sum to 1.
 
-Key parameters:
-- K-factor: 20-32 (higher for more volatile leagues)
-- Home advantage: ~100 Elo points
-- Margin of victory adjustment: reduces volatility
+Pool separation:
+  'club'     — populated from domestic-league FT fixtures (country != 'World')
+  'national' — reserved for Part B; never populated by Part A code
+
+Ratings are stored as one row per team representing their current state after
+all processed fixtures. update_all_ratings() clears the pool and rebuilds from
+scratch, so repeated runs are safe.
 """
 from __future__ import annotations
 
+import math
+from dataclasses import dataclass, field
 from datetime import datetime
-from dataclasses import dataclass
 
-from sqlalchemy import select, func
+from sqlalchemy import select, text
 from sqlalchemy.orm import Session
 
 from src.storage.db import get_session
-from src.storage.models import Fixture, Team, EloRating
+from src.storage.models import EloRating, Fixture, League
 
 
 @dataclass
 class EloConfig:
-    """Configuration for Elo system."""
-    k_factor: float = 32.0          # Learning rate
-    home_advantage: float = 100.0   # Elo points for home
-    initial_rating: float = 1500.0  # Default starting rating
-    mov_weight: float = 0.5         # Margin of victory multiplier
-    max_rating_change: float = 50.0  # Cap per game
+    k_factor: float = 32.0
+    home_advantage: float = 100.0
+    initial_rating: float = 1500.0
+    mov_weight: float = 0.5
+    max_rating_change: float = 50.0
+    draw_base_rate: float = 0.30
 
 
 class EloEngine:
     def __init__(self, config: EloConfig | None = None):
         self.config = config or EloConfig()
 
-    def _get_current_rating(self, session: Session, team_id: int) -> float:
-        """Get team's current Elo rating (most recent)."""
-        result = session.execute(
-            select(EloRating)
-            .where(EloRating.team_id == team_id)
-            .order_by(EloRating.as_of_date.desc())
-            .limit(1)
-        ).scalar_one_or_none()
-        
-        if result:
-            return result.rating
-        return self.config.initial_rating
-
     def _expected_score(self, rating_a: float, rating_b: float) -> float:
-        """Calculate expected score (probability of winning)."""
+        """Logistic win probability for team A vs team B."""
         return 1.0 / (1.0 + 10 ** ((rating_b - rating_a) / 400))
 
     def _calculate_mov(self, goals_for: int, goals_against: int) -> float:
-        """Calculate margin of victory multiplier."""
+        """Log-scale margin-of-victory multiplier (0 for draws/losses)."""
         diff = goals_for - goals_against
         if diff <= 0:
             return 0.0
-        # Log-based MOV to dampen high-scoring games
-        import math
-        return math.log(abs(diff) + 1) / math.log(2) * self.config.mov_weight
+        return math.log(diff + 1) / math.log(2) * self.config.mov_weight
 
-    def update_ratings(
+    def _get_current_rating(self, session: Session, team_id: int, pool: str = "club") -> float:
+        """Most recent stored rating for team in pool; default 1500 if none."""
+        row = session.execute(
+            select(EloRating)
+            .where(EloRating.team_id == team_id)
+            .where(EloRating.pool == pool)
+            .order_by(EloRating.as_of_date.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+        return row.rating if row else self.config.initial_rating
+
+    def predict(
         self,
-        fixture: Fixture,
-        home_goals: int,
-        away_goals: int,
-    ) -> tuple[float, float]:
+        home_team_id: int,
+        away_team_id: int,
+        pool: str = "club",
+    ) -> tuple[float, float, float]:
         """
-        Update Elo ratings after a match.
-        Returns (new_home_rating, new_away_rating).
+        Return (prob_home, prob_draw, prob_away) using stored pool ratings.
+
+        Draw model: p_draw peaks at draw_base_rate for equal teams and decays
+        exponentially with Elo separation, so prob_draw > 0 for any finite diff.
         """
         with get_session() as session:
-            home_rating = self._get_current_rating(session, fixture.home_team_id)
-            away_rating = self._get_current_rating(session, fixture.away_team_id)
-            
-            # Adjust for home advantage
-            home_adj = home_rating + self.config.home_advantage
-            
-            # Calculate expected scores
-            exp_home = self._expected_score(home_adj, away_rating)
-            exp_away = self._expected_score(away_rating, home_adj)
-            
-            # Actual score (1 for win, 0.5 for draw, 0 for loss)
-            if home_goals > away_goals:
-                actual_home, actual_away = 1.0, 0.0
-            elif home_goals < away_goals:
-                actual_home, actual_away = 0.0, 1.0
-            else:
-                actual_home, actual_away = 0.5, 0.5
-            
-            # Calculate margin of victory
-            mov = self._calculate_mov(home_goals, away_goals)
-            
-            # Calculate rating changes
-            change_home = min(
-                self.config.k_factor * (actual_home - exp_home) * (1 + mov),
-                self.config.max_rating_change
-            )
-            change_away = min(
-                self.config.k_factor * (actual_away - exp_away) * (1 + mov),
-                self.config.max_rating_change
-            )
-            
-            new_home = home_rating + change_home
-            new_away = away_rating + change_away
-            
-            # Store new ratings
-            now = datetime.utcnow()
-            session.add(EloRating(
-                team_id=fixture.home_team_id,
-                as_of_date=now,
-                rating=new_home,
-                games_played=1,  # Would need to track cumulative
-            ))
-            session.add(EloRating(
-                team_id=fixture.away_team_id,
-                as_of_date=now,
-                rating=new_away,
-                games_played=1,
-            ))
-            
-            return new_home, new_away
+            h_r = self._get_current_rating(session, home_team_id, pool)
+            a_r = self._get_current_rating(session, away_team_id, pool)
 
-    def get_ratings(self, team_ids: list[int] | None = None) -> dict[int, float]:
-        """Get current ratings for specified teams or all teams."""
+        h_adj = h_r + self.config.home_advantage
+        delta = abs(h_adj - a_r)
+
+        p_draw = self.config.draw_base_rate * math.exp(-delta / 400)
+        remaining = 1.0 - p_draw
+        e_h = self._expected_score(h_adj, a_r)
+        p_home = e_h * remaining
+        p_away = (1.0 - e_h) * remaining
+
+        return (p_home, p_draw, p_away)
+
+    def predict_from_ratings(
+        self,
+        home_rating: float,
+        away_rating: float,
+    ) -> tuple[float, float, float]:
+        """Predict without a DB lookup — used when caller already has ratings."""
+        h_adj = home_rating + self.config.home_advantage
+        delta = abs(h_adj - away_rating)
+        p_draw = self.config.draw_base_rate * math.exp(-delta / 400)
+        remaining = 1.0 - p_draw
+        e_h = self._expected_score(h_adj, away_rating)
+        return (e_h * remaining, p_draw, (1.0 - e_h) * remaining)
+
+    def get_ratings(self, team_ids: list[int] | None = None, pool: str = "club") -> dict[int, float]:
+        """Return current rating dict for specified teams (or all) in pool."""
         with get_session() as session:
             if team_ids:
-                ratings = {}
-                for tid in team_ids:
-                    ratings[tid] = self._get_current_rating(session, tid)
-                return ratings
-            
-            # Get all teams with their latest rating
-            subq = (
-                select(
-                    EloRating.team_id,
-                    func.max(EloRating.as_of_date).label("max_date")
-                )
-                .group_by(EloRating.team_id)
-                .subquery()
-            )
-            
-            result = session.execute(
+                return {tid: self._get_current_rating(session, tid, pool) for tid in team_ids}
+
+            rows = session.execute(
                 select(EloRating)
-                .join(subq, EloRating.team_id == subq.c.team_id)
-                .where(EloRating.as_of_date == subq.c.max_date)
+                .where(EloRating.pool == pool)
+                .order_by(EloRating.team_id, EloRating.as_of_date.desc())
             ).scalars().all()
-            
-            return {r.team_id: r.rating for r in result}
-
-    def predict(self, home_team_id: int, away_team_id: int) -> tuple[float, float, float]:
-        """
-        Predict match outcome probabilities based on current Elo ratings.
-        Returns (prob_home, prob_draw, prob_away).
-        """
-        with get_session() as session:
-            home_rating = self._get_current_rating(session, home_team_id)
-            away_rating = self._get_current_rating(session, away_team_id)
-            
-            # Add home advantage
-            home_adj = home_rating + self.config.home_advantage
-            
-            # Calculate win probabilities
-            prob_home_win = self._expected_score(home_adj, away_rating)
-            prob_away_win = self._expected_score(away_rating, home_adj)
-            
-            # Draw probability (using 1 - sum method with home advantage adjustment)
-            # Based on research, draws happen ~25-30% of the time
-            prob_draw = 1.0 - prob_home_win - prob_away_win
-            prob_draw = max(0.0, min(prob_draw, 0.5))  # Bound between 0 and 0.5
-            
-            # Renormalize
-            total = prob_home_win + prob_draw + prob_away_win
-            return (
-                prob_home_win / total,
-                prob_draw / total,
-                prob_away_win / total,
-            )
+            seen: set[int] = set()
+            result: dict[int, float] = {}
+            for r in rows:
+                if r.team_id not in seen:
+                    result[r.team_id] = r.rating
+                    seen.add(r.team_id)
+            return result
 
 
-def update_all_ratings() -> None:
-    """Update Elo ratings for all completed fixtures."""
-    engine = EloEngine()
-    
+def update_all_ratings(pool: str = "club") -> int:
+    """
+    Rebuild Elo ratings for all teams in *pool* from FT fixtures.
+
+    Club pool: uses only fixtures from leagues with country != 'World', which
+    excludes all national-team competitions (World Cup, Nations League, etc.)
+    while retaining domestic leagues for all club sides.
+
+    Processes fixtures in date order (Elo is path-dependent). Stores one row per
+    team representing their final rating + cumulative games_played. Clears the
+    pool first, so repeated runs are idempotent.
+
+    Returns the number of FT fixtures processed.
+    """
+    config = EloConfig()
+    engine = EloEngine(config)
+
     with get_session() as session:
-        # Get all completed fixtures without ratings
-        fixtures = session.execute(
-            select(Fixture)
-            .where(Fixture.status == "FT")
-            .where(Fixture.goals_home.isnot(None))
-        ).scalars().all()
-        
+        session.execute(
+            text("DELETE FROM elo_ratings WHERE pool = :pool"),
+            {"pool": pool},
+        )
+
+        if pool == "club":
+            fixtures = session.execute(
+                select(Fixture)
+                .join(League, Fixture.league_id == League.id)
+                .where(Fixture.status == "FT")
+                .where(Fixture.goals_home.isnot(None))
+                .where(Fixture.goals_away.isnot(None))
+                .where(League.country != "World")
+                .order_by(Fixture.date)
+            ).scalars().all()
+        else:
+            # national pool — not implemented yet (Part B)
+            return 0
+
+        # In-memory Elo pass — no per-fixture DB writes
+        ratings: dict[int, float] = {}
+        games: dict[int, int] = {}
+        latest_date: dict[int, datetime] = {}
+
         for f in fixtures:
-            try:
-                engine.update_ratings(f, f.goals_home, f.goals_away)
-            except Exception as e:
-                print(f"Error updating ratings for fixture {f.id}: {e}")
-    
-    print(f"Updated Elo ratings for {len(fixtures)} fixtures")
+            h_id, a_id = f.home_team_id, f.away_team_id
+            h_r = ratings.get(h_id, config.initial_rating)
+            a_r = ratings.get(a_id, config.initial_rating)
+
+            h_adj = h_r + config.home_advantage
+            exp_h = engine._expected_score(h_adj, a_r)
+            exp_a = 1.0 - exp_h
+
+            if f.goals_home > f.goals_away:
+                act_h, act_a = 1.0, 0.0
+            elif f.goals_home < f.goals_away:
+                act_h, act_a = 0.0, 1.0
+            else:
+                act_h, act_a = 0.5, 0.5
+
+            mov = engine._calculate_mov(f.goals_home, f.goals_away)
+
+            ch = min(config.k_factor * (act_h - exp_h) * (1 + mov), config.max_rating_change)
+            ca = min(config.k_factor * (act_a - exp_a) * (1 + mov), config.max_rating_change)
+
+            ratings[h_id] = h_r + ch
+            ratings[a_id] = a_r + ca
+            games[h_id] = games.get(h_id, 0) + 1
+            games[a_id] = games.get(a_id, 0) + 1
+            latest_date[h_id] = f.date
+            latest_date[a_id] = f.date
+
+        if not ratings:
+            return 0
+
+        # Bulk insert — one row per team (final state)
+        rows = [
+            {
+                "team_id": tid,
+                "as_of_date": latest_date[tid],
+                "rating": rat,
+                "games_played": games[tid],
+                "pool": pool,
+            }
+            for tid, rat in ratings.items()
+        ]
+        session.execute(
+            text(
+                "INSERT INTO elo_ratings (team_id, as_of_date, rating, games_played, pool) "
+                "VALUES (:team_id, :as_of_date, :rating, :games_played, :pool)"
+            ),
+            rows,
+        )
+
+        return len(fixtures)

@@ -299,6 +299,7 @@ def get_predictions_for_upcoming() -> list[dict]:
                 PredictionRecord.ev,
                 PredictionRecord.odds_decimal,
                 PredictionRecord.bookmaker,
+                PredictionRecord.data_context,
                 func.coalesce(pin_sub.c.snap_count, 0).label("has_pinnacle"),
             )
             .join(PredictionRecord, PredictionRecord.fixture_id == Fixture.id)
@@ -339,6 +340,7 @@ def get_predictions_for_upcoming() -> list[dict]:
             "bookmaker": r.bookmaker,
             "is_pinnacle": r.bookmaker == "Pinnacle",
             "has_pinnacle": r.has_pinnacle > 0,
+            "data_context": r.data_context,
         })
 
     return list(fixtures.values())
@@ -378,6 +380,7 @@ def get_explorer_data(
     team: str | None = None,
     date_from: str | None = None,
     date_to: str | None = None,
+    data_context: str | None = None,
     sort: str = "date",
     sort_dir: str = "desc",
     page: int = 0,
@@ -469,6 +472,8 @@ def get_explorer_data(
         count_conds.append(PredictionRecord.settled == True)  # noqa: E712
     if market:
         count_conds.append(PredictionRecord.market == market)
+    if data_context:
+        count_conds.append(PredictionRecord.data_context == data_context)
 
     if need_fixture or need_league or need_teams:
         count_q = count_q.join(Fixture, Fixture.id == PredictionRecord.fixture_id)
@@ -548,6 +553,7 @@ def get_explorer_data(
             PredictionRecord.prob_home,
             PredictionRecord.prob_draw,
             PredictionRecord.prob_away,
+            PredictionRecord.data_context,
         )
         .select_from(inner_q)
         .join(Fixture, Fixture.id == inner_q.c.fid)
@@ -595,6 +601,7 @@ def get_explorer_data(
             "prob_home": round(float(r.prob_home), 3) if r.prob_home is not None else None,
             "prob_draw": round(float(r.prob_draw), 3) if r.prob_draw is not None else None,
             "prob_away": round(float(r.prob_away), 3) if r.prob_away is not None else None,
+            "data_context": r.data_context,
         }
 
     return {

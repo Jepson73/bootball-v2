@@ -322,6 +322,7 @@ class EloRating(Base):
     as_of_date: Mapped[datetime] = mapped_column(DateTime)
     rating: Mapped[float] = mapped_column(Float)
     games_played: Mapped[int] = mapped_column(Integer, default=0)
+    pool: Mapped[str] = mapped_column(String(20), default="club")
 
     team: Mapped["Team"] = relationship(back_populates="elo_ratings")
 
@@ -370,6 +371,7 @@ class PredictionRecord(Base):
     actual_outcome: Mapped[str | None] = mapped_column(String(10))
     settled: Mapped[bool] = mapped_column(Boolean, default=False)
     won: Mapped[bool | None] = mapped_column(Boolean)
+    data_context: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

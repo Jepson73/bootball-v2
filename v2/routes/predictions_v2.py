@@ -20,14 +20,33 @@ bp_predictions = Blueprint("predictions_v2", __name__)
 _H2H_LABELS = {"1": "Home", "X": "Draw", "2": "Away", "H": "Home", "D": "Draw", "A": "Away"}
 
 
+def _soft_odds_tag(market: dict) -> str:
+    """Inline soft-book odds tag for non-Pinnacle markets. Empty string if Pinnacle or no odds."""
+    is_pinnacle = market.get("is_pinnacle", False) or market.get("has_pinnacle", False)
+    if is_pinnacle:
+        return ""
+    odds = market.get("odds_decimal")
+    if odds is None:
+        return ""
+    bk = market.get("bookmaker") or "soft"
+    return (
+        f'&nbsp;<span style="color:#8b949e;font-size:10px" '
+        f'title="indicative — not sharp-verified">'
+        f'&middot;&nbsp;{bk}&nbsp;{odds:.2f}</span>'
+    )
+
+
 def _format_market(market: dict) -> str:
     """
     Return a labelled probability string for one market row.
     Every probability states the outcome it refers to.
 
-    H2H with full vector: "H 56% / D 24% / A 20%"
-    H2H scalar fallback:  "Home 54%" (+ note that vector is missing)
-    ou25/ou15/btts:       "Over 52%" / "Yes 86%" — from predicted_outcome directly
+    H2H with full vector: "H 56% D 24% A 20%"
+    H2H scalar fallback:  "Home 54% *" (vector missing)
+    ou25/ou15/btts:       "Over 52%" / "Yes 86%"
+
+    For non-Pinnacle markets with stored odds, appends "· Bookmaker 1.85" inline.
+    EV computation against soft odds is suppressed (Track B is Pinnacle-only).
     """
     m = market["market"]
     p = market["our_prob"]
@@ -37,6 +56,7 @@ def _format_market(market: dict) -> str:
         return '<span style="color:#8b949e">—</span>'
 
     pct = round(p * 100)
+    soft = _soft_odds_tag(market)
 
     if m == "h2h":
         ph = market.get("prob_home")
@@ -51,6 +71,7 @@ def _format_market(market: dict) -> str:
                 f'H {_col(ph)} &nbsp;'
                 f'D {_col(pd_)} &nbsp;'
                 f'A {_col(pa)}'
+                + soft
             )
         else:
             # Scalar fallback — label the predicted side
@@ -59,48 +80,56 @@ def _format_market(market: dict) -> str:
             return (
                 f'<span style="color:{colour};font-weight:600">{label} {pct}%</span>'
                 f'<span style="color:#8b949e;font-size:10px" title="Full 3-way vector not stored — showing predicted side only"> *</span>'
+                + soft
             )
 
     elif m in ("ou25", "ou15"):
         # predicted_outcome is "Over" or "Under"
         label = str(outcome).capitalize() if outcome else "?"
         colour = "#3fb950" if pct >= 55 else ("#d29922" if pct >= 45 else "#8b949e")
-        return f'<span style="color:{colour};font-weight:600">{label} {pct}%</span>'
+        return f'<span style="color:{colour};font-weight:600">{label} {pct}%</span>' + soft
 
     elif m == "btts":
         # predicted_outcome is "Yes" or "No"
         label = str(outcome).capitalize() if outcome else "?"
         colour = "#3fb950" if pct >= 55 else ("#d29922" if pct >= 45 else "#8b949e")
-        return f'<span style="color:{colour};font-weight:600">{label} {pct}%</span>'
+        return f'<span style="color:{colour};font-weight:600">{label} {pct}%</span>' + soft
 
     else:
         colour = "#3fb950" if pct >= 55 else ("#d29922" if pct >= 45 else "#8b949e")
-        return f'<span style="color:{colour};font-weight:600">{pct}%</span>'
+        return f'<span style="color:{colour};font-weight:600">{pct}%</span>' + soft
 
 
-def _ev_badge(ev: float | None, is_pinnacle: bool, odds: float | None = None, bookmaker: str | None = None) -> str:
+_CTX_BADGE = {
+    "full":         '<span class="badge badge-blue" title="Normal standings-based prediction">Full</span>',
+    "elo_both":     '<span class="badge badge-gray" title="Club Elo — both teams rated">Elo</span>',
+    "elo_partial":  '<span class="badge" style="background:#5a3e00;color:#d29922;border:1px solid #6a4e00" title="Club Elo — one team unrated (1500 default)">Elo~</span>',
+    "flat_prior":   '<span class="badge badge-gray" title="Flat prior H43/D27/A30 — no meaningful rating data">Prior</span>',
+    "national_elo": '<span class="badge badge-blue" title="National-team Elo">Nat</span>',
+}
+
+
+def _ctx_badge(data_context: str | None) -> str:
+    if data_context is None:
+        return ""
+    return _CTX_BADGE.get(data_context, "")
+
+
+def _ev_badge(ev: float | None, is_pinnacle: bool) -> str:
     """
-    Track B cell.
-    - Pinnacle odds: show EV (sharp-verified).
-    - Soft-book odds: show indicative odds label, suppress EV.
-    - No odds: plain 'no odds' indicator.
+    Track B cell — Pinnacle EV only.
+    Soft-book odds belong in their respective market cells (_soft_odds_tag), not here.
     EV is never computed or displayed against soft-book odds.
     """
-    if is_pinnacle:
-        if ev is None:
-            return '<span class="badge badge-gray">No odds</span>'
-        if ev > 0.02:
-            return f'<span class="badge badge-green">EV +{ev*100:.1f}%</span>'
-        if ev > -0.02:
-            return f'<span class="badge badge-amber">EV {ev*100:.1f}%</span>'
-        return f'<span class="badge badge-red">EV {ev*100:.1f}%</span>'
-    if odds is not None:
-        bk = bookmaker or "soft"
-        return (
-            f'<span class="badge badge-gray" title="indicative — not sharp-verified">'
-            f'{bk}&nbsp;{odds:.2f}</span>'
-        )
-    return '<span class="badge badge-gray">No odds</span>'
+    if not is_pinnacle:
+        return '<span class="badge badge-gray">No sharp odds</span>'
+    if ev is None:
+        return '<span class="badge badge-gray">No EV</span>'
+    if ev > 0.02:
+        return f'<span class="badge badge-green">EV +{ev*100:.1f}%</span>'
+    if ev > -0.02:
+        return f'<span class="badge badge-amber">EV {ev*100:.1f}%</span>'
+    return f'<span class="badge badge-red">EV {ev*100:.1f}%</span>'
 
 
 @bp_predictions.route("/predictions")
@@ -155,6 +184,10 @@ def predictions():
             for m in f.get("markets", []):
                 mkt_map[m["market"]] = m
 
+            # data_context badge — use the h2h record's context (primary market)
+            h2h_ctx = mkt_map.get("h2h", {}).get("data_context")
+            ctx_tag = _ctx_badge(h2h_ctx)
+
             # Sharp indicator: Pinnacle from forward-collection snapshots (future) OR
             # from prediction_records.bookmaker (current pipeline).
             h2h_ev = mkt_map.get("h2h", {})
@@ -169,12 +202,7 @@ def predictions():
             ou25_cell = _format_market(mkt_map["ou25"]) if "ou25" in mkt_map else '<span style="color:#8b949e">&mdash;</span>'
             btts_cell = _format_market(mkt_map["btts"]) if "btts" in mkt_map else '<span style="color:#8b949e">&mdash;</span>'
 
-            track_b = _ev_badge(
-                h2h_ev.get("ev"),
-                is_pinnacle,
-                odds=h2h_ev.get("odds_decimal"),
-                bookmaker=h2h_ev.get("bookmaker"),
-            )
+            track_b = _ev_badge(h2h_ev.get("ev"), is_pinnacle)
 
             rows_html += f"""
             <tr>
@@ -184,6 +212,7 @@ def predictions():
                 <span style="color:#8b949e;margin:0 4px">vs</span>
                 <span style="color:#c9d1d9">{away}</span>
                 <br><span style="color:#8b949e;font-size:10px">{league}</span>
+                {"<br>" + ctx_tag if ctx_tag else ""}
               </td>
               <td>{h2h_cell}</td>
               <td>{ou25_cell}</td>
