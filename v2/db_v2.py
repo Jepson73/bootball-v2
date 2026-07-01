@@ -298,6 +298,7 @@ def get_predictions_for_upcoming() -> list[dict]:
                 PredictionRecord.prob_away,
                 PredictionRecord.ev,
                 PredictionRecord.odds_decimal,
+                PredictionRecord.bookmaker,
                 func.coalesce(pin_sub.c.snap_count, 0).label("has_pinnacle"),
             )
             .join(PredictionRecord, PredictionRecord.fixture_id == Fixture.id)
@@ -335,6 +336,8 @@ def get_predictions_for_upcoming() -> list[dict]:
             "prob_away": round(float(r.prob_away), 3) if r.prob_away else None,
             "ev": round(float(r.ev), 4) if r.ev else None,
             "odds_decimal": round(float(r.odds_decimal), 2) if r.odds_decimal else None,
+            "bookmaker": r.bookmaker,
+            "is_pinnacle": r.bookmaker == "Pinnacle",
             "has_pinnacle": r.has_pinnacle > 0,
         })
 

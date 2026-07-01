@@ -247,7 +247,7 @@ def notify_top_picks():
         with get_session() as s:
             rows = s.execute(sa_text("""
                 SELECT pr.market, pr.predicted_outcome, pr.ev, pr.odds_decimal,
-                       pr.our_prob, pr.calibrated_prob,
+                       pr.our_prob, pr.blended_prob,
                        ht.name, at.name, f.date
                 FROM prediction_records pr
                 JOIN fixtures f ON pr.fixture_id = f.id
@@ -258,7 +258,7 @@ def notify_top_picks():
                   AND pr.settled = 0
                   AND f.date >= datetime('now')
                   AND pr.our_prob < (1.0 / pr.odds_decimal) * 2.5
-                ORDER BY date(f.date) ASC, (pr.our_prob * pr.odds_decimal - 1) DESC
+                ORDER BY date(f.date) ASC, pr.ev DESC
                 LIMIT 3
             """)).fetchall()
         if not rows:
@@ -274,20 +274,20 @@ def notify_top_picks():
 
         lines = []
         for r in rows:
-            market, outcome, ev, odds, our_prob, cal_prob, home, away, date = r
-            prob = cal_prob if cal_prob else our_prob
-            our_pct = f"{prob*100:.0f}%" if prob else "—"
+            market, outcome, ev, odds, our_prob, blended_prob, home, away, date = r
+            # Use blended_prob for display (matches the EV stored in pr.ev)
+            model_pct = f"{blended_prob*100:.0f}%" if blended_prob else (f"{our_prob*100:.0f}%" if our_prob else "—")
             implied_pct = f"{(1/odds)*100:.0f}%" if odds else "—"
-            ev_real = (prob * odds - 1) if (prob and odds) else ev
-            ev_str = f"+{ev_real*100:.1f}%" if ev_real else "—"
+            # Use stored ev — it was computed as blended_prob * odds - 1 by the engine
+            ev_str = f"+{ev*100:.1f}%" if ev else "—"
             odds_str = f"{odds:.2f}" if odds else "—"
             date_str = str(date)[:10] if date else ""
             fixture_str = f"{home} vs {away}"
-            warning = " ⚠️ model high" if (ev_real and ev_real > 0.30) else ""
+            warning = " ⚠️ model high" if (ev and ev > 0.30) else ""
             lines.append(
                 f"**{fixture_str}** · {date_str}\n"
                 f"  {market.upper()} · **{outcome}** @ {odds_str} · EV {ev_str}{warning}\n"
-                f"  Model {our_pct} vs market {implied_pct}"
+                f"  Model {model_pct} vs market {implied_pct}"
             )
         payload = _embed(
             title="🔮 Top 3 Picks This Run",

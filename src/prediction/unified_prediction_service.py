@@ -399,13 +399,25 @@ class UnifiedPredictionService:
                     incoming_has_odds = incoming_odds is not None
 
                     if not existing_has_odds and not incoming_has_odds:
-                        # Both preliminary — nothing changed, skip the write
+                        # Both preliminary — nothing changed, skip the write.
+                        # Still populate h2h vector if it was missing (e.g. created pre-Phase-11b).
+                        _pprobs_skip = pred.get("predicted_probs") or {}
+                        if market == "h2h" and _pprobs_skip and record.prob_home is None:
+                            record.prob_home = _pprobs_skip.get("1")
+                            record.prob_draw = _pprobs_skip.get("X")
+                            record.prob_away = _pprobs_skip.get("2")
                         saved_ids.append(record.id)
                         skipped += 1
                         continue
 
                     if existing_has_odds and not incoming_has_odds:
-                        # Would downgrade existing odds record to preliminary — skip
+                        # Would downgrade existing odds record to preliminary — skip.
+                        # Still populate h2h vector if it was missing.
+                        _pprobs_skip = pred.get("predicted_probs") or {}
+                        if market == "h2h" and _pprobs_skip and record.prob_home is None:
+                            record.prob_home = _pprobs_skip.get("1")
+                            record.prob_draw = _pprobs_skip.get("X")
+                            record.prob_away = _pprobs_skip.get("2")
                         saved_ids.append(record.id)
                         skipped += 1
                         continue

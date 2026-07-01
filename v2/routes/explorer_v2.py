@@ -37,13 +37,26 @@ def _mkt_cell(m: dict | None) -> str:
 
     if mkt == "h2h":
         label = _H2H.get(outcome, outcome or "?")
-        star = " *" if m.get("prob_home") is None else ""
+        ph = m.get("prob_home")
+        pd_ = m.get("prob_draw")
+        pa = m.get("prob_away")
+        if ph is not None and pd_ is not None and pa is not None:
+            star = ""
+            dist = (
+                f'<br><small style="color:#636e7b;font-size:0.78em">'
+                f'H&nbsp;{round(ph*100)}%&nbsp;D&nbsp;{round(pd_*100)}%&nbsp;A&nbsp;{round(pa*100)}%'
+                f"</small>"
+            )
+        else:
+            star = " *"
+            dist = ""
     else:
         label = outcome.capitalize() if outcome else "?"
         star = ""
+        dist = ""
 
     color = "#3fb950" if pct >= 60 else ("#d29922" if pct >= 50 else "#8b949e")
-    pred = f'<span style="color:{color};font-weight:600">{label}&nbsp;{pct}%{star}</span>'
+    pred = f'<span style="color:{color};font-weight:600">{label}&nbsp;{pct}%{star}</span>{dist}'
 
     if settled and won is not None:
         if won:

@@ -4,9 +4,10 @@ v2/routes/predictions_v2.py — Per-fixture predictions view (Task 4).
 Shows model probabilities for upcoming fixtures with explicit outcome labels.
 Track B (EV/CLV overlay) is shown only where Pinnacle odds exist.
 
-H2H data gap: prob_home/prob_draw/prob_away are NULL for all current records
-(columns added in Phase 11b but never populated by the prediction engine).
-We fall back to labelling predicted_outcome + our_prob scalar ("Home 54%").
+H2H vector: prob_home/prob_draw/prob_away populated for all upcoming fixtures
+after the Phase 13c backfill (2026-07-01). Settled historical records remain
+NULL (re-running the model on past fixtures would leak current standings).
+Fall back to predicted_outcome + our_prob scalar for NULL-vector records.
 """
 from flask import Blueprint
 from v2.auth_v2 import require_auth
@@ -77,16 +78,29 @@ def _format_market(market: dict) -> str:
         return f'<span style="color:{colour};font-weight:600">{pct}%</span>'
 
 
-def _ev_badge(ev: float | None, has_pinnacle: bool) -> str:
-    if not has_pinnacle:
-        return '<span class="badge badge-gray">No Pinnacle</span>'
-    if ev is None:
-        return '<span class="badge badge-gray">No odds</span>'
-    if ev > 0.02:
-        return f'<span class="badge badge-green">EV +{ev*100:.1f}%</span>'
-    if ev > -0.02:
-        return f'<span class="badge badge-amber">EV {ev*100:.1f}%</span>'
-    return f'<span class="badge badge-red">EV {ev*100:.1f}%</span>'
+def _ev_badge(ev: float | None, is_pinnacle: bool, odds: float | None = None, bookmaker: str | None = None) -> str:
+    """
+    Track B cell.
+    - Pinnacle odds: show EV (sharp-verified).
+    - Soft-book odds: show indicative odds label, suppress EV.
+    - No odds: plain 'no odds' indicator.
+    EV is never computed or displayed against soft-book odds.
+    """
+    if is_pinnacle:
+        if ev is None:
+            return '<span class="badge badge-gray">No odds</span>'
+        if ev > 0.02:
+            return f'<span class="badge badge-green">EV +{ev*100:.1f}%</span>'
+        if ev > -0.02:
+            return f'<span class="badge badge-amber">EV {ev*100:.1f}%</span>'
+        return f'<span class="badge badge-red">EV {ev*100:.1f}%</span>'
+    if odds is not None:
+        bk = bookmaker or "soft"
+        return (
+            f'<span class="badge badge-gray" title="indicative — not sharp-verified">'
+            f'{bk}&nbsp;{odds:.2f}</span>'
+        )
+    return '<span class="badge badge-gray">No odds</span>'
 
 
 @bp_predictions.route("/predictions")
@@ -141,10 +155,13 @@ def predictions():
             for m in f.get("markets", []):
                 mkt_map[m["market"]] = m
 
-            has_any_pinnacle = any(v.get("has_pinnacle") for v in mkt_map.values())
+            # Sharp indicator: Pinnacle from forward-collection snapshots (future) OR
+            # from prediction_records.bookmaker (current pipeline).
+            h2h_ev = mkt_map.get("h2h", {})
+            is_pinnacle = h2h_ev.get("is_pinnacle", False) or h2h_ev.get("has_pinnacle", False)
             pinnacle_badge = (
                 '<span class="badge badge-green">Pinnacle</span>'
-                if has_any_pinnacle
+                if is_pinnacle
                 else '<span class="badge badge-gray">No sharp odds</span>'
             )
 
@@ -152,8 +169,12 @@ def predictions():
             ou25_cell = _format_market(mkt_map["ou25"]) if "ou25" in mkt_map else '<span style="color:#8b949e">&mdash;</span>'
             btts_cell = _format_market(mkt_map["btts"]) if "btts" in mkt_map else '<span style="color:#8b949e">&mdash;</span>'
 
-            h2h_ev = mkt_map.get("h2h", {})
-            track_b = _ev_badge(h2h_ev.get("ev"), h2h_ev.get("has_pinnacle", False))
+            track_b = _ev_badge(
+                h2h_ev.get("ev"),
+                is_pinnacle,
+                odds=h2h_ev.get("odds_decimal"),
+                bookmaker=h2h_ev.get("bookmaker"),
+            )
 
             rows_html += f"""
             <tr>
