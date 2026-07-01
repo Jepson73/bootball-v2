@@ -73,9 +73,6 @@ class Backfiller:
                 logo_url=t.get("logo"),
             ))
 
-    def _fixture_exists(self, session, fixture_id: int) -> bool:
-        return session.get(Fixture, fixture_id) is not None
-
     def _stats_exist(self, session, fixture_id: int) -> bool:
         from sqlalchemy import select
         return session.execute(
@@ -288,14 +285,27 @@ class Backfiller:
                 if not fid:
                     continue
 
-                is_new = not self._fixture_exists(session, fid)
-                if is_new:
+                existing = session.get(Fixture, fid)
+                if not existing:
                     session.add(Fixture(
                         **parsed,
                         league_id=league_id,
                         season=season,
                         round=raw.get("league", {}).get("round"),
                     ))
+                else:
+                    # This step only ever fetches status="FT" from the API, so any
+                    # existing row seen here is confirmed finished. Correct fields
+                    # that drifted (most commonly: a fixture stuck at status='NS'
+                    # with a stale date because it was inserted before it kicked
+                    # off and never revisited). Diff-then-write — only touch
+                    # columns that actually changed, so idempotent re-runs are
+                    # a no-op.
+                    for field in ("status", "date", "goals_home", "goals_away",
+                                  "ht_goals_home", "ht_goals_away", "outcome"):
+                        new_val = parsed.get(field)
+                        if new_val is not None and getattr(existing, field) != new_val:
+                            setattr(existing, field, new_val)
 
                 # Always save events (new or existing fixture)
                 if not self._events_exist(session, fid):

@@ -180,21 +180,34 @@ class DailyBaselinePipeline:
         logger.info("[BASELINE] Step 2: Fetching upcoming fixtures...")
         fixtures = self._fetch_upcoming(now)
         self.upcoming_count = len(fixtures)
-        
-        # STEP 3: Validate DB consistency  
-        logger.info("[BASELINE] Step 3: Validating DB consistency...")
+
+        # STEP 3: Resync stale NS fixtures (Phase 21) — fixtures stuck at
+        # status='NS' with a date that has already passed, which _save_upcoming()
+        # (step 2) can never self-correct since it only touches fixtures the API
+        # still reports as NS. Bounded to 100/run (~5 API calls) so steady-state
+        # cost is negligible; the one-time backlog was cleared separately.
+        logger.info("[BASELINE] Step 3: Resyncing stale NS fixtures...")
+        try:
+            from src.settlement import resync_stale_fixtures
+            resync_result = resync_stale_fixtures(limit=100)
+            logger.info(f"[BASELINE] Resync: {resync_result}")
+        except Exception:
+            logger.exception("[BASELINE] resync_stale_fixtures failed")
+
+        # STEP 4: Validate DB consistency
+        logger.info("[BASELINE] Step 4: Validating DB consistency...")
         validation = self._validate_consistency(fixtures)
-        
-        # STEP 4: Force settlement baseline
-        logger.info("[BASELINE] Step 4: Forcing settlement baseline...")
+
+        # STEP 5: Force settlement baseline
+        logger.info("[BASELINE] Step 5: Forcing settlement baseline...")
         self._force_settlement_baseline()
 
-        # STEP 5: Refresh standings for active leagues
-        logger.info("[BASELINE] Step 5: Refreshing league standings...")
+        # STEP 6: Refresh standings for active leagues
+        logger.info("[BASELINE] Step 6: Refreshing league standings...")
         self._fetch_standings(now)
 
-        # STEP 6: Emit baseline ready events
-        logger.info("[BASELINE] Step 6: Emitting baseline ready events...")
+        # STEP 7: Emit baseline ready events
+        logger.info("[BASELINE] Step 7: Emitting baseline ready events...")
         
         EventBus.emit("BASELINE_READY", {
             "run_id": run_id,

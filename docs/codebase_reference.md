@@ -446,6 +446,20 @@ Investigation revealed 153 fixtures with unsettled predictions not visible in th
 
 `v2/routes/explorer_v2.py` — `_status_badge(status)` renders an inline badge for non-NS/FT fixtures: green `LIVE`/`HT` for in-play statuses; gray `POSTPONED`/`CANCELLED`/`AWARDED`/`ABANDONED` for void statuses. NS and FT fixtures show no badge. Badge appears in the match name cell next to the team names. No prediction records are mutated; the fix is display-only.
 
+**Phase 21 — void unplayable predictions, correct stale dates, prevent recurrence**
+
+`src/settlement.py` — new functions:
+- `_outcomes_match(market, predicted_outcome, actual)` / `_H2H_NOTATION` — normalizes h2h notation (`H`/`D`/`A` from the Elo hybrid path vs `1`/`X`/`2` from the ensemble path) before comparing. `settle_predictions()` now uses this instead of a raw string comparison — previously every Elo-family h2h prediction was silently scored as a loss on settlement (bug found dormant: 132 letter-notation records, all still unsettled at discovery, none yet mis-scored in production).
+- `VOID_STATUSES = ("PST", "CANC", "ABD", "WO", "SUSP")` and `void_unplayable_predictions(fixture_ids=None)` — marks unsettled predictions for these fixture statuses `settled=True, won=None, actual_outcome=<status>`. `get_track_a_stats()` filters `won.isnot(None)`, so voided rows are excluded from the accuracy denominator rather than scored as losses.
+- `settle_awarded_predictions(fixture_ids=None)` — for `AWD` (awarded/walk-over) fixtures: batch-fetches the API's `teams.{home,away}.winner` flag, settles h2h as a normal hit/miss against the awarded winner, voids goal-based markets (ou25/ou15/btts — no goals were actually played). If neither team has a winner flag (rare API data gap), voids h2h too rather than guessing. Never promotes `Fixture.status` away from `AWD`, so the generic FT-goal settlement path can never fire against a forfeit placeholder scoreline.
+- `resync_stale_fixtures(limit=100)` — re-fetches (batched, 20/call) fixtures stuck at `status='NS'` with `date < now`, the one state `_save_upcoming()` can never self-correct (it only updates fixtures the API still reports NS within its rolling 7-day window). Diff-then-write on date/status/goals/outcome. Fixtures resolving to FT are left for `settle_predictions()`; PST/CANC/ABD/WO/SUSP trigger `void_unplayable_predictions()`; AWD triggers `settle_awarded_predictions()` — all scoped to just the fixtures resolved in that call.
+
+`scripts/daily_run.py` — new Step 3 (`resync_stale_fixtures(limit=100)`, ~5 API calls/run) runs after fetching upcoming fixtures and before settlement, so any fixtures it resolves to FT/void/AWD are picked up by the same run's settlement step. Steps renumbered 1–7.
+
+`src/ingestion/backfill.py` — `backfill_league_season()` existing-fixture branch (previously a no-op) now diff-then-writes `status/date/goals_home/goals_away/ht_goals_home/ht_goals_away/outcome` when the API's FT data disagrees with the stored row. Removed unused `_fixture_exists()` helper.
+
+One-time cleanup run: voided 105 PST/CANC + 63 AWD goal-market predictions (168 total), settled 17 AWD h2h predictions against the awarded winner (3 AWD fixtures had no API winner flag, voided), resynced 81 stale NS fixtures (35 resolved to FT, 2 to void, 28 had simply not kicked off yet by the API's clock, ~16 fixture IDs no longer exist in the API — untraceable, left unchanged). Total: 9 API calls.
+
 ---
 
 ## Architecture Patterns

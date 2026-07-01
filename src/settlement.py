@@ -1023,6 +1023,22 @@ def settle_all(days: int | None = None) -> dict:
     }
 
 
+# h2h predicted_outcome is stored in two notations across the pipeline: the
+# ensemble/backfill path writes "1"/"X"/"2" (API-Football convention, matches
+# get_market_result()'s return value), while the Elo hybrid path (Phase 16b+)
+# writes "H"/"D"/"A". Comparing raw strings silently mis-scores every H/D/A
+# prediction as a loss. Normalize both sides to "1"/"X"/"2" before comparing.
+_H2H_NOTATION = {"H": "1", "D": "X", "A": "2", "1": "1", "X": "X", "2": "2"}
+
+
+def _outcomes_match(market: str, predicted_outcome: str, actual: str) -> bool:
+    if market == "h2h":
+        p = _H2H_NOTATION.get(str(predicted_outcome).upper(), predicted_outcome)
+        a = _H2H_NOTATION.get(str(actual).upper(), actual)
+        return p == a
+    return str(predicted_outcome).lower() == str(actual).lower()
+
+
 def settle_predictions(days: int | None = None) -> int:
     """Settle unsettled PredictionRecords for completed fixtures.
 
@@ -1055,7 +1071,7 @@ def settle_predictions(days: int | None = None) -> int:
             actual = get_market_result(fixture, pred.market)
             if actual:
                 pred.actual_outcome = actual
-                pred.won = (str(pred.predicted_outcome).lower() == str(actual).lower())
+                pred.won = _outcomes_match(pred.market, pred.predicted_outcome, actual)
                 pred.settled = True
                 pred.settled_at = datetime.utcnow()
                 settled += 1
@@ -1065,6 +1081,292 @@ def settle_predictions(days: int | None = None) -> int:
 
     logger.info(f"Settled {settled} predictions (days={days})")
     return settled
+
+
+# Fixture statuses that mean "match did not produce a real playing result" —
+# unplayed markets should be excluded from Track A, not scored as losses.
+VOID_STATUSES = ("PST", "CANC", "ABD", "WO", "SUSP")
+
+
+def void_unplayable_predictions(fixture_ids: list[int] | None = None) -> int:
+    """Void unsettled predictions for PST/CANC/ABD/WO/SUSP fixtures.
+
+    These fixtures never produced a result, so scoring them win/loss would
+    corrupt Track A. Marks settled=True, won=None, actual_outcome=<status> —
+    get_track_a_stats() filters on won.isnot(None), so voided rows are
+    excluded from the accuracy denominator while still leaving the pipeline
+    (no more unsettled/limbo residue).
+
+    Args:
+        fixture_ids: restrict to these fixtures (used by resync_stale_fixtures
+            to void only the fixtures it just discovered); None = all matching
+            fixtures in the DB.
+
+    Returns count of predictions voided.
+    """
+    from src.storage.models import PredictionRecord, Fixture
+
+    voided = 0
+    with get_session() as s:
+        query = (
+            select(PredictionRecord, Fixture.status)
+            .join(Fixture, PredictionRecord.fixture_id == Fixture.id)
+            .where(PredictionRecord.settled == False)
+            .where(Fixture.status.in_(VOID_STATUSES))
+        )
+        if fixture_ids:
+            query = query.where(PredictionRecord.fixture_id.in_(fixture_ids))
+
+        for pred, status in s.execute(query).all():
+            pred.actual_outcome = status
+            pred.won = None
+            pred.settled = True
+            pred.settled_at = datetime.utcnow()
+            voided += 1
+
+        if voided > 0:
+            s.commit()
+
+    logger.info(f"Voided {voided} predictions for PST/CANC/ABD/WO/SUSP fixtures")
+    return voided
+
+
+def settle_awarded_predictions(fixture_ids: list[int] | None = None) -> dict:
+    """Settle h2h predictions for AWD (awarded/walk-over) fixtures against the
+    API's declared winner; void goal-based markets (no goals were played).
+
+    AWD fixtures have a real winner (one team forfeits) but no genuine
+    scoreline, so:
+      - h2h: scored as a normal hit/miss against the awarded winner.
+      - ou25/ou15/btts: voided (won=None) — there is no real goal outcome.
+      - If the API itself has no winner flag on either team (rare data gap),
+        h2h is voided too rather than guessed.
+
+    Does NOT touch Fixture.status (stays 'AWD', never promoted toward FT) so
+    the generic settle_predictions() goal-based path can never fire on these
+    predictions using the placeholder/forfeit scoreline.
+
+    Args:
+        fixture_ids: restrict to these fixtures; None = all unsettled AWD
+            fixtures in the DB.
+
+    Returns {"h2h_settled": n, "h2h_voided_no_winner": n, "goal_markets_voided": n,
+             "api_calls": n}.
+    """
+    from src.storage.models import PredictionRecord, Fixture
+
+    with get_session() as s:
+        query = (
+            select(PredictionRecord.fixture_id)
+            .join(Fixture, PredictionRecord.fixture_id == Fixture.id)
+            .where(PredictionRecord.settled == False)
+            .where(Fixture.status == "AWD")
+        )
+        if fixture_ids:
+            query = query.where(PredictionRecord.fixture_id.in_(fixture_ids))
+        target_ids = sorted(set(s.execute(query).scalars().all()))
+
+    if not target_ids:
+        return {"h2h_settled": 0, "h2h_voided_no_winner": 0, "goal_markets_voided": 0, "api_calls": 0}
+
+    client = APIFootballClient()
+    raw_fixtures = client.get_fixtures_batch(target_ids)
+    api_calls = -(-len(target_ids) // 20)
+
+    winners: dict[int, str | None] = {}  # fixture_id -> "1" | "2" | None (undetermined)
+    for raw in raw_fixtures:
+        fid = raw.get("fixture", {}).get("id")
+        if not fid:
+            continue
+        home_w = raw.get("teams", {}).get("home", {}).get("winner")
+        away_w = raw.get("teams", {}).get("away", {}).get("winner")
+        if home_w is True:
+            winners[fid] = "1"
+        elif away_w is True:
+            winners[fid] = "2"
+        else:
+            winners[fid] = None  # API has no winner flag — can't determine
+
+    h2h_settled = 0
+    h2h_voided = 0
+    goal_voided = 0
+    with get_session() as s:
+        preds = s.execute(
+            select(PredictionRecord).where(PredictionRecord.fixture_id.in_(target_ids))
+            .where(PredictionRecord.settled == False)
+        ).scalars().all()
+
+        for pred in preds:
+            if pred.market == "h2h":
+                winner = winners.get(pred.fixture_id)
+                if winner is None:
+                    pred.actual_outcome = "AWD"
+                    pred.won = None
+                    h2h_voided += 1
+                else:
+                    pred.actual_outcome = winner
+                    pred.won = _outcomes_match("h2h", pred.predicted_outcome, winner)
+                    h2h_settled += 1
+            else:
+                pred.actual_outcome = "AWD"
+                pred.won = None
+                goal_voided += 1
+            pred.settled = True
+            pred.settled_at = datetime.utcnow()
+
+        s.commit()
+
+    logger.info(
+        "AWD settlement: %d h2h settled, %d h2h voided (no winner flag), "
+        "%d goal-market predictions voided, %d API calls",
+        h2h_settled, h2h_voided, goal_voided, api_calls,
+    )
+    return {
+        "h2h_settled": h2h_settled,
+        "h2h_voided_no_winner": h2h_voided,
+        "goal_markets_voided": goal_voided,
+        "api_calls": api_calls,
+    }
+
+
+def resync_stale_fixtures(limit: int = 100) -> dict:
+    """Re-fetch fixtures stuck in status='NS' with a date that has already
+    passed — the one impossible state _save_upcoming() can never self-correct
+    (it only updates fixtures the API still reports as NS within the rolling
+    7-day window; once a fixture goes live or is rescheduled outside that
+    window, its stored date is frozen forever without this targeted re-fetch).
+
+    Scoped ONLY to status='NS' AND date < now — never touches fixtures with a
+    legitimate future NS date, live matches, or fixtures already in a
+    terminal/void state. Capped at `limit` fixtures per call (batch-fetched at
+    20/call) so this can run on every pipeline cycle without meaningful
+    quota impact once the one-time backlog is cleared.
+
+    After updating date/status/goals, if a fixture landed on:
+      - FT/AET/PEN: leaves settlement to the caller (settle_predictions()).
+      - PST/CANC/ABD/WO/SUSP: immediately voids its predictions.
+      - AWD: immediately settles via settle_awarded_predictions() (1 extra
+        API call batch, only for fixtures that actually resolved to AWD).
+
+    Returns counts: fixtures_checked, api_calls, updated, unchanged,
+    resolved_ft, resolved_void, resolved_awd, still_ns_unresolved.
+    """
+    from src.storage.models import Fixture
+
+    now = datetime.utcnow()
+    with get_session() as s:
+        stale_ids = s.execute(
+            select(Fixture.id)
+            .where(Fixture.status == "NS")
+            .where(Fixture.date < now)
+            .order_by(Fixture.date.asc())
+            .limit(limit)
+        ).scalars().all()
+
+    if not stale_ids:
+        return {
+            "fixtures_checked": 0, "api_calls": 0, "updated": 0, "unchanged": 0,
+            "resolved_ft": 0, "resolved_void": 0, "resolved_awd": 0, "still_ns_unresolved": 0,
+        }
+
+    client = APIFootballClient()
+    raw_fixtures = client.get_fixtures_batch(list(stale_ids))
+    api_calls = -(-len(stale_ids) // 20)
+
+    updated = 0
+    unchanged = 0
+    resolved_ft: list[int] = []
+    resolved_void: list[int] = []
+    resolved_awd: list[int] = []
+    still_ns_unresolved = 0
+
+    with get_session() as s:
+        for raw in raw_fixtures:
+            f = raw.get("fixture", {})
+            fid = f.get("id")
+            if not fid:
+                continue
+            fix = s.get(Fixture, fid)
+            if not fix:
+                continue
+
+            new_status = f.get("status", {}).get("short")
+            date_str = f.get("date")
+            new_date = (
+                datetime.fromisoformat(date_str.replace("Z", "+00:00")).replace(tzinfo=None)
+                if date_str else None
+            )
+            goals = raw.get("goals", {})
+            new_gh, new_ga = goals.get("home"), goals.get("away")
+            ht = raw.get("score", {}).get("halftime", {})
+            new_hth, new_hta = ht.get("home"), ht.get("away")
+
+            changed = False
+            if new_status and new_status != fix.status:
+                fix.status = new_status
+                changed = True
+            if new_date and new_date != fix.date:
+                fix.date = new_date
+                changed = True
+            if new_gh is not None and new_gh != fix.goals_home:
+                fix.goals_home = new_gh
+                changed = True
+            if new_ga is not None and new_ga != fix.goals_away:
+                fix.goals_away = new_ga
+                changed = True
+            if new_hth is not None and new_hth != fix.ht_goals_home:
+                fix.ht_goals_home = new_hth
+                changed = True
+            if new_hta is not None and new_hta != fix.ht_goals_away:
+                fix.ht_goals_away = new_hta
+                changed = True
+            if new_gh is not None and new_ga is not None:
+                outcome = "H" if new_gh > new_ga else ("A" if new_gh < new_ga else "D")
+                if outcome != fix.outcome:
+                    fix.outcome = outcome
+                    changed = True
+
+            if changed:
+                updated += 1
+            else:
+                unchanged += 1
+
+            if new_status in ("FT", "AET", "PEN"):
+                resolved_ft.append(fid)
+            elif new_status == "AWD":
+                resolved_awd.append(fid)
+            elif new_status in VOID_STATUSES:
+                resolved_void.append(fid)
+            elif new_status == "NS":
+                still_ns_unresolved += 1  # API still reports NS with a past date — either genuinely
+                # unresolvable (fixture ID no longer exists on the API) or the match
+                # kicked off in just the last few hours and hasn't been caught by the
+                # live-status poller yet. Left unchanged; will be retried next run.
+
+        s.commit()
+
+    if resolved_void:
+        void_unplayable_predictions(fixture_ids=resolved_void)
+    awd_result = {"api_calls": 0}
+    if resolved_awd:
+        awd_result = settle_awarded_predictions(fixture_ids=resolved_awd)
+
+    logger.info(
+        "resync_stale_fixtures: checked %d, updated %d, unchanged %d, "
+        "resolved_ft=%d resolved_void=%d resolved_awd=%d still_ns_unresolved=%d, %d+%d API calls",
+        len(stale_ids), updated, unchanged, len(resolved_ft), len(resolved_void),
+        len(resolved_awd), still_ns_unresolved, api_calls, awd_result["api_calls"],
+    )
+    return {
+        "fixtures_checked": len(stale_ids),
+        "api_calls": api_calls + awd_result["api_calls"],
+        "updated": updated,
+        "unchanged": unchanged,
+        "resolved_ft": len(resolved_ft),
+        "resolved_void": len(resolved_void),
+        "resolved_awd": len(resolved_awd),
+        "still_ns_unresolved": still_ns_unresolved,
+    }
 
 
 def settle_value_bets(days: int | None = None) -> int:
