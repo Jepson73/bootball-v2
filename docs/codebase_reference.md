@@ -193,12 +193,12 @@ Key models:
 | `Team` | id, name, country, logo_url |
 | `League` | id, name, country, season |
 | `FixtureOdds` | fixture_id, market, bookmaker, outcome, decimal_odds, updated_at |
-| `PredictionRecord` | fixture_id, market, our_prob, calibrated_prob, blended_prob, implied_prob, ev, run_id, prob_home, prob_draw, prob_away (h2h only) |
+| `PredictionRecord` | fixture_id, market, our_prob, calibrated_prob, blended_prob, implied_prob, ev, run_id, prob_home, prob_draw, prob_away (h2h only), data_context (Phase 16b: `full`/`elo_both`/`elo_partial`/`flat_prior`/`national_elo`) |
 | `PlacedBet` | fixture_id, market, outcome, stake, odds, placed_at, settled_at, result, pnl |
 | `ModelVersion` | market, version_label, is_active, brier_score, log_loss, trained_at |
 | `Bankroll` | balance, currency, updated_at |
 | `Calibration` | market, method, params_json, calibrated_at |
-| `EloRating` | team_id, league_id, rating, updated_at |
+| `EloRating` | team_id, rating, games_played, as_of_date, pool (`club`/`national`, Phase 16b) |
 | `OddsSnapshot` | fixture_id, bookmaker_id, bookmaker_name, market_type, captured_at, odd_home, odd_draw, odd_away, odd_over, odd_under, odd_btts_yes, odd_btts_no |
 
 ### `src/agents/coordinator.py`
@@ -224,7 +224,7 @@ Single source of truth for all predictions.
 - `UnifiedPredictionService.generate_with_fixture_data(fixture_objects)` — primary method called by coordinator; takes pre-loaded fixture ORM objects
 - Applies `LeagueCalibrationEngine.apply()` to calibrate raw model probabilities before returning
 - Standardizes prediction format; emits `PREDICTION_CREATED` events
-- `save_predictions()` — writes h2h prob vector to `prob_home/prob_draw/prob_away` (keys "1"/"X"/"2") for use by `evaluate_track_a()`
+- `save_predictions()` — writes h2h prob vector to `prob_home/prob_draw/prob_away` (keys "1"/"X"/"2") for use by `evaluate_track_a()`; also back-fills the vector in both skip paths ("both preliminary" and "downgrade") when `prob_home is None`, so existing NULL-vector records self-heal on the next prediction cycle
 - `evaluate_track_a(market, settled_records)` — scores settled predictions: log-loss, Brier, AUC; h2h requires `prob_home` on each record
 
 ### `src/betting/portfolio/portfolio_engine.py`
@@ -418,6 +418,17 @@ is_job_allowed_in_mode("retrain_models", LIVE) → False → skip
 
 All markets use `GradientBoostingClassifier` with Platt calibration. Features include Elo ratings, recent form, head-to-head stats, expected goals, and league-normalized strength metrics.
 
+**Phase 16b — Elo hybrid gap predictions (club pool)**
+
+`src/features/elo.py` — `EloEngine` with fixed draw model (exponential decay: `p_draw = 0.30 * exp(-|delta| / 400)`), pool-scoped `_get_current_rating()`, `predict(pool=)`, and `predict_from_ratings()`. `update_all_ratings(pool='club')` processes 750K+ FT domestic-league fixtures chronologically in-memory (no per-fixture DB writes) and bulk-inserts one row per team. Club pool filter: `league.country != 'World'`. **20,930 club team ratings stored.**
+
+`scripts/generate_gap_predictions.py` — one-shot script: writes h2h `PredictionRecord`s for NS fixtures missing a prediction (teams with no Standings row bypass the normal model gate). Hybrid decision logic:
+- both rated → `elo_both`
+- Friendlies, one unrated → `flat_prior` (H43/D27/A30)
+- non-Friendly, one unrated → `elo_partial` (1500 default)
+- league name contains U17/U19/U20/Youth → abstain (no record)
+Uses `INSERT OR IGNORE` for idempotency. Run after new fixture ingestion when gap fixtures appear.
+
 ---
 
 ## Architecture Patterns
@@ -494,6 +505,7 @@ Key test files:
 | `scripts/make_predictions.py` | Manual prediction generation | Active |
 | `scripts/odds_poll.py` | Poll odds; recalculate EV | Active |
 | `scripts/migrate.py` | Database schema migration runner | Active |
+| `scripts/generate_gap_predictions.py` | Elo hybrid h2h predictions for gap fixtures (no Standings row). Run ad-hoc after ingestion. `--dry-run` flag available | Active |
 | `scripts/check_model.py` | Inspect trained model metadata | Diagnostic tool |
 | `scripts/diagnostics.py` | Connectivity checks, backfill config validation | Diagnostic tool |
 | `scripts/daily_sanity_check.py` | Sanity checks run by scheduler | Active |
