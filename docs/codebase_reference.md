@@ -438,6 +438,14 @@ All markets use `GradientBoostingClassifier` with Platt calibration. Features in
 
 `v2/routes/explorer_v2.py` — `_mkt_cell()` extended: H2H distribution line shows per-outcome prices; binary markets show the predicted-side price inline. Same bookmaker label treatment as predictions view.
 
+**Phase 20 (Task 6) — limbo fixture visibility**
+
+Investigation revealed 153 fixtures with unsettled predictions not visible in the predictions view (89 past-dated NS with stale dates + 49 permanently voided PST/CANC/AWD + 15 temporarily in-play). These ARE reachable in the explorer, but were previously unlabelled — a CANC fixture looked identical to a valid NS upcoming match.
+
+`v2/db_v2.py` — `get_explorer_data()` now includes `Fixture.status` in the outer query and returns `fixture_status` in each fixture dict.
+
+`v2/routes/explorer_v2.py` — `_status_badge(status)` renders an inline badge for non-NS/FT fixtures: green `LIVE`/`HT` for in-play statuses; gray `POSTPONED`/`CANCELLED`/`AWARDED`/`ABANDONED` for void statuses. NS and FT fixtures show no badge. Badge appears in the match name cell next to the team names. No prediction records are mutated; the fix is display-only.
+
 ---
 
 ## Architecture Patterns

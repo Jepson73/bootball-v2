@@ -19,6 +19,32 @@ bp_explorer = Blueprint("explorer_v2", __name__)
 
 _H2H = {"1": "Home", "X": "Draw", "2": "Away"}
 
+_LIVE_STATUSES = {"1H", "HT", "2H", "ET", "BT", "P", "INT"}
+_VOID_STATUSES = {"PST", "CANC", "ABD", "AWD", "WO", "SUSP"}
+
+def _status_badge(status: str | None) -> str:
+    """Inline badge for any fixture that isn't NS or FT — empty string otherwise."""
+    if not status or status in ("NS", "FT", "AET", "PEN"):
+        return ""
+    if status in _LIVE_STATUSES:
+        label = {"HT": "HT", "INT": "INT"}.get(status, "LIVE")
+        return (
+            f'<span style="background:#1a3a1a;color:#3fb950;border:1px solid #2a6a2a;'
+            f'border-radius:3px;font-size:9px;padding:1px 4px;margin-left:4px;'
+            f'font-weight:700">{label}</span>'
+        )
+    # Void / problematic statuses
+    _LABELS = {
+        "PST": "POSTPONED", "CANC": "CANCELLED", "ABD": "ABANDONED",
+        "AWD": "AWARDED", "WO": "WALKOVER", "SUSP": "SUSPENDED",
+    }
+    label = _LABELS.get(status, status)
+    return (
+        f'<span style="background:#1a1a2a;color:#8b949e;border:1px solid #30363d;'
+        f'border-radius:3px;font-size:9px;padding:1px 4px;margin-left:4px;'
+        f'font-weight:700" title="Predictions will not settle automatically">{label}</span>'
+    )
+
 
 def _ex_price(val: float | None) -> str:
     if val is None:
@@ -340,6 +366,7 @@ def explorer():
             league_lbl = fix["league_name"]
             country_lbl = fix["country"]
             mkts = fix["markets"]
+            status_badge = _status_badge(fix.get("fixture_status"))
 
             rows_html += (
                 "<tr>"
@@ -349,6 +376,7 @@ def explorer():
                 f'<span style="color:#e6edf3;font-weight:500">{home}</span>'
                 '<span style="color:#8b949e;margin:0 4px">vs</span>'
                 f'<span style="color:#c9d1d9">{away}</span>'
+                f'{status_badge}'
                 f'<br><span style="color:#8b949e;font-size:10px">{league_lbl}'
                 f'{"&nbsp;·&nbsp;" + country_lbl if country_lbl else ""}</span>'
                 "</td>"

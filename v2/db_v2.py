@@ -626,6 +626,7 @@ def get_explorer_data(
             inner_q.c.sort_key,
             Fixture.id.label("fixture_id"),
             Fixture.date,
+            Fixture.status.label("fixture_status"),
             League.name.label("league_name"),
             League.country,
             HomeTeam2.name.label("home_team"),
@@ -670,6 +671,7 @@ def get_explorer_data(
             fixtures_map[fid] = {
                 "fixture_id": fid,
                 "date": r.date,
+                "fixture_status": r.fixture_status,
                 "league_name": r.league_name or "",
                 "country": r.country or "",
                 "home_team": r.home_team or "?",
