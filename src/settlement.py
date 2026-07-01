@@ -1123,8 +1123,10 @@ def mark_fixtures_dead(fixture_ids: list[int]) -> int:
     Sets Fixture.status='DEAD' — excludes them from resync_stale_fixtures()'s
     query (status='NS' only) so they can no longer occupy a slot at the head
     of the oldest-first resync queue. Voids their unsettled predictions with
-    actual_outcome='untraceable' (distinct from PST/CANC/AWD — there is no
-    real-world event here, just data the provider no longer serves).
+    actual_outcome='untraced' (distinct from PST/CANC/AWD — there is no
+    real-world event here, just data the provider no longer serves). Kept
+    to 10 chars — PredictionRecord.actual_outcome is String(10); SQLite
+    doesn't enforce the length but Postgres/MySQL would truncate or error.
 
     Returns count of predictions voided.
     """
@@ -1146,7 +1148,7 @@ def mark_fixtures_dead(fixture_ids: list[int]) -> int:
             .where(PredictionRecord.settled == False)
         ).scalars().all()
         for pred in preds:
-            pred.actual_outcome = "untraceable"
+            pred.actual_outcome = "untraced"
             pred.won = None
             pred.settled = True
             pred.settled_at = datetime.utcnow()
@@ -1356,17 +1358,24 @@ def resync_stale_fixtures(limit: int = 100) -> dict:
     # Track consecutive empty-response misses per fixture; auto-mark DEAD at
     # DEAD_THRESHOLD so a permanently-untraceable ID stops occupying a slot
     # in the oldest-first resync queue after a few confirmed-empty cycles.
+    #
+    # Guard: if the ENTIRE batch came back empty, that's a call-level failure
+    # signal (quota exhaustion, network blip, provider incident) — not N
+    # individual 404s. Counting it as N misses would risk marking legitimate
+    # fixtures dead during a transient outage. Only count misses when at
+    # least some IDs in the batch resolved, i.e. the API round-trip worked.
     failures = _load_stale_failures()
     newly_dead: list[int] = []
-    for fid in missing_ids:
-        key = str(fid)
-        failures[key] = failures.get(key, 0) + 1
-        if failures[key] >= DEAD_THRESHOLD:
-            newly_dead.append(fid)
-            del failures[key]
-    for fid in found_ids:
-        failures.pop(str(fid), None)  # reset on any successful response
-    _save_stale_failures(failures)
+    if raw_fixtures:
+        for fid in missing_ids:
+            key = str(fid)
+            failures[key] = failures.get(key, 0) + 1
+            if failures[key] >= DEAD_THRESHOLD:
+                newly_dead.append(fid)
+                del failures[key]
+        for fid in found_ids:
+            failures.pop(str(fid), None)  # reset on any successful response
+        _save_stale_failures(failures)
 
     dead_voided = 0
     if newly_dead:
