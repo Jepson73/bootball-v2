@@ -73,9 +73,10 @@ Two web services run in parallel (both managed by systemd):
 
 ```
 bootball-web-v2.service  →  scripts/web_ui_v2.py (port 5000, primary)
-  1. Flask app created; blueprints registered (home, track_a, predictions, collection, explorer)
-  2. init_db() via src/storage/db.py
-  3. All routes protected by require_auth() from v2/auth_v2.py
+  1. record_running_commit("bootball-web-v2.service") via src/deploy_info.py
+  2. Flask app created; blueprints registered (home, track_a, predictions, collection, explorer)
+  3. init_db() via src/storage/db.py
+  4. All routes protected by require_auth() from v2/auth_v2.py
      (cookie: authenticated_v2; no V1 cookie collision)
 
 bootball-web.service  →  gunicorn scripts.web_ui:app (port 5001, V1 reference)
@@ -85,8 +86,9 @@ bootball-web.service  →  gunicorn scripts.web_ui:app (port 5001, V1 reference)
        cleanup_matches (5m), live_settle (2m), daily_sanity_check (24h)
 
 bootball-runtime.service (separate process):
-  backend/runtime/execution_runtime.py → AgentCoordinator.run_cycle()
-  (every 20 minutes; all predictions → portfolio → bets)
+  1. record_running_commit("bootball-runtime.service") via src/deploy_info.py
+  2. backend/runtime/execution_runtime.py → AgentCoordinator.run_cycle()
+     (every 20 minutes; all predictions → portfolio → bets)
 ```
 
 ---
@@ -173,6 +175,14 @@ Graph-based decision explainability.
 ---
 
 ## Source Module Reference
+
+### `src/deploy_info.py`
+
+Deployment state tracking — records which git commit a long-running service started from.
+
+- `record_running_commit(service_name)` — called once at startup by `execution_runtime.py` and `web_ui_v2.py`; writes current HEAD commit to `logs/deploy_state/<service_name>.running_commit`
+- Allows `scripts/deploy.sh check` to detect stale services without correlating systemd timelines against git log
+- Non-fatal if git unavailable; designed to survive any restart method (deploy script, manual `systemctl restart`, host reboot)
 
 ### `src/storage/db.py`
 
@@ -544,6 +554,7 @@ Key test files:
 |--------|---------|--------|
 | `scripts/web_ui_v2.py` | **Primary UI (V2)** — two-track Flask app on port 5000; strict V1 isolation; registers v2/ blueprints (home, track_a, predictions, collection, explorer) | Active |
 | `scripts/web_ui.py` | V1 Flask UI + APScheduler on port 5001 (via gunicorn in `bootball-web.service`); reference build | Active |
+| `scripts/deploy.sh` | Post-commit deployment orchestrator; restarts all long-running services and verifies they start with current commit; `check` subcommand reports staleness without restarting | Active |
 | `scripts/run_continuous_cycle.py` | Core execution pipeline — called by `ExecutionRuntime` | Active |
 | `scripts/daily_run.py` | Data pipeline only (no prediction/betting); enforces `backfill_daily_cap` in `_fetch_completed()`; logs per-run quota snapshots to `logs/quota_log.csv` | Active |
 | `scripts/backfill_all.py` | Historical data ingestion (multi-season) | Active |
