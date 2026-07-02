@@ -25,6 +25,7 @@ from sqlalchemy import select, func
 
 from config.leagues import ALL_LEAGUE_IDS, LEAGUES
 from src.ingestion.client import APIFootballClient, calls_remaining_today
+from src.ingestion.odds_snapshot_capture import write_snapshots_from_response
 from src.storage.db import get_session, init_db
 from src.storage.models import Fixture, FixtureOdds, PredictionRecord, PlacedBet
 from src.betting.ev import expected_value
@@ -188,6 +189,16 @@ def poll_and_update_odds(s, client, fixture_ids, dry_run=False):
             if not odds_data:
                 logger.debug(f"No {bet_name} odds returned for fixture {fix_id}")
                 continue
+
+            # Passive piggyback (Phase 25): this response is already fetched — writing
+            # it to odds_snapshots too costs zero extra API calls. Dedupes against the
+            # active scheduler's own recent writes via the shared 45-min window, so
+            # running both on the same fixture in the same cycle is harmless.
+            if not dry_run:
+                try:
+                    write_snapshots_from_response(s, odds_data, fix_id, datetime.utcnow())
+                except Exception as e:
+                    logger.warning(f"Passive snapshot write failed for fixture {fix_id}: {e}")
 
             for response in odds_data:
                 bookmakers = response.get('bookmakers', [])

@@ -2,6 +2,20 @@
 """
 scripts/capture_forward_odds.py
 
+SUPERSEDED (Phase 25) — do not add to cron or run alongside
+scripts/odds_trajectory_scheduler.py, which now covers ALL odds-carrying
+fixtures (including these 4-5 forward leagues) on a daily→hourly schedule and
+writes the same odds_snapshots table. Running this script too would double-spend
+API calls and race the scheduler on writes. It was never wired into
+/etc/cron.d/bootball (verified Phase 25) — this docstring exists to keep it that
+way. scripts/probe_forward_odds.py now serves the original Tasmania/Norway
+experiment as a read-only checkpoint against what the scheduler already captured.
+
+Left in place, not deleted, in case its narrow Pinnacle+Bet365-only capture logic
+is ever useful as a reference. Original docstring follows.
+
+---
+
 Forward-collection odds capture for long-tail Pinnacle-covered leagues.
 
 Run multiple times per day (e.g. every 4 hours via cron) to build an

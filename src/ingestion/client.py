@@ -347,6 +347,13 @@ class APIFootballClient:
             season: int | None = None,
             bet_type: str | int = 1,
         ) -> list[dict]:
+        # Odds move between polls — unlike fixtures/teams/leagues metadata, a cached
+        # response here is not "the same answer, saved a call," it's a stale price.
+        # force_refresh=True matches the other time-varying endpoints (fixtures/events,
+        # fixtures/statistics, lineups). Without it, every re-poll of an already-seen
+        # fixture silently returns whatever was cached on the FIRST fetch, forever —
+        # confirmed live: fixture 1565182 was polled 28x over 34h on 2026-07-01/02 and
+        # every call hit the same cache file written at 02:19 the first time.
         bet_id = {"h2h": 1, "btts": 8, "over_under": 5}.get(str(bet_type), bet_type)
         params: dict[str, Any] = {"bet": bet_id}
         if fixture_id:
@@ -355,7 +362,7 @@ class APIFootballClient:
             params["league"] = league_id
         if season:
             params["season"] = season
-        return self.get("odds", params)
+        return self.get("odds", params, force_refresh=True)
 
     def get_injuries(self, league_id: int, date: str) -> list[dict]:
         return self.get("injuries", {"league": league_id, "date": date})

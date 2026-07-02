@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     # Soft cap for backfill jobs — forward-collection and real-time calls may use the full limit.
     # Set to 80% of the daily quota, leaving ≥20% headroom (≥15 000 calls) for forward collection.
     backfill_daily_cap: int = Field(default=60000)
+    # Self-imposed ceiling for scripts/odds_trajectory_scheduler.py specifically. Sized to fit
+    # inside the ≥15,000 headroom backfill_daily_cap already reserves for collection — the two
+    # numbers are deliberately the same budget, not a coincidence.
+    collection_daily_cap: int = Field(default=15000)
     api_interval_seconds: float = Field(default=0.15)
 
     # ── Database ────────────────────────────────────────────

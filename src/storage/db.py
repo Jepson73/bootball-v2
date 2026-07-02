@@ -30,6 +30,13 @@ def _get_engine():
         def set_sqlite_pragma(dbapi_conn, connection_record):
             cursor = dbapi_conn.cursor()
             cursor.execute("PRAGMA foreign_keys = ON")
+            # 5+ independent writer processes (runtime, odds_poll/daily_run/settle_fixtures/
+            # backfill cron jobs, and now the trajectory scheduler) share this file. WAL mode
+            # (already enabled on the DB) lets readers proceed without blocking, but two
+            # writers colliding at the same instant still get SQLITE_BUSY with the default
+            # busy_timeout=0 — an immediate error instead of a short wait. 5s is enough for
+            # any of these jobs' writes to clear.
+            cursor.execute("PRAGMA busy_timeout = 5000")
             cursor.close()
     
     return engine

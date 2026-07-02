@@ -1,5 +1,5 @@
 # Bootball — Deployment State Reference
-**Last updated:** 2026-07-02 (Phase 23)  
+**Last updated:** 2026-07-02 (Phase 25)  
 **Purpose:** Capture out-of-repo operational state so the system can be reproduced if the host is lost.
 
 ---
@@ -107,6 +107,21 @@ CACHE_DIR = Path("data/raw/api_cache/api_cache")   # INNER dir — bootball-owne
 The outer `data/raw/api_cache/` directory is owned by `nobody:nogroup` and is not writable by the `bootball` process. All cache writes must go to the inner subdirectory. If `CACHE_DIR` is ever reset to `Path("data/raw/api_cache")` (without the second `api_cache`), every hourly scheduler run will make 2,480 uncached API calls and exhaust the daily quota before 16:00 UTC.
 
 **On fresh deploy:** run `mkdir -p data/raw/api_cache/api_cache` as the `bootball` user to ensure the inner dir exists and is writable.
+
+**Odds endpoint exception (Phase 25):** `get_odds()` sets `force_refresh=True` unconditionally
+— it must never be served from this cache, since odds are the one endpoint where "the same
+answer as last time" is a stale price, not a saved call. See "Odds Trajectory Capture" below.
+
+---
+
+## SQLite busy_timeout (Phase 25)
+
+`src/storage/db.py` sets `PRAGMA busy_timeout = 5000` on every connection. The DB is already
+in WAL mode (readers don't block the writer), but 5+ independent writer processes (runtime,
+odds_poll/daily_run/settle_fixtures/backfill/odds_trajectory_scheduler cron jobs) share this
+file, and the default `busy_timeout=0` means two writers colliding at the same instant get an
+immediate `SQLITE_BUSY` error instead of a short wait. Flagged in the Phase 24 cost scoping,
+fixed here since Phase 25 adds meaningful write volume.
 
 ---
 
@@ -235,25 +250,91 @@ PY=/opt/projects/bootball/.venv/bin/python
 
 # odds_poll: every 30 min from 8 AM to midnight CET to refresh odds for active predictions
 # 8:00,8:30,9:00,...23:30 CET = 6:00...22:30 UTC
+# Phase 25: also passively piggybacks odds_snapshots writes onto its already-fetched
+# responses (zero extra API cost) — a safety net for fixtures the trajectory scheduler
+# below hasn't reached yet.
 */30 8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 * * * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/odds_poll.py >> /var/log/bootball/odds_poll.log 2>&1
 
-# ── Forward-collection clock-start probes ─────────────────────────────────────
+# odds_trajectory_scheduler (Phase 25): active open->close capture for ALL odds-carrying
+# fixtures. Every 30 min, 24/7 — NOT daytime-CET-only like odds_poll above, because
+# kickoffs in Tasmania/Asia/Oceania leagues land at UTC hours a CET-daytime cron would
+# miss entirely. ~1/day per fixture until 6h before kickoff, then ~hourly. Self-capped
+# at settings.collection_daily_cap (15,000 calls/day); spend logged to logs/quota_log.csv.
+*/30 * * * * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/odds_trajectory_scheduler.py >> /var/log/bootball/odds_trajectory_scheduler.log 2>&1
 
-# Tasmania NPL (league 648) bookmaker probe — July 3 and July 4 at 06:00 UTC
+# ── Forward-collection clock-start checkpoints (Phase 25: read-only) ──────────
+
+# Tasmania NPL (league 648) — July 3 and July 4 at 06:00 UTC
 # (~25h and ~1.5h before July 4 04:30 UTC kickoffs; 49h before July 5 04:30 UTC kickoff)
-# Detects whether Pinnacle posts odds as kickoff approaches. If only soft books:
-# writes logs/soft_book_decision_needed.txt and does NOT write to odds_snapshots.
+# Phase 25: no longer fetches odds itself — reads what odds_trajectory_scheduler.py has
+# already captured for these fixtures and reports whether Pinnacle shows up near kickoff.
+# Only writes logs/soft_book_decision_needed.txt if genuinely soft-only close to kickoff.
 0 6 3 7 * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/probe_forward_odds.py --league-ids 648 --days-ahead 3 >> /var/log/bootball/probe_tasmania.log 2>&1
 0 6 4 7 * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/probe_forward_odds.py --league-ids 648 --days-ahead 2 >> /var/log/bootball/probe_tasmania.log 2>&1
 
-# Norwegian 3.Division (leagues 777/778/779) bookmaker probe — July 24 at 08:00 UTC
+# Norwegian 3.Division (leagues 777/778/779) — July 24 at 08:00 UTC
 # (~30h before July 25 kickoffs, expected ~14:00-18:00 UTC).
 # Fixtures enter 7-day _fetch_upcoming() window July 18; daily_run.py 2AM cron
-# will populate DB by July 18-24. Same Pinnacle/soft-book detection logic.
+# will populate DB by July 18-24. Same read-only checkpoint logic as Tasmania above.
 0 8 24 7 * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/probe_forward_odds.py --league-ids 777,778,779 --days-ahead 2 >> /var/log/bootball/probe_norway.log 2>&1
 ```
 
 **Probe scripts write to `/var/log/bootball/probe_tasmania.log` and `/var/log/bootball/probe_norway.log` — create these with appropriate permissions on fresh deploy.**
+
+---
+
+## Odds Trajectory Capture (Phase 25)
+
+Supersedes the narrow 4-5-league forward-collection (`config/forward_leagues.py` /
+`scripts/capture_forward_odds.py`, now deprecated — see docstring, never wired into cron
+so there's no double-fetch to reconcile). Two layers write to the same `odds_snapshots`
+table, sharing parsing/dedupe logic in `src/ingestion/odds_snapshot_capture.py`:
+
+1. **Active** (`scripts/odds_trajectory_scheduler.py`, every 30 min 24/7): ALL NS fixtures
+   in the 7-day window, no league restriction. ~1 touch/day until 6h before kickoff, then
+   ~hourly. **Near-kickoff touches are never subject to `collection_daily_cap` — only
+   daily-phase (far) touches are**, so the self-imposed budget can never starve the exact
+   samples the whole feature exists to protect (found live during bring-up: the far budget
+   exhausted itself by early afternoon on repeat-empty fixtures and silently blocked
+   near-kickoff touches too, for ~90 minutes, before the cap was split). Daily-phase spend
+   is capped at `settings.collection_daily_cap` (15,000/day — the same headroom
+   `backfill_daily_cap` already reserves for collection) and a per-run cap
+   (`MAX_FAR_TOUCHES_PER_RUN = 400`) so a cold-start backlog spreads across several cron
+   cycles instead of one run overrunning the 30-min cadence. Both phases respect a hard
+   global floor (never drives whole-account remaining quota below 500).
+
+   Per-fixture "due for a touch" tracking combines a real capture (`odds_snapshots`) with
+   a bare-attempt timestamp (`logs/trajectory_last_attempt.json`) — a fixture with zero
+   bookmaker coverage returns an empty payload every time and never gets a snapshot row,
+   so without the attempt file nothing ever ages its staleness clock and it gets retried
+   (3 wasted calls) every single 30-min cycle forever. This was the actual root cause of
+   the far-budget exhaustion above: "active-all, no league filter" means the daily-phase
+   candidate pool includes plenty of fixtures that structurally never have odds, and only
+   an explicit attempt record — successful or not — lets them properly cool down.
+
+   Concurrent runs are serialized with a non-blocking `flock` (`logs/trajectory_scheduler.lock`)
+   — an overlapping cron tick skips instead of racing. Found live: a long cold-start run and
+   the next cron tick both read-modify-wrote `trajectory_scheduler_state.json` and the second
+   write silently clobbered the first.
+2. **Passive** (`scripts/odds_poll.py`): writes a snapshot from whatever it already fetched
+   for its own selective-polling purposes — zero extra API cost. Both layers dedupe on
+   write (45-min window per fixture/market/bookmaker) so touching the same fixture in the
+   same cycle is harmless.
+
+**Prerequisite fix, found while building this:** `client.get_odds()` never bypassed the
+on-disk response cache, so any repoll of an already-seen fixture silently returned the
+first-ever cached response forever — verified live pre-fix (fixture 1565182: polled 28x
+over 34h, all hitting one frozen cache file). Now hardcoded `force_refresh=True`, matching
+the existing convention for other time-varying endpoints (fixtures/events,
+fixtures/statistics, lineups). This also means `odds_poll.py`'s own re-poll mechanism,
+previously mostly free-riding on stale cache hits, now genuinely re-fetches — expect its
+real API cost to rise from a small bootstrap-only baseline to something closer to its
+event count × 3.
+
+`scripts/probe_forward_odds.py` (Tasmania/Norway clock-start checks, same cron schedule)
+no longer fetches odds itself — it reads what the scheduler already captured for those
+leagues and reports Pinnacle presence, specifically in the near-kickoff window (Phase 11b:
+early-fetch absence proves nothing, Pinnacle often posts close to kickoff).
 
 ---
 
@@ -265,10 +346,12 @@ PY=/opt/projects/bootball/.venv/bin/python
 | `auto_bet.log` | 3AM cron (root) | `/var/log/bootball/auto_bet.log` |
 | `settle_fixtures.log` | */30 cron (root) | `/var/log/bootball/settle_fixtures.log` |
 | `odds_poll.log` | */30 8-23 cron (root) | `/var/log/bootball/odds_poll.log` |
+| `odds_trajectory_scheduler.log` | */30 24/7 cron (root) | `/var/log/bootball/odds_trajectory_scheduler.log` |
 | `probe_tasmania.log` | July 3-4 one-shot (root) | `/var/log/bootball/probe_tasmania.log` |
 | `probe_norway.log` | July 24 one-shot (root) | `/var/log/bootball/probe_norway.log` |
-| `quota_log.csv` | daily_run.py (bootball) | `logs/quota_log.csv` (in repo root, gitignored) |
+| `quota_log.csv` | daily_run.py, backfill_cron.py, odds_trajectory_scheduler.py (bootball/root) | `logs/quota_log.csv` (in repo root, gitignored) |
 | `soft_book_decision_needed.txt` | probe_forward_odds.py | `logs/soft_book_decision_needed.txt` (in repo root) |
+| `trajectory_scheduler_state.json` | odds_trajectory_scheduler.py | `logs/trajectory_scheduler_state.json` — daily spend counter against `collection_daily_cap`, resets at UTC midnight |
 
 **Create `/var/log/bootball/` on fresh deploy:**
 ```bash
