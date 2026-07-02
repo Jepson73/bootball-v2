@@ -17,10 +17,31 @@ from v2.templates_v2 import page
 
 bp_explorer = Blueprint("explorer_v2", __name__)
 
-_H2H = {"1": "Home", "X": "Draw", "2": "Away"}
+_H2H = {"1": "Home", "X": "Draw", "2": "Away", "H": "Home", "D": "Draw", "A": "Away"}
 
 _LIVE_STATUSES = {"1H", "HT", "2H", "ET", "BT", "P", "INT"}
 _VOID_STATUSES = {"PST", "CANC", "ABD", "AWD", "WO", "SUSP"}
+_NO_SCORE_STATUSES = {"PST", "CANC", "ABD", "WO", "SUSP", "DEAD"}
+_COMPLETED_STATUSES = {"FT", "AET", "PEN"}
+
+
+def _score_html(status: str | None, goals_home: int | None, goals_away: int | None) -> str:
+    """Final score for the Match cell, home side first (matches the home-advantage-on-left
+    convention). Never fabricates a score — AWD fixtures get a distinct marker (the API gives
+    a 0-0 placeholder for walkovers, not a real scoreline — Phase 21), void statuses (no match
+    completed) get nothing here since the status badge already covers them.
+    """
+    if status == "AWD":
+        return (
+            '<span style="color:#8b949e;font-weight:700;margin:0 6px" '
+            'title="Awarded result — no match played, API does not provide a formal scoreline">'
+            '&mdash;&nbsp;awd&nbsp;&mdash;</span>'
+        )
+    if status in _NO_SCORE_STATUSES:
+        return ""
+    if status in _COMPLETED_STATUSES and goals_home is not None and goals_away is not None:
+        return f'<span style="color:#e6edf3;font-weight:700;margin:0 6px">{goals_home}&ndash;{goals_away}</span>'
+    return ""
 
 def _status_badge(status: str | None) -> str:
     """Inline badge for any fixture that isn't NS or FT — empty string otherwise."""
@@ -120,8 +141,10 @@ def _mkt_cell(m: dict | None) -> str:
             dist += f'<span style="color:#484f58;font-size:8px" title="indicative"> {book}</span>'
 
     color = "#3fb950" if pct >= 60 else ("#d29922" if pct >= 50 else "#8b949e")
-    pred = f'<span style="color:{color};font-weight:600">{label}&nbsp;{pct}%{star}</span>{dist}'
 
+    # The verdict belongs with the predicted side it judges, on the summary line — not
+    # after the stacked H/D/A distribution block below it (that block is context, not
+    # the verdict). Must be built before `dist` is appended.
     if settled and won is not None:
         if won:
             result = '<span style="color:#3fb950;margin-left:4px" title="Correct">&#10003;</span>'
@@ -138,7 +161,9 @@ def _mkt_cell(m: dict | None) -> str:
     else:
         result = ""
 
-    return f'<td style="white-space:nowrap;padding:6px 10px">{pred}{result}</td>'
+    pred = f'<span style="color:{color};font-weight:600">{label}&nbsp;{pct}%{star}</span>{result}{dist}'
+
+    return f'<td style="white-space:nowrap;padding:6px 10px">{pred}</td>'
 
 
 def _build_pagination(page_num: int, total_pages: int, url_fn) -> str:
@@ -374,7 +399,9 @@ def explorer():
             league_lbl = fix["league_name"]
             country_lbl = fix["country"]
             mkts = fix["markets"]
-            status_badge = _status_badge(fix.get("fixture_status"))
+            fixture_status = fix.get("fixture_status")
+            status_badge = _status_badge(fixture_status)
+            score_html = _score_html(fixture_status, fix.get("goals_home"), fix.get("goals_away"))
 
             rows_html += (
                 "<tr>"
@@ -382,8 +409,8 @@ def explorer():
                 f'white-space:nowrap;padding:6px 10px">{date_str}<br>{time_str}</td>'
                 "<td style=\"padding:6px 10px\">"
                 f'<span style="color:#e6edf3;font-weight:500">{home}</span>'
-                '<span style="color:#8b949e;margin:0 4px">vs</span>'
-                f'<span style="color:#c9d1d9">{away}</span>'
+                + (score_html if score_html else '<span style="color:#8b949e;margin:0 4px">vs</span>')
+                + f'<span style="color:#c9d1d9">{away}</span>'
                 f'{status_badge}'
                 f'<br><span style="color:#8b949e;font-size:10px">{league_lbl}'
                 f'{"&nbsp;·&nbsp;" + country_lbl if country_lbl else ""}</span>'
