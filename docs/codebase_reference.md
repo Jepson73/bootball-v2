@@ -103,9 +103,9 @@ bootball-runtime.service (separate process):
 
 | File | Purpose |
 |------|---------|
-| `config/settings.py` | All env-based settings: API keys, scheduling, model dirs, runtime mode; `backfill_daily_cap` (default 60 000) soft-caps backfill quota; leagues 777/778/779/648 added to `calendar_year_leagues` |
+| `config/settings.py` | All env-based settings: API keys, scheduling, model dirs, runtime mode; `backfill_daily_cap` (default 60 000) soft-caps backfill quota; `collection_daily_cap` (default 15 000, Phase 25) caps `odds_trajectory_scheduler.py` daily-phase spend; leagues 777/778/779/648 added to `calendar_year_leagues` |
 | `config/leagues.py` | `ALL_LEAGUE_IDS` — 1,225 leagues; league metadata; season definitions |
-| `config/forward_leagues.py` | Forward-collection leagues (Pinnacle-covered, high goal-rate); capture bookmakers (Pinnacle, Bet365); market types (h2h, o/u 2.5, BTTS); stale-window constant |
+| `config/forward_leagues.py` | Narrow 4-5-league forward-collection config (Pinnacle-covered, high goal-rate); capture bookmakers (Pinnacle, Bet365); market types (h2h, o/u 2.5, BTTS); stale-window constant — **superseded (Phase 25)** by `odds_trajectory_scheduler.py`, which covers all leagues |
 | `config/markets.py` | Market definitions (h2h, btts, ou25, ou15); outcome mappings |
 | `config/drift_thresholds.py` | Drift detection thresholds; retrain triggers |
 | `.env.example` | Template for required environment variables |
@@ -190,6 +190,7 @@ SQLAlchemy database layer.
 
 - `get_engine()`, `get_session_maker()`, `init_db()`
 - `get_session()` — context manager returning a scoped session
+- SQLite connections set `PRAGMA busy_timeout = 5000` (Phase 25) — 5+ independent writer processes share this file; without it, two writers colliding get an immediate `SQLITE_BUSY` instead of a short wait
 
 ### `src/storage/models.py`
 
@@ -339,6 +340,15 @@ API-Football v3 client.
 - `calls_used_today()` / `calls_remaining_today()` — API quota tracking
 - `get_api_status()` — live quota from `/status` endpoint (cached 2 min)
 - Cache files live at `data/raw/api_cache/api_cache/` (`CACHE_DIR`); cache reads/writes both target this path
+- `get_odds()` forces `force_refresh=True` (Phase 25) — odds are time-varying, unlike fixtures/teams/leagues metadata; without this a repoll of an already-seen fixture silently served the first-ever cached response forever
+
+### `src/ingestion/odds_snapshot_capture.py`
+
+Shared `odds_snapshots` writer (Phase 25) used by both `scripts/odds_trajectory_scheduler.py` and the passive piggyback layer in `scripts/odds_poll.py`.
+
+- `write_snapshots_from_response(s, raw_odds, fixture_id, captured_at, dedupe_minutes=45)` — parses one already-fetched `get_odds()` response and inserts a row per bookmaker/market, deduped; returns `{"written", "skipped_dedupe", "skipped_unparsed"}`
+- `already_captured_within(s, fixture_id, market_type, bookmaker_name, minutes)` — dedupe check
+- Captures every bookmaker in the response, not just Pinnacle+Bet365 (unlike `config/forward_leagues.py`'s narrower `CAPTURE_BOOKMAKERS`)
 
 ### `src/security/safe_load.py`
 
@@ -562,7 +572,8 @@ Key test files:
 | `scripts/backfill_odds.py` | Odds-specific backfill | Active |
 | `scripts/backfill_standings.py` | Standings-specific backfill | Active |
 | `scripts/make_predictions.py` | Manual prediction generation | Active |
-| `scripts/odds_poll.py` | Poll odds; recalculate EV | Active |
+| `scripts/odds_poll.py` | Poll odds; recalculate EV; also passively piggybacks `odds_snapshots` writes onto its own fetches (Phase 25, zero extra API cost) | Active |
+| `scripts/odds_trajectory_scheduler.py` | Active `odds_snapshots` capture for ALL odds-carrying fixtures (Phase 25) — ~1 touch/day until 6h before kickoff then ~hourly; near-kickoff never subject to `collection_daily_cap`; per-fixture attempt tracking in `logs/trajectory_last_attempt.json`; flock-serialized runs | Active |
 | `scripts/migrate.py` | Database schema migration runner | Active |
 | `scripts/generate_gap_predictions.py` | Elo hybrid h2h predictions for club gap fixtures (no Standings row). `--dry-run` flag available | Active |
 | `scripts/update_national_ratings.py` | Rebuild `pool='national'` Elo ratings from the 18-competition whitelist; prints isolation report | Active |
@@ -570,7 +581,7 @@ Key test files:
 | `scripts/check_model.py` | Inspect trained model metadata | Diagnostic tool |
 | `scripts/diagnostics.py` | Connectivity checks, backfill config validation | Diagnostic tool |
 | `scripts/daily_sanity_check.py` | Sanity checks run by scheduler | Active |
-| `scripts/capture_forward_odds.py` | Capture open→close odds time-series for forward-collection leagues (Pinnacle + Bet365 only) | Active |
-| `scripts/probe_forward_odds.py` | One-shot bookmaker-detection probe: fetches raw odds for a given `--league-ids` list, logs ALL bookmaker names and raw `bet_name` strings, writes to `odds_snapshots` only if Pinnacle present, writes `logs/soft_book_decision_needed.txt` flag if only soft books found | Active |
+| `scripts/capture_forward_odds.py` | Capture open→close odds time-series for the narrow 4-5-league forward-collection (Pinnacle + Bet365 only) | **Superseded (Phase 25)** by `odds_trajectory_scheduler.py`; never wired into cron, kept for reference |
+| `scripts/probe_forward_odds.py` | Tasmania/Norway clock-start check for the same `--league-ids`/`--days-ahead` cron entries — now **read-only** (Phase 25): reads what `odds_trajectory_scheduler.py` already captured and reports Pinnacle presence near kickoff, instead of fetching odds itself | Active |
 | `scripts/auto_bet.py` | Legacy betting pipeline — **DEPRECATED** (not in live path) | Dead — kept for reference |
 | `scripts/live_monitor.py` | Watch live matches in real-time | Likely dead |
