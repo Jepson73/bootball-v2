@@ -424,7 +424,11 @@ _execution_runtime: Optional[ExecutionRuntime] = None
 def main():
     """Entry point for execution runtime."""
     logger.info("🚀 Starting Bootball Execution Runtime")
-    
+
+    from src.deploy_info import record_running_commit
+    commit = record_running_commit("bootball-runtime.service")
+    logger.info(f"Running from commit {commit or 'UNKNOWN'}")
+
     config = ExecutionConfig.from_env()
     runtime = ExecutionRuntime(config)
     

@@ -80,13 +80,13 @@ def _mkt_cell(m: dict | None) -> str:
             sa = _ex_price(m.get("soft_away"))
             has_price = any([m.get("soft_home"), m.get("soft_draw"), m.get("soft_away")])
             bk = (
-                f'<span style="color:#484f58;font-size:8px" title="indicative"> {book}</span>'
+                f'<br><span style="color:#484f58;font-size:8px" title="indicative">{book}</span>'
                 if book and has_price else ""
             )
             dist = (
-                f'<br><small style="color:#636e7b;font-size:0.78em">'
-                f'H&nbsp;{round(ph*100)}%{sh}&nbsp;'
-                f'D&nbsp;{round(pd_*100)}%{sd}&nbsp;'
+                f'<br><small style="color:#636e7b;font-size:0.78em;line-height:1.6">'
+                f'H&nbsp;{round(ph*100)}%{sh}<br>'
+                f'D&nbsp;{round(pd_*100)}%{sd}<br>'
                 f'A&nbsp;{round(pa*100)}%{sa}'
                 f'{bk}</small>'
             )

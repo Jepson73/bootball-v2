@@ -41,7 +41,11 @@ def _format_market(market: dict) -> str:
     """
     Return a labelled probability string for one market cell.
 
-    H2H full vector: H 56% (1.78) · D 24% (3.60) · A 20% (4.20)  [Bet365]
+    H2H full vector (stacked):
+      H 56% (1.78)
+      D 24% (3.60)
+      A 20% (4.20)
+          Bet365
     H2H scalar:      Home 54% (1.78) *
     ou25/ou15/btts:  Over 55% (1.90)  [Bet365]
 
@@ -71,8 +75,8 @@ def _format_market(market: dict) -> str:
             sa = _price_tag(market.get("soft_away"))
             has_price = any([market.get("soft_home"), market.get("soft_draw"), market.get("soft_away")])
             return (
-                f'H {_col(ph)}{sh}&nbsp;'
-                f'D {_col(pd_)}{sd}&nbsp;'
+                f'H {_col(ph)}{sh}<br>'
+                f'D {_col(pd_)}{sd}<br>'
                 f'A {_col(pa)}{sa}'
                 + _book_tag(book, has_price)
             )

@@ -62,6 +62,11 @@ def health():
 # ── Startup ────────────────────────────────────────────────────────────────────
 def main():
     init_db()
+
+    from src.deploy_info import record_running_commit
+    commit = record_running_commit("bootball-web-v2.service")
+    logger.info("Running from commit %s", commit or "UNKNOWN")
+
     host = os.environ.get("HOST", "0.0.0.0")
     port = int(os.environ.get("PORT", "5000"))
     logger.info("Bootball V2 starting on %s:%s", host, port)

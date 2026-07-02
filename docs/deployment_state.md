@@ -1,6 +1,81 @@
 # Bootball — Deployment State Reference
-**Last updated:** 2026-06-30  
+**Last updated:** 2026-07-02 (Phase 23)  
 **Purpose:** Capture out-of-repo operational state so the system can be reproduced if the host is lost.
+
+---
+
+## Required Post-Commit Step: `scripts/deploy.sh`
+
+**Committed code does not run until the owning service restarts.** systemd does not watch
+files — `bootball-runtime.service` and `bootball-web-v2.service` keep executing whatever was
+in memory at process start, indefinitely, until something restarts them. The only thing that
+restarted them before this script existed was the host's own daily reboot (~04:00–04:20 UTC,
+outside our control — see "Host reboots daily" below) or an ad-hoc manual `systemctl restart`.
+
+This has caused real incidents four times: H2H vector persistence (Phase 11b/13c), the
+CACHE_DIR fix (Phase 11b — ran stale/broken for ~16.5h, ~62k failed cache writes before the
+next reboot picked it up), V1 predictions reappearing, and — most severely — Phase 21's h2h
+notation fix, void handling, `resync_stale_fixtures`, and the auto-dead rule all sitting
+committed-but-inert for up to 18 hours on 2026-07-01. Audit table:
+
+| Fix | Committed | Service last restarted before | Inert window | Corrupted anything while inert? | Live now? |
+|---|---|---|---|---|---|
+| CACHE_DIR path (Phase 11b) | 06-29 11:49:57 | 06-29 04:20:07 → next restart 06-30 04:19:24 | ~16.5h | Yes — ~62,270 `PermissionError` cache-write failures logged 06-29 11:00–06-30 05:00 (journalctl). Each hit a live API call instead of cache, but no bad data was written (fetch just failed and was retried) | Yes — confirmed via journal (errors dropped from 259/hr to a residual 2 stray root-owned files/hr, unrelated pre-existing files, not this bug) |
+| H2H vector persistence (Phase 13c) | 07-01 07:22:20 | 06-30 04:19:24 → next restart 07-01 18:52:21 | ~11.5h | No — the 988 pre-existing NULL-vector records it was meant to backfill just stayed NULL a bit longer; the one-time A2 backfill script was run manually with the fixed code already in the tree, ahead of the restart | Yes — `SELECT` on records created after 18:53 shows 0/73 with NULL `prob_home` |
+| h2h notation fix, void handling, `resync_stale_fixtures`, auto-dead rule (Phase 21+22) | 07-01 17:38:05 / 18:45:29 | 07-01 04:20:48 → next restart 18:52:21 / 18:53:31 | ~1h–18h depending on sub-fix | No confirmed corruption — DB check found zero `elo_hybrid` h2h predictions with a real `settled_at` timestamp before 17:23 (when the manual fix+cleanup was applied by hand, ahead of the commit and restart); no fixture had gone final yet, so the bug was genuinely caught before any live settlement used it | Yes — confirmed via today's 02:00 UTC cron `daily_run.py` log (`resync_stale_fixtures: checked 30, updated 4...`) and 16 fixtures in DB with `status='DEAD'` |
+| Soft-odds display (Phase 18+19) | 07-01 12:39:32 | web-v2 running since before 12:39 → restarted 18:14:11 same day | ~5.5h | No — display-only, no data written; viewers just saw stale UI, not a data bug | Yes — confirmed via curl against live port (see Task 3 below) |
+
+Full detail in commit messages `5c572b6` and `3b2a9a2`, which document this same investigation.
+
+**Rule: after any commit that touches `backend/runtime/`, `src/`, `v2/`, or `scripts/web_ui*.py`,
+run `scripts/deploy.sh`.**
+
+```bash
+scripts/deploy.sh          # restart every long-running service, verify each comes back active
+scripts/deploy.sh check    # report staleness (self-reported commit vs current HEAD) — no restart
+```
+
+### What it covers
+
+All long-running processes that import and execute this repo's code in-process (i.e. everything
+that can go stale — cron-triggered scripts cannot, see below):
+
+| Service | Runs | Restart needed when... |
+|---|---|---|
+| `bootball-runtime.service` | `backend/runtime/execution_runtime.py` — APScheduler (fetch_fixtures/results/odds, cleanup, live_settle) + `AgentCoordinator.run_cycle()` + `settle_placed_bets`/`settle_predictions` every 20 min | anything under `src/`, `backend/`, or `config/` changes |
+| `bootball-web-v2.service` | `scripts/web_ui_v2.py` (port 5000) | anything under `v2/` or `src/` changes |
+| `bootball-web.service` | `scripts/web_ui.py` (port 5001, V1 — reference/frozen) | included for completeness; V1 is not modified in normal work, but the service is still in-process and would go stale exactly the same way if it ever were |
+
+**Not in scope, and cannot go stale:** `daily_run.py`, `auto_bet.py`, `settle_fixtures.py`,
+`odds_poll.py`, `backfill_cron.py`, `probe_forward_odds.py` — all cron-triggered (`/etc/cron.d/bootball`,
+`crontab -l`). Each invocation is a fresh `python3` process that reads whatever is on disk at
+that moment, so they're automatically current after any commit. No restart mechanism needed or
+possible for these.
+
+### Detecting a stale service
+
+`bootball-runtime.service` and `bootball-web-v2.service` self-report the git commit they started
+from via `src/deploy_info.py` → `logs/deploy_state/<service>.running_commit`, written at process
+startup regardless of *how* the process was restarted (deploy.sh, manual `systemctl restart`, or
+the daily host reboot). `bootball-web.service` (V1, frozen) is not instrumented — `deploy.sh check`
+falls back to its own restart record for that one, which is only accurate if `deploy.sh` was the
+last thing to restart it.
+
+`scripts/deploy.sh check` compares these against current `HEAD` and reports up-to-date / stale
+(with commit count behind) per service.
+
+**Requires `git config --system --add safe.directory /opt/projects/bootball`** — the `bootball`
+system user could not otherwise run `git rev-parse HEAD` inside a repo it doesn't own (`.git` is
+root-owned); without this, `record_running_commit()` fails silently (logs a warning, service still
+starts) and staleness detection falls back to the weaker deploy.sh-record signal. Already applied
+on this host as of 2026-07-02; re-apply on fresh deploy (see checklist below).
+
+### Host reboots daily
+
+The VM itself reboots once a day around 04:00–04:20 UTC (host-level, outside this repo's control —
+observed via `last reboot`, not a cron job in this repo). This is what silently "fixed" every prior
+deploy-gap incident by the next morning — which is also why they went unnoticed for so long. Do not
+rely on it; always run `scripts/deploy.sh` after committing.
 
 ---
 
@@ -257,10 +332,20 @@ mkdir -p /var/log/bootball
 
 # 8. Install systemd services
 cp /opt/projects/bootball/docs/deployment_state.md  # read the service definitions above
-# Create /etc/systemd/system/bootball-runtime.service and bootball-web.service
+# Create /etc/systemd/system/bootball-runtime.service, bootball-web.service, bootball-web-v2.service
 systemctl daemon-reload
-systemctl enable bootball-runtime bootball-web
-systemctl start bootball-runtime bootball-web
+systemctl enable bootball-runtime bootball-web bootball-web-v2
+
+# 8b. Allow the bootball system user to run git inside the repo (needed for
+# scripts/deploy.sh's commit self-reporting — see "Required Post-Commit Step" above).
+# Only needed if .git ends up owned by a different user than whoever runs the services
+# (e.g. root ran the initial `git clone` before the chown -R in step 2, or an agent/CI
+# process commits as root later) — harmless to run unconditionally.
+git config --system --add safe.directory /opt/projects/bootball
+
+# 8c. Start all three services via the deploy script (restarts + verifies active, not
+# raw `systemctl start`) — establishes the first self-reported commit baseline.
+scripts/deploy.sh
 
 # 9. Install cron jobs
 cp /etc/cron.d/bootball  # from verbatim block above
