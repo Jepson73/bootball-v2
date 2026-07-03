@@ -331,6 +331,7 @@ Bet settlement pipeline.
 - `settle_all()` — main pipeline; calculates P/L; updates `PlacedBet` records
 - `update_live_fixture_statuses()` — fetches live fixtures; syncs DB status
 - `fetch_and_update_fixtures()` / `backfill_missing_scores()` — result corrections
+- `verify_ft_fixtures(hours=6, limit=100)` (Phase 27) — force-refetches (batched, 20/call) a fixture once before its reversible markets settle, stamping `Fixture.ft_verified_at`. Root cause: the per-league `status="FT"` completed-fixtures fetch never passed `force_refresh=True`, so a provider glitch or stale read (fixture momentarily reported FT with a mid-match/halftime score) got cached and stayed frozen for the rest of that day — two confirmed cases (2026-07-02) settled h2h off a frozen HT score. `settle_predictions()` now only settles reversible outcomes (h2h always; the FT-only branches of btts/ou — No/Under) once `ft_verified_at` is set; irreversible early-settle outcomes (btts=Yes, ou=Over) are unaffected since they're safe the instant they're mathematically certain. Both per-league `status="FT"` fetches (here and in `daily_run.py::_fetch_completed()`) now pass `force_refresh=True` so a bad snapshot can't freeze all day; `_save_completed()` no longer unconditionally overwrites a fixture's status to `"FT"` if it's already in a terminal state.
 
 ### `src/ingestion/client.py`
 
