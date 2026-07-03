@@ -945,3 +945,38 @@ class OddsSnapshot(Base):
     # BTTS
     odd_btts_yes: Mapped[float | None] = mapped_column(Float, nullable=True)
     odd_btts_no: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class CalibrationDriftState(Base):
+    """Persistent high-water mark for the live-drift calibration monitor.
+
+    Phase 28: replaces the in-memory `_calibration_seen_bet_ids` dedup that
+    reset on every process restart (Phase 27b found this caused the same 25
+    frozen PlacedBet rows to replay as "new" forever). One row per market;
+    last_seen_prediction_id is the highest PredictionRecord.id already folded
+    into StateCalibrationEngine's rolling window, so a restart resumes from
+    here instead of reprocessing already-consumed settlements.
+    """
+    __tablename__ = "calibration_drift_state"
+
+    market: Mapped[str] = mapped_column(String(20), primary_key=True)
+    last_seen_prediction_id: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class EloRebuildLog(Base):
+    """Audit trail for update_all_ratings() invocations (Phase 28).
+
+    Phase 27b found the club-pool Elo rebuild that ran inside the settlement-
+    corruption window had no traceable owner — nothing schedules
+    update_all_ratings(), so it must have been invoked manually, and there was
+    no record of when or by what. Every call now writes one row here.
+    """
+    __tablename__ = "elo_rebuild_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pool: Mapped[str] = mapped_column(String(20))
+    invoked_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    invoked_by: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    fixtures_processed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    latest_fixture_ceiling: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

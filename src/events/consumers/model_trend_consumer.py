@@ -68,33 +68,36 @@ class ModelTrendConsumer(EventConsumer):
         market = payload.get("market", "unknown")
         version = payload.get("model_version", "unknown")
         brier_score = payload.get("brier_score")
-        ece = payload.get("ece")
+        # This is the live-drift monitor's ECE (StateCalibrationEngine, recent
+        # PredictionRecord settlements) — not model_versions.ece (post-fit eval).
+        # See the Separation Principle in docs/codebase_reference.md.
+        live_drift_ece = payload.get("live_drift_ece")
         accuracy = payload.get("accuracy")
-        
+
         state = self._load_state()
-        
+
         # Update market performance
         if market not in state["market_performance"]:
             state["market_performance"][market] = []
-            
+
         state["market_performance"][market].append({
             "version": version,
             "brier_score": brier_score,
-            "ece": ece,
+            "live_drift_ece": live_drift_ece,
             "accuracy": accuracy,
             "timestamp": payload.get("timestamp", datetime.now(ZoneInfo("UTC")).isoformat())
         })
-        
+
         # Keep only last 50 entries per market
         state["market_performance"][market] = state["market_performance"][market][-50:]
-        
+
         # Track calibration drift
         if market not in state["calibration_drift"]:
             state["calibration_drift"][market] = []
-            
-        if ece is not None:
+
+        if live_drift_ece is not None:
             state["calibration_drift"][market].append({
-                "ece": ece,
+                "live_drift_ece": live_drift_ece,
                 "timestamp": payload.get("timestamp", datetime.now(ZoneInfo("UTC")).isoformat())
             })
         

@@ -95,15 +95,20 @@ class CalibrationConsumer(EventConsumer):
                     "color": 15105570,
                     "fields": [
                         {"name": "Market", "value": market.upper(), "inline": True},
-                        {"name": "Trigger", "value": payload.get("reason", "ece_drift"), "inline": True},
+                        {"name": "Trigger", "value": payload.get("reason", "live_drift_ece_drift"), "inline": True},
                     ],
                     "timestamp": payload.get("timestamp", ""),
                 })
                 return
 
-            trigger_ece = payload.get("ece", 0)
-            post_ece = (cal_metrics or {}).get("ece", 0)
-            cal_metrics["trigger_ece"] = trigger_ece
+            # live_drift_ece: the drift monitor's own ECE (recent PredictionRecord
+            # settlements, StateCalibrationEngine) — what triggered this recalibration.
+            # postfit_eval_ece: the newly-fit calibrator's held-out eval ECE
+            # (_fit_calibrator_for_market) — NOT the same metric; see Phase 27b/28
+            # and the Separation Principle in docs/codebase_reference.md.
+            trigger_live_drift_ece = payload.get("live_drift_ece", 0)
+            post_postfit_eval_ece = (cal_metrics or {}).get("postfit_eval_ece", 0)
+            cal_metrics["trigger_live_drift_ece"] = trigger_live_drift_ece
 
             registry = get_model_registry()
             new_ver = registry.register_recalibration(
@@ -113,13 +118,13 @@ class CalibrationConsumer(EventConsumer):
 
             self._send_webhook({
                 "title": f"✅ RECALIBRATION COMPLETE: {market.upper()}",
-                "description": "Automatic recalibration triggered by ECE drift",
+                "description": "Automatic recalibration triggered by live-drift ECE",
                 "color": 3066993,
                 "fields": [
                     {"name": "Market", "value": market.upper(), "inline": True},
                     {"name": "New Version", "value": f"`{label}`", "inline": True},
-                    {"name": "Trigger ECE", "value": f"{trigger_ece:.4f}", "inline": True},
-                    {"name": "Post-recal ECE", "value": f"{post_ece:.4f}", "inline": True},
+                    {"name": "Trigger live_drift_ece", "value": f"{trigger_live_drift_ece:.4f}", "inline": True},
+                    {"name": "Post-recal postfit_eval_ece", "value": f"{post_postfit_eval_ece:.4f}", "inline": True},
                     {"name": "Reason", "value": payload.get("reason", "drift"), "inline": False},
                 ],
                 "timestamp": payload.get("timestamp", ""),
@@ -190,7 +195,7 @@ class CalibrationConsumer(EventConsumer):
         market_fields = [
             {
                 "name": m.upper(),
-                "value": f"Brier: {v.get('brier', 0):.3f}  ECE: {v.get('ece', 0):.3f}",
+                "value": f"Brier: {v.get('brier', 0):.3f}  live_drift_ece: {v.get('live_drift_ece', 0):.3f}",
                 "inline": True,
             }
             for m, v in markets.items()

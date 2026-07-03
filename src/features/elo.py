@@ -18,6 +18,8 @@ scratch, so repeated runs are safe.
 """
 from __future__ import annotations
 
+import inspect
+import logging
 import math
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -27,6 +29,8 @@ from sqlalchemy.orm import Session
 
 from src.storage.db import get_session
 from src.storage.models import EloRating, Fixture, League
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -164,8 +168,16 @@ def update_all_ratings(pool: str = "club") -> int:
     pool first (pool-scoped DELETE), so repeated runs are idempotent and the
     other pool is never touched.
 
+    Every call is recorded to elo_rebuild_log (Phase 28 — a prior rebuild ran
+    with no traceable invoker, discovered during the Phase 27 settlement audit).
+    The caller's module is captured automatically via the call stack so no
+    call site needs to remember to pass it.
+
     Returns the number of FT fixtures processed.
     """
+    caller_frame = inspect.stack()[1]
+    invoked_by = f"{caller_frame.filename}:{caller_frame.function}"
+
     config = EloConfig()
     engine = EloEngine(config)
 
@@ -230,6 +242,14 @@ def update_all_ratings(pool: str = "club") -> int:
             latest_date[a_id] = f.date
 
         if not ratings:
+            session.execute(
+                text(
+                    "INSERT INTO elo_rebuild_log (pool, invoked_by, fixtures_processed, latest_fixture_ceiling) "
+                    "VALUES (:pool, :invoked_by, 0, NULL)"
+                ),
+                {"pool": pool, "invoked_by": invoked_by},
+            )
+            logger.info("update_all_ratings: pool=%s invoked_by=%s — 0 fixtures, nothing to rebuild", pool, invoked_by)
             return 0
 
         # Bulk insert — one row per team (final state)
@@ -249,6 +269,19 @@ def update_all_ratings(pool: str = "club") -> int:
                 "VALUES (:team_id, :as_of_date, :rating, :games_played, :pool)"
             ),
             rows,
+        )
+
+        ceiling = max(latest_date.values())
+        session.execute(
+            text(
+                "INSERT INTO elo_rebuild_log (pool, invoked_by, fixtures_processed, latest_fixture_ceiling) "
+                "VALUES (:pool, :invoked_by, :n, :ceiling)"
+            ),
+            {"pool": pool, "invoked_by": invoked_by, "n": len(fixtures), "ceiling": ceiling},
+        )
+        logger.info(
+            "update_all_ratings: pool=%s invoked_by=%s fixtures=%d latest_fixture_ceiling=%s",
+            pool, invoked_by, len(fixtures), ceiling,
         )
 
         return len(fixtures)

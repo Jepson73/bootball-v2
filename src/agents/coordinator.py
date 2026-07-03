@@ -159,8 +159,11 @@ class AgentCoordinator:
         self._policy_updated = False
         self._monte_carlo_executed = False
 
-        # Track which placed bet IDs have already been fed to the calibration engine
-        # to prevent duplicate accumulation across cycles within a single process session.
+        # DEAD as of Phase 28 — the live feedback cycle no longer feeds PlacedBet
+        # outcomes into calibration (see _fetch_placed_bet_outcomes_LEGACY_UNUSED
+        # and the Separation Principle in docs/codebase_reference.md). Left in
+        # place only because that legacy method still references it; do not
+        # wire it back into the live cycle.
         self._calibration_seen_bet_ids: set[int] = set()
         
         logger.info("[COORDINATOR] Multi-agent system initialized - CLOSED-LOOP ADAPTIVE CAPITAL SYSTEM")
@@ -953,36 +956,24 @@ class AgentCoordinator:
         }
         
         try:
-            # 7.1 Fetch outcomes from settled bets
-            logger.info("[COORDINATOR] 7.1 Fetching recent outcomes")
-            from src.storage.db import get_session
-            from src.storage.models import PlacedBet
-            
-            outcomes = []
-            with get_session() as session:
-                settled_bets = session.execute(
-                    select(PlacedBet).where(
-                        PlacedBet.settled == True
-                    ).order_by(PlacedBet.settled_at.desc()).limit(100)
-                ).scalars().all()
-
-                new_bets = [b for b in settled_bets if b.id not in self._calibration_seen_bet_ids]
-                for bet in new_bets:
-                    self._calibration_seen_bet_ids.add(bet.id)
-                    outcomes.append({
-                        "fixture_id": bet.fixture_id,
-                        "market": bet.market,
-                        # Use VCL calibrated prob for drift tracking; fall back to raw if unavailable
-                        "predicted_prob": bet.calibrated_prob if bet.calibrated_prob is not None else bet.our_prob,
-                        "actual_outcome": 1 if bet.pnl and bet.pnl > 0 else 0,
-                        "odds": bet.odds,
-                    })
-
+            # 7.1 Ingest recent prediction outcomes into the live-drift monitor.
+            #
+            # Phase 28 — Separation Principle: the prediction layer's drift
+            # monitor reads ONLY match-reality outcomes (PredictionRecord /
+            # Track A), never PlacedBet. Phase 27b found the previous version
+            # of this step pulled the 100 most recent settled PlacedBet rows
+            # — frozen since betting closed 2026-06-11 — and replayed them as
+            # "new" on every process restart (in-memory dedup), producing the
+            # same ECE=0.2807167287008361 forever and triggering 94 pointless
+            # h2h recalibrations. The old code is preserved, unused, at
+            # _fetch_placed_bet_outcomes_LEGACY_UNUSED for when betting is
+            # rebuilt in its own layer.
+            logger.info("[COORDINATOR] 7.1 Ingesting recent prediction outcomes (live-drift monitor)")
+            new_outcomes_count = self.calibration_engine.ingest_recent_prediction_outcomes()
             logger.info(
-                f"[COORDINATOR] Found {len(outcomes)} new settled bets for feedback "
-                f"({len(self._calibration_seen_bet_ids)} total seen)"
+                f"[COORDINATOR] Ingested {new_outcomes_count} new prediction outcomes for live-drift monitoring"
             )
-            
+
             # 7.2 Compute performance metrics
             logger.info("[COORDINATOR] 7.2 Computing performance metrics")
             performance = self.evaluator.evaluate(
@@ -999,22 +990,15 @@ class AgentCoordinator:
                 "timestamp": datetime.utcnow().isoformat(),
             })
             
-            # 7.3 Calibration update
+            # 7.3 Calibration update — only re-runs the drift check when there
+            # was genuinely new prediction-layer data this cycle (ingested in
+            # 7.1). No new outcomes means no report, not a replay of old ones.
             logger.info("[COORDINATOR] 7.3 Updating calibration")
-            if outcomes:
-                for outcome in outcomes:
-                    self.calibration_engine.add_prediction_outcome(
-                        fixture_id=outcome["fixture_id"],
-                        market=outcome["market"],
-                        predicted_prob=outcome["predicted_prob"],
-                        actual_outcome=outcome["actual_outcome"],
-                        odds=outcome["odds"],
-                    )
-                
+            if new_outcomes_count:
                 calibration_report = self.calibration_engine.generate_report()
                 feedback_results["calibration"] = calibration_report
                 self._calibration_updated = True
-                
+
                 logger.info(f"[COORDINATOR] Calibration updated: error={calibration_report.overall_calibration_error:.3f}")
             
             # 7.3b Update active architecture scores from governance analysis
@@ -1084,7 +1068,50 @@ class AgentCoordinator:
             raise
         
         return feedback_results
-    
+
+    def _fetch_placed_bet_outcomes_LEGACY_UNUSED(self) -> list[dict]:
+        """DEAD as of Phase 28 — not called anywhere in the live coordinator cycle.
+
+        This is the pre-Phase-28 body of feedback-cycle step 7.1. It fed the
+        prediction-layer calibration monitor from PlacedBet outcomes (bet P&L),
+        which violates the Separation Principle (docs/codebase_reference.md):
+        the prediction layer must learn only from match reality, never from
+        betting outcomes. It's also the literal mechanism behind the Phase 27b
+        "ghost alarm" — betting closed 2026-06-11 with exactly 100 settled
+        PlacedBet rows in the table, `_calibration_seen_bet_ids` lived only in
+        process memory, so every restart replayed the same 25 h2h bets as
+        "new" and recomputed the identical ECE=0.2807167287008361 forever,
+        triggering 94 pointless h2h recalibrations before this was diagnosed.
+
+        Retained verbatim (not deleted) as a reference for whenever betting is
+        rebuilt in its own layer — at that point it needs its OWN evaluation
+        loop with its own persistent state, not a resurrection of this method
+        wired back into prediction calibration. Do not call this from
+        _run_feedback_cycle or anywhere else in the live loop.
+        """
+        from src.storage.db import get_session
+        from src.storage.models import PlacedBet
+
+        outcomes = []
+        with get_session() as session:
+            settled_bets = session.execute(
+                select(PlacedBet).where(
+                    PlacedBet.settled == True
+                ).order_by(PlacedBet.settled_at.desc()).limit(100)
+            ).scalars().all()
+
+            new_bets = [b for b in settled_bets if b.id not in self._calibration_seen_bet_ids]
+            for bet in new_bets:
+                self._calibration_seen_bet_ids.add(bet.id)
+                outcomes.append({
+                    "fixture_id": bet.fixture_id,
+                    "market": bet.market,
+                    "predicted_prob": bet.calibrated_prob if bet.calibrated_prob is not None else bet.our_prob,
+                    "actual_outcome": 1 if bet.pnl and bet.pnl > 0 else 0,
+                    "odds": bet.odds,
+                })
+        return outcomes
+
     def _save_pipeline_trace(self, trace, run_id: str) -> None:
         """Save pipeline trace report for observability."""
         from src.contracts.pipeline_contracts import get_trace_report

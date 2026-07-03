@@ -364,7 +364,12 @@ def _fit_calibrator_for_market(market: str):
 
         metrics = {
             "brier_score": brier,
-            "ece": ece,
+            # This calibrator's own held-out post-fit eval ECE — distinct from
+            # StateCalibrationEngine's live_drift_ece (recent PredictionRecord
+            # settlements, drives the drift alarm). Conflating the two under
+            # one "ece" name across 94 versions was the Phase 27b root cause;
+            # see the Separation Principle in docs/codebase_reference.md.
+            "postfit_eval_ece": ece,
             "calibration_sample_size": len(rows),
             "eval_sample_size": len(eval_p),
         }

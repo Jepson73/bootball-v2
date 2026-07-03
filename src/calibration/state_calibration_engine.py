@@ -30,10 +30,22 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CalibrationMetrics:
-    """Calibration metrics for a single market."""
+    """Calibration metrics for a single market.
+
+    live_drift_ece is the drift-monitor's ECE — computed here, from recently
+    settled PredictionRecord outcomes, over StateCalibrationEngine's rolling
+    window. It is NOT the same number as ModelVersion.ece (the calibrator's
+    own held-out post-fit eval ECE, computed by
+    backend/execution_engine.py::_fit_calibrator_for_market). Phase 27b found
+    these two conflated under one name ("ece") for 94 versions: this one
+    fires CALIBRATION_DRIFT_DETECTED and should track live prediction
+    accuracy; the other describes how well a specific calibrator fit its own
+    holdout split. See docs/codebase_reference.md's Separation Principle
+    section for the full case study.
+    """
     market: str
     brier_score: float = 0.0
-    ece: float = 0.0  # Expected Calibration Error
+    live_drift_ece: float = 0.0  # Expected Calibration Error, live drift monitor
     reliability_slope: float = 1.0
     reliability_intercept: float = 0.0
     sample_count: int = 0
@@ -88,7 +100,7 @@ class StateCalibrationEngine:
 
         # Thresholds for alerts
         self.brier_threshold = 0.25
-        self.ece_threshold = 0.10
+        self.live_drift_ece_threshold = 0.10
         self.risk_bias_threshold = 0.15
         self.portfolio_drift_threshold = 0.10
         self.correlation_error_threshold = 0.20
@@ -105,6 +117,11 @@ class StateCalibrationEngine:
     def _mark_triggered(self, market: str, action: str) -> None:
         self._last_triggered[(market, action)] = datetime.utcnow()
     
+    # Cap on the in-memory rolling window (across all markets combined) so a
+    # long-lived process doesn't accumulate settlements forever. ~1250/market
+    # average at 4 markets — plenty for a "recent settlements" ECE read.
+    _MAX_PREDICTION_OUTCOMES = 5000
+
     def add_prediction_outcome(
         self,
         fixture_id: int,
@@ -123,8 +140,81 @@ class StateCalibrationEngine:
             timestamp=datetime.utcnow().isoformat()
         )
         self._prediction_outcomes.append(outcome)
-        
+        if len(self._prediction_outcomes) > self._MAX_PREDICTION_OUTCOMES:
+            self._prediction_outcomes = self._prediction_outcomes[-self._MAX_PREDICTION_OUTCOMES:]
+
         logger.debug(f"[CALIBRATION] Added outcome: {market} pred={predicted_prob:.2f} actual={actual_outcome}")
+
+    def ingest_recent_prediction_outcomes(self, markets: tuple[str, ...] = ("h2h", "btts", "ou25", "ou15"),
+                                           batch_limit: int = 500) -> int:
+        """Pull newly-settled PredictionRecord rows into the live-drift window.
+
+        Phase 28: this replaces the Phase 27b "ghost alarm" — the drift check
+        used to read the most recent 100 settled PlacedBet rows (frozen since
+        betting closed 2026-06-11, reproducing the identical ECE=0.2807167287
+        forever). Per the Separation Principle, the prediction layer's drift
+        monitor must read the prediction layer's own live outcomes only.
+
+        Dedup is a persistent per-market high-water mark (calibration_drift_state
+        table) — not an in-memory set — so a process restart resumes from
+        where it left off instead of replaying already-consumed settlements.
+
+        Uses PredictionRecord.calibrated_prob (falling back to our_prob if
+        unset) against `won`, matching what the prediction layer actually
+        served, same convention as the PlacedBet path it replaces.
+
+        Returns the number of new outcomes ingested this call.
+        """
+        from sqlalchemy import select as _select
+        from src.storage.db import get_session as _get_session
+        from src.storage.models import PredictionRecord, CalibrationDriftState
+
+        total_ingested = 0
+        with _get_session() as session:
+            for market in markets:
+                state = session.get(CalibrationDriftState, market)
+                last_seen_id = state.last_seen_prediction_id if state else 0
+
+                rows = session.execute(
+                    _select(PredictionRecord)
+                    .where(PredictionRecord.market == market)
+                    .where(PredictionRecord.settled == True)
+                    .where(PredictionRecord.won.isnot(None))
+                    .where(PredictionRecord.id > last_seen_id)
+                    .order_by(PredictionRecord.id.asc())
+                    .limit(batch_limit)
+                ).scalars().all()
+
+                if not rows:
+                    continue
+
+                for row in rows:
+                    predicted_prob = row.calibrated_prob if row.calibrated_prob is not None else row.our_prob
+                    if predicted_prob is None:
+                        continue
+                    self.add_prediction_outcome(
+                        fixture_id=row.fixture_id,
+                        market=market,
+                        predicted_prob=predicted_prob,
+                        actual_outcome=1 if row.won else 0,
+                        odds=row.odds_decimal or 0.0,
+                    )
+                    total_ingested += 1
+
+                new_last_seen = rows[-1].id
+                if state:
+                    state.last_seen_prediction_id = new_last_seen
+                    state.updated_at = datetime.utcnow()
+                else:
+                    session.add(CalibrationDriftState(
+                        market=market,
+                        last_seen_prediction_id=new_last_seen,
+                        updated_at=datetime.utcnow(),
+                    ))
+
+            session.commit()
+
+        return total_ingested
     
     def add_portfolio_state(self, state: PortfolioState) -> None:
         """Add a portfolio state snapshot."""
@@ -184,7 +274,7 @@ class StateCalibrationEngine:
         return CalibrationMetrics(
             market=market,
             brier_score=brier,
-            ece=ece,
+            live_drift_ece=ece,
             reliability_slope=float(slope),
             reliability_intercept=float(intercept),
             sample_count=len(outcomes),
@@ -337,10 +427,10 @@ class StateCalibrationEngine:
                     "reason": f"Brier score {metrics.brier_score:.3f} exceeds threshold",
                     "priority": "high"
                 }
-            elif metrics.ece > self.ece_threshold:
+            elif metrics.live_drift_ece > self.live_drift_ece_threshold:
                 market_adjustments[market] = {
                     "action": "recalibrate",
-                    "reason": f"ECE {metrics.ece:.3f} exceeds threshold",
+                    "reason": f"live_drift_ece {metrics.live_drift_ece:.3f} exceeds threshold",
                     "priority": "medium"
                 }
         
@@ -391,8 +481,8 @@ class StateCalibrationEngine:
                 event_bus.emit(Events.CALIBRATION_DRIFT_DETECTED, {
                     "market": market,
                     "calibration_error": m.brier_score if m else 0,
-                    "ece": m.ece if m else 0,
-                    "reason": adj.get("reason", "ece_threshold_exceeded"),
+                    "live_drift_ece": m.live_drift_ece if m else 0,
+                    "reason": adj.get("reason", "live_drift_ece_threshold_exceeded"),
                     "timestamp": report.timestamp,
                     "summary": f"Recalibrate {market}: {adj.get('reason', '')}",
                 })
@@ -406,7 +496,7 @@ class StateCalibrationEngine:
                     "direction": "degrading",
                     "confidence": "statistically_meaningful",
                     "brier_score": m.brier_score if m else 0,
-                    "ece": m.ece if m else 0,
+                    "live_drift_ece": m.live_drift_ece if m else 0,
                     "reason": adj.get("reason", "brier_threshold_exceeded"),
                     "timestamp": report.timestamp,
                     "summary": f"Retrain {market}: {adj.get('reason', '')}",
@@ -427,7 +517,7 @@ class StateCalibrationEngine:
             })
 
         event_bus.emit(Events.CALIBRATION_REPORT_READY, {
-            "markets": {k: {"brier": v.brier_score, "ece": v.ece}
+            "markets": {k: {"brier": v.brier_score, "live_drift_ece": v.live_drift_ece}
                        for k, v in report.markets.items()},
             "overall_error": report.overall_calibration_error,
             "risk_bias": report.risk_bias,
@@ -446,7 +536,7 @@ class StateCalibrationEngine:
             "markets": {
                 k: {
                     "brier_score": v.brier_score,
-                    "ece": v.ece,
+                    "live_drift_ece": v.live_drift_ece,
                     "reliability_slope": v.reliability_slope,
                     "reliability_intercept": v.reliability_intercept,
                     "sample_count": v.sample_count,

@@ -208,7 +208,11 @@ class ModelRegistry:
                 version_label=label,
                 brier_score=metrics.get("brier_score", 0),
                 accuracy=metrics.get("accuracy", 0),
-                ece=metrics.get("ece", 0),
+                # ModelVersion.ece is the post-fit held-out eval ECE (this
+                # calibrator's own metric) — not StateCalibrationEngine's
+                # live_drift_ece. See the Separation Principle in
+                # docs/codebase_reference.md.
+                ece=metrics.get("postfit_eval_ece", 0),
                 sample_size=metrics.get("sample_size", 0),
                 calibration_sample_size=metrics.get("calibration_sample_size", 0),
                 model_type=metrics.get("model_type", "lightgbm+isotonic"),
@@ -295,7 +299,8 @@ class ModelRegistry:
                 version_label=label,
                 brier_score=metrics.get("brier_score", active_dict["brier_score"]),
                 accuracy=metrics.get("accuracy", active_dict["accuracy"]),
-                ece=metrics.get("ece", active_dict["ece"]),
+                # ModelVersion.ece = post-fit held-out eval ECE, not live_drift_ece.
+                ece=metrics.get("postfit_eval_ece", active_dict["ece"]),
                 sample_size=active_dict["sample_size"],
                 calibration_sample_size=metrics.get("calibration_sample_size", 0),
                 model_type=active_dict["model_type"],
@@ -306,13 +311,17 @@ class ModelRegistry:
             s.add(new_ver)
             s.flush()
 
-            trigger_ece = metrics.get("trigger_ece")
-            post_ece = new_ver.ece or 0.0
-            if trigger_ece is not None:
-                detail = f"Trigger ECE: {trigger_ece:.4f} → post-recal ECE: {post_ece:.4f} (eval n={metrics.get('eval_sample_size', '?')})"
+            trigger_live_drift_ece = metrics.get("trigger_live_drift_ece")
+            post_postfit_eval_ece = new_ver.ece or 0.0
+            if trigger_live_drift_ece is not None:
+                detail = (
+                    f"Trigger live_drift_ece: {trigger_live_drift_ece:.4f} → "
+                    f"post-recal postfit_eval_ece: {post_postfit_eval_ece:.4f} "
+                    f"(eval n={metrics.get('eval_sample_size', '?')})"
+                )
             else:
-                prev_ece = active_dict.get("ece") or 0.0
-                detail = f"ECE {prev_ece:.4f} → {post_ece:.4f}"
+                prev_postfit_eval_ece = active_dict.get("ece") or 0.0
+                detail = f"postfit_eval_ece {prev_postfit_eval_ece:.4f} → {post_postfit_eval_ece:.4f}"
             s.add(RetrainEvent(
                 market=market,
                 old_version_id=old_id,

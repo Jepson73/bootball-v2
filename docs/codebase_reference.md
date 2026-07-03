@@ -502,6 +502,27 @@ A second, real gap was found and fixed during verification: `v2/routes/explorer_
 
 ---
 
+## The Separation Principle (Phase 28)
+
+Governs Track A (prediction accuracy, scored on outcomes regardless of odds) and Track B (EV/CLV overlay, Pinnacle-gated, analytical only since the betting thesis closed at Phase 8):
+
+> - **The prediction layer learns ONLY from match reality:** fixtures, scores, settled outcomes via PredictionRecord / Track A. Its models and calibrators are trained, refit, and drift-monitored exclusively on that data.
+> - **The (future) betting layer consumes predictions read-only.** It selects its bets FROM the real predictions, but it has its own "did I do well" structure — its own betting-choice and evaluation logic, its own state, its own metrics (ROI, CLV, selection quality), its own models if needed.
+> - **Betting NEVER feeds back into the prediction models or their calibration.** Predictions are built on facts; betting uses those facts to make its own reality, and its feedback loops stay entirely inside the betting layer. One-way flow: match reality → predictions → betting selection → betting self-evaluation. No arrow points back.
+
+**Case study — the ghost alarm (Phase 27b/28).** Two unrelated metrics were both called "ECE," and the confusion is exactly the kind of arrow this principle forbids:
+
+- `live_drift_ece` (`StateCalibrationEngine.compute_calibration_metrics()`) — the drift monitor. Fires `CALIBRATION_DRIFT_DETECTED`, which triggers a live recalibration of the market's calibrator.
+- `postfit_eval_ece` (`ModelVersion.ece`, from `backend/execution_engine.py::_fit_calibrator_for_market()`) — a specific calibrator's own held-out post-fit eval score. Healthy: near-zero through May 2026, 0.05–0.13 since mid-June.
+
+Before Phase 28, the drift monitor's input was `AgentCoordinator._run_feedback_cycle()` pulling the 100 most recent settled `PlacedBet` rows — a betting-layer artifact — into `live_drift_ece`'s computation. Betting closed 2026-06-11 (Phase 8); those 100 rows never changed again. The in-memory dedup (`_calibration_seen_bet_ids`) reset on every process restart, so the same 25 frozen h2h bets replayed as "new" forever, recomputing the identical `live_drift_ece=0.2807167287008361` on every restart and firing 94 pointless h2h recalibrations — a betting-layer number silently driving prediction-layer retraining, the last live arrow pointing backward. `postfit_eval_ece` was fine the whole time (0.05–0.13); the alarm reading a dead, disconnected pipeline is what never went away.
+
+Phase 28 retargeted `live_drift_ece` to read newly-settled `PredictionRecord` rows only, with the dedup moved to a persistent per-market high-water mark (`calibration_drift_state` table) so a restart resumes instead of replaying. The old `PlacedBet`-reading code is preserved, unused, at `AgentCoordinator._fetch_placed_bet_outcomes_LEGACY_UNUSED()` — reference for whenever betting is rebuilt, at which point it gets its own layer with its own state, not a resurrection of this arrow.
+
+**Going forward:** any new metric, retrain trigger, or feedback loop touching prediction models or calibrators must be checked against this principle before it ships — if its input can be traced back through a betting-domain table (`PlacedBet`, bet P&L, ROI), it's the wrong input.
+
+---
+
 ## Architecture Patterns
 
 | Pattern | Where Used |
