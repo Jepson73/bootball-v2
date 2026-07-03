@@ -128,6 +128,7 @@ Unified runtime mode enforcement.
 APScheduler auxiliary job definitions and circuit breaker.
 
 - **6 registered auxiliary jobs:** `job_fetch_fixtures` (6h), `job_fetch_results` (1h), `job_fetch_odds` (1h), `job_cleanup_matches` (5m), `job_live_settle` (2m), `job_daily_sanity_check` (24h)
+- `job_fetch_results` now calls `src.settlement.verify_ft_fixtures()` (Phase 27) right before `settle_all()`, so reversible markets never settle off an unconfirmed FT snapshot
 - 4 additional `job_*()` functions are defined but **not registered** in APScheduler: `job_auto_heal_runs`, `job_retrain_models`, `job_run_betting_bot`, `job_run_continuous_cycle` — these are superseded by `ExecutionRuntime`
 - `_circuit_ok()` / `_circuit_failure()` — fault-tolerant job execution
 - `is_job_allowed_in_mode()` — mode-based job filtering
@@ -141,6 +142,7 @@ Core execution loop — the single spine driving predictions and bet placement.
 - `RuntimeLock` enforces single-instance operation (prevents concurrent cycles)
 - Heartbeat watchdog updates every 60s during sleep
 - This is the entry point for all betting activity; APScheduler only handles data-fetch auxiliary jobs
+- `_run_settlement()` calls `src.settlement.verify_ft_fixtures()` (Phase 27) before `settle_placed_bets()`/`settle_predictions()`
 
 ### `backend/execution_engine.py`
 
@@ -200,7 +202,7 @@ Key models:
 
 | Model | Key Fields |
 |-------|-----------|
-| `Fixture` | id, league_id, home_team_id, away_team_id, date, status, goals_home, goals_away |
+| `Fixture` | id, league_id, home_team_id, away_team_id, date, status, goals_home, goals_away, ft_verified_at (Phase 27 — set once a force-refetch confirms FT/AET/PEN; gates reversible-market settlement, see `src/settlement.py`) |
 | `Team` | id, name, country, logo_url |
 | `League` | id, name, country, season |
 | `FixtureOdds` | fixture_id, market, bookmaker, outcome, decimal_odds, updated_at |
@@ -567,7 +569,7 @@ Key test files:
 | `scripts/web_ui.py` | V1 Flask UI + APScheduler on port 5001 (via gunicorn in `bootball-web.service`); reference build | Active |
 | `scripts/deploy.sh` | Post-commit deployment orchestrator; restarts all long-running services and verifies they start with current commit; `check` subcommand reports staleness without restarting | Active |
 | `scripts/run_continuous_cycle.py` | Core execution pipeline — called by `ExecutionRuntime` | Active |
-| `scripts/daily_run.py` | Data pipeline only (no prediction/betting); enforces `backfill_daily_cap` in `_fetch_completed()`; logs per-run quota snapshots to `logs/quota_log.csv` | Active |
+| `scripts/daily_run.py` | Data pipeline only (no prediction/betting); enforces `backfill_daily_cap` in `_fetch_completed()`; logs per-run quota snapshots to `logs/quota_log.csv`; `_fetch_completed()`'s per-league `status="FT"` fetch now `force_refresh=True` and `_save_completed()` won't clobber a fixture already in a terminal status (Phase 27); `_force_settlement_baseline()` calls `verify_ft_fixtures()` before settling | Active |
 | `scripts/backfill_all.py` | Historical data ingestion (multi-season) | Active |
 | `scripts/backfill_cron.py` | Nightly incremental backfill (4am cron) | Active |
 | `scripts/backfill_odds.py` | Odds-specific backfill | Active |
