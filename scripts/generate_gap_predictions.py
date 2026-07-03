@@ -33,7 +33,7 @@ from src.storage.db import get_session
 
 FLAT_PRIOR = (0.43, 0.27, 0.30)  # H / D / A
 
-YOUTH_KEYWORDS = ("U19", "U20", "U17", "Youth", "Juvenile")
+YOUTH_KEYWORDS = ("U19", "U20", "U21", "U17", "Youth", "Juvenile", "Primavera")
 
 FRIENDLY_LEAGUE_NAMES = {"Friendlies Clubs", "Friendlies", "Club Friendly"}
 

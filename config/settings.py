@@ -86,7 +86,8 @@ class Settings(BaseSettings):
     calendar_year_leagues: list[int] = Field(
         default_factory=lambda: [
             # East Asia
-            98,   # J1 League (Japan)
+            # 98 (J1 League) removed Phase 29 — restructured to an Aug-June
+            # European-style season from 2026/27 onward; see shifted_label_leagues.
             99,   # J2/J3 League (Japan)
             292,  # K League 1 (South Korea)
             293,  # K League 2 (South Korea)
@@ -147,6 +148,42 @@ class Settings(BaseSettings):
         ]
     )
 
+    # Leagues whose season boundary rolls over later than the default July-1
+    # cutover — the prior season is still being played (and not yet superseded
+    # by a new API-provisioned season) into July/August most years. Maps
+    # league_id -> cutover month (current_season formula, shifted).
+    late_rollover_leagues: dict[int, int] = Field(
+        default_factory=lambda: {
+            # Phase 29: Ethiopian Premier League's 2025/26 season (API label
+            # "2025") ran past its own listed end date (2026-06-21) — round 38
+            # was played 2026-07-03 with no season=2026 entry provisioned yet.
+            # The default July-1 cutover flips get_season() to 2026 before the
+            # API has anything under that season number, returning zero
+            # fixtures for this league from July 1 until the real rollover.
+            363: 9,  # Premier League (Ethiopia) — cutover pushed to September
+        }
+    )
+
+    # Leagues that label their season by END year (start_year + 1) instead of
+    # the standard European start-year convention. Maps league_id -> cutover
+    # month (the month the +1-offset season begins).
+    shifted_label_leagues: dict[int, int] = Field(
+        default_factory=lambda: {
+            # Phase 29: J1 League restructured from a Feb-Dec calendar-year
+            # season to an Aug-June European-style season starting with the
+            # campaign that kicked off 2026-08-07 — but the API labels that
+            # season "2027" (start_year + 1), not "2026" like a normal European
+            # league would. Confirmed via /leagues: year=2027, start=2026-08-07,
+            # current=True. Removed from calendar_year_leagues, which would
+            # otherwise return a bare 2026 forever.
+            98: 7,  # J1 League (Japan) — API flags the new season "current"
+                    # from July (season 2026 ended 2026-06-06, season 2027
+                    # already current as of query time despite not kicking
+                    # off until 2026-08-07), so cutover matches the standard
+                    # July-1 European convention, just with the +1 label offset.
+        }
+    )
+
     @property
     def current_season(self) -> int:
         from datetime import datetime
@@ -157,6 +194,16 @@ class Settings(BaseSettings):
 
     def get_season(self, league_id: int | None = None) -> int:
         """Return the correct API-Football season year for a given league."""
+        if league_id and league_id in self.shifted_label_leagues:
+            from datetime import datetime
+            now = datetime.now()
+            cutover = self.shifted_label_leagues[league_id]
+            return now.year + 1 if now.month >= cutover else now.year
+        if league_id and league_id in self.late_rollover_leagues:
+            from datetime import datetime
+            now = datetime.now()
+            cutover = self.late_rollover_leagues[league_id]
+            return now.year if now.month >= cutover else now.year - 1
         if league_id and league_id in self.calendar_year_leagues:
             from datetime import datetime
             return datetime.now().year

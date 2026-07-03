@@ -461,3 +461,100 @@ These items are **not** in git and would be lost if the machine is lost:
 1. **Back up `bootball.db`** — once odds_snapshots rows are written, they are the V2 data asset.
 2. **Verify cron is installed** — `crontab -l` / `cat /etc/cron.d/bootball` on host.
 3. **Confirm `API_FOOTBALL_KEY` is accessible** — the probe will silently return 0 rows if the key is invalid or quota is exhausted.
+
+---
+
+## Phase 29 — New-Season Readiness (2026/27 season boundary) & Expected Churn Baseline
+
+**Season-mapping fixes.** A full `/leagues` pull (1 call) + systematic audit of `get_season()`
+against every tracked league's actual current-season entry found two real silent-failure cases
+(the "Norway 777" class) among ~1,225 tracked leagues — the rest of the July/August season
+rollover resolves correctly with the existing `month >= 7` European convention:
+
+- **League 363 (Ethiopian Premier League)** — the 2025-labeled season regularly overruns past
+  the default July-1 cutover (round 38 of the 2025/26 season was played 2026-07-03, five days
+  after the API's own listed end date of 2026-06-21, with no `season=2026` entry provisioned
+  yet). `get_season(363)` was flipping to 2026 on July 1 regardless, which would have returned
+  zero fixtures for this league's daily FT-fetch until the real rollover. Added to
+  `settings.late_rollover_leagues` with a September cutover.
+- **League 98 (J1 League, Japan)** — restructured from a Feb-Dec calendar-year season to an
+  Aug-June European-style season starting with the campaign that kicked off 2026-08-07, but the
+  API labels that season `2027` (start year + 1), not `2026`. Removed from
+  `calendar_year_leagues` (which would return a bare 2026 forever) and added to
+  `settings.shifted_label_leagues`.
+
+Everything else — the ~150 actively-tracked leagues whose 2026/27 season starts through
+mid-September, and the ~180 leagues whose next season simply isn't provisioned by the API yet —
+resolves correctly already or will self-correct automatically as API-Football provisions each
+league's new season over the coming weeks; no code changes needed for those.
+
+**Ingestion readiness confirmed, no bulk backfill run.** `daily_run.py::_fetch_upcoming()`'s
+7-day NS window and `_fetch_completed()`'s FT sweep both call `settings.get_season(league_id)`
+per-league already — with the mapping fixes above, new-season fixtures will be picked up
+automatically as their dates enter range. `_save_upcoming()` also auto-creates `Team` rows
+(id + name only) for any team ID first seen in a fetched fixture, so team resolution was never
+actually blocked. A bounded **157-call team-registry pass** (`get_teams()` for every
+actively-tracked league with a season starting within 75 days) was run instead, to identify
+promoted/new teams ahead of their fixtures arriving: 29 leagues had team IDs never seen before in
+any context (87 total), all cold-start (no prior FT history anywhere in the DB) — concentrated in
+women's/youth/amateur-tier competitions entering our tracked set for the first time, not standard
+top-flight promotion (promoted teams in senior leagues keep their team ID across divisions, so
+they already carry FT history and correctly resolve `elo_both`). Found and fixed in the same
+pass: `scripts/generate_gap_predictions.py`'s youth-abstain keyword list was missing `U21` and
+`Primavera`, which would have let `Tournoi Maurice Revello` (U21) and `Campionato Primavera - 1`
+(Italian U20 league) fall through to `elo_partial` predictions instead of abstaining.
+
+**Expected fixture churn — baseline for anomaly comparison.** As of 2026-07-03:
+
+| Signal | Count | Notes |
+|---|---|---|
+| `Fixture.status = 'DEAD'` | 16 | Clustered in playoff/bracket competitions (Gabon Championnat D1: 7, Spain Segunda RFEF Play-offs: 4, Romania Liga III Play-offs: 1) + a few Netherlands entries — matches the Phase 22 provisional-bracket-reissue pattern, not new-season churn |
+| Stale NS (`status='NS'`, `date` in the past) | 20 | Dominated by `Friendlies Clubs` (11) |
+| Void-status fixtures (`PST/CANC/ABD/WO/SUSP`) | 39 | |
+| Total NS (upcoming) fixtures | 1,395 | |
+
+A rise in these counts as the 2026/27 season provisions across ~150 leagues through
+September is **expected, not an anomaly** — new seasons are maximally provisional (Phase 22) and
+the auto-dead rule (`DEAD_THRESHOLD=3` consecutive empty refetches) will keep pruning re-issued
+fixture IDs as usual. Treat a spike as noteworthy only if it's well outside these baselines *and*
+concentrated outside the already-known-volatile bracket/playoff competitions above.
+
+**Ethiopian Premier League (363) flagged schedule-volatile.** Two independent date-integrity
+incidents now confirmed in this league: the Phase 20 limbo fixture (Mekelle Kenema vs Negelle
+Arsi, stored date 2 days stale) and this phase's forensic (Mekelakeya vs Hadiya Hosaena, stored
+2026-07-04 while the provider had it live/FT on 2026-07-03 — see Task 6 below). Neither shows up
+in the current DEAD/stale-NS baseline table above (both were *future*-dated errors, not past-dated
+or bracket-reissue errors), but the newly-confirmed late-season-rollover behavior for this league
+(round 38 still being played 5 days after the API's own listed season-end date) is a plausible
+structural cause: a congested fixture backlog near season end gives the provider more
+opportunities to reshuffle round dates. Recommend treating this league as schedule-volatile for
+monitoring purposes even though it isn't the current top offender by raw DEAD/stale count — the
+other current offenders (Gabon D1, Spain/Romania play-offs, `Friendlies Clubs`) are a different,
+already-documented failure class (provisional bracket re-issuance / exhibition-match
+cancellations), not the future-dated-live signature described below.
+
+**Future-dated-but-live fixtures — new detection, Task 6.** `src.settlement.update_pending_fixture_scores()`
+(the live-score poller, ~7 API calls per invocation — `date=today` + each live status code) now also
+diffs the fetched fixture's actual date against the stored one and corrects it when the stored date
+is >2h ahead of the live date, logged. This closes the mirror gap to `resync_stale_fixtures()`,
+which only ever nets *past*-dated stale NS fixtures — a fixture wrongly dated in the *future*
+was invisible to every existing correction path until an FT sweep found it after the match ended.
+
+First live run of the fixed poller (2026-07-03, immediately after deploying) caught a **second**
+instance of this exact bug class in the wild: fixture 1506633, B36 II vs Hoyvík, `1. Deild`
+(Faroe Islands) — stored 2026-07-04 16:00, live and in the 2nd half at 2026-07-03 18:30, corrected
+automatically. This revises the original hypothesis: the pattern is not Ethiopia-specific — it's a
+general lower-division/low-tier-league scheduling-volatility signature (small federations, sparse
+API coverage, provisional round scheduling), consistent with the Phase 22 bracket-reissuance
+finding for a different failure mode in the same class of leagues. Recommend treating *any*
+low-tier/amateur-division league as schedule-volatile by default rather than allowlisting specific
+countries.
+
+Separately, `backend/scheduler.py::job_live_settle()` (every 2 min) was found to be a **complete
+no-op** since betting closed at Phase 8: it gated the entire live-score fetch behind "any
+unsettled `placed_bets`", which has been 0 ever since. This meant the live-score/date-correction
+path above never ran in the current (predictions-only) deployment phase, regardless of whether it
+had the date-diff logic. Un-gated it — `update_pending_fixture_scores()` now runs unconditionally
+every 2 minutes (~7 calls × 720 cycles/day ≈ 5,040 calls/day worst case, well inside current
+~58k/day headroom); `settle_placed_bets()` stays behind the pending-bet check since there's
+nothing to settle when it's 0.

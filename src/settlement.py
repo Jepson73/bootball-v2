@@ -192,6 +192,24 @@ def update_pending_fixture_scores() -> int:
             new_status = fix_info.get("status", {}).get("short", "")
             elapsed = fix_info.get("status", {}).get("elapsed")
             changed = False
+            # Forward-dated-but-live: the fixture is confirmed live/in-play RIGHT NOW,
+            # yet our stored date is materially in the future — the mirror image of the
+            # past-dated-stale case resync_stale_fixtures() handles. Correct immediately;
+            # this class is otherwise invisible until an FT sweep finds it after the match.
+            new_date_str = fix_info.get("date")
+            if new_date_str:
+                try:
+                    new_date = datetime.fromisoformat(new_date_str.replace("Z", "+00:00")).replace(tzinfo=None)
+                except ValueError:
+                    new_date = None
+                if new_date and fix.date and (fix.date - new_date).total_seconds() > 2 * 3600:
+                    logger.warning(
+                        "update_pending_fixture_scores: forward-dated-live fixture %d — "
+                        "stored date=%s, live now at date=%s (status=%s). Correcting.",
+                        fix_id, fix.date, new_date, new_status,
+                    )
+                    fix.date = new_date
+                    changed = True
             if new_status and new_status != fix.status:
                 fix.status = new_status
                 changed = True

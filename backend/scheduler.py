@@ -170,15 +170,29 @@ def job_fetch_fixtures():
 
 
 def job_live_settle():
-    """Fetch live scores for fixtures with pending bets and attempt settlement.
+    """Fetch live scores for all live fixtures globally, then settle any pending bets.
 
-    Runs every 2 minutes. Lightweight: only polls the small set of fixtures
-    that actually have unsettled bets (typically 5-15), not all 1225 leagues.
+    Runs every 2 minutes, costs ~7 API calls (one per live-status code) regardless
+    of bet activity — Track A predictions need live status/score/date corrections
+    even with zero pending bets. Previously this whole fetch was gated behind
+    "any unsettled placed_bets", which made it a permanent no-op since betting
+    closed (Phase 8): pending_count has been 0 ever since, so live fixtures went
+    unpolled and forward-dated-but-live corrections (see
+    src.settlement.update_pending_fixture_scores) never ran. Settlement itself
+    stays gated below since there's nothing to settle with zero pending bets.
     Bets requiring early settlement need 3 consecutive confirmations before
     committing, to absorb VAR delays.
     """
     from src.storage.db import get_session
-    from sqlalchemy import select, text
+    from sqlalchemy import text
+
+    logger.debug("JOB: live_settle — fetching live scores")
+
+    try:
+        from src.settlement import update_pending_fixture_scores
+        update_pending_fixture_scores()
+    except Exception:
+        logger.exception("JOB: live_settle live-score fetch failed (non-fatal)")
 
     with get_session() as s:
         pending_count = s.execute(
@@ -186,18 +200,15 @@ def job_live_settle():
         ).scalar()
 
     if not pending_count:
-        return  # nothing to do
-
-    logger.debug("JOB: live_settle — %d pending bets, fetching live scores", pending_count)
+        return  # nothing to settle
 
     try:
-        from src.settlement import update_pending_fixture_scores, settle_placed_bets
-        update_pending_fixture_scores()
+        from src.settlement import settle_placed_bets
         settled, pnl, _ = settle_placed_bets()
         if settled:
             logger.info("JOB: live_settle settled %d bets, P/L: %+.2f", settled, pnl)
     except Exception:
-        logger.exception("JOB: live_settle failed (non-fatal)")
+        logger.exception("JOB: live_settle settlement failed (non-fatal)")
 
 
 def job_fetch_results():
