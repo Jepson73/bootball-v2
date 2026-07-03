@@ -213,6 +213,8 @@ Key models:
 | `Calibration` | market, method, params_json, calibrated_at |
 | `EloRating` | team_id, rating, games_played, as_of_date, pool (`club`/`national`, Phase 16b) |
 | `OddsSnapshot` | fixture_id, bookmaker_id, bookmaker_name, market_type, captured_at, odd_home, odd_draw, odd_away, odd_over, odd_under, odd_btts_yes, odd_btts_no |
+| `CalibrationDriftState` | market (PK), last_seen_prediction_id, updated_at — Phase 28, persistent dedup for the live-drift monitor (replaces the in-memory set that replayed frozen outcomes on every restart) |
+| `EloRebuildLog` | pool, invoked_at, invoked_by, fixtures_processed, latest_fixture_ceiling — Phase 28, one row per `update_all_ratings()` call |
 
 ### `src/agents/coordinator.py`
 
@@ -446,6 +448,7 @@ All markets use `GradientBoostingClassifier` with Platt calibration. Features in
 `src/features/elo.py` — `EloEngine` with fixed draw model (exponential decay: `p_draw = 0.30 * exp(-|delta| / 400)`), pool-scoped `_get_current_rating()`, `predict(pool=)`, and `predict_from_ratings()`. `update_all_ratings(pool)` clears and rebuilds one pool without touching the other:
 - `pool='club'`: filter `league.country != 'World'`; processes 750K+ domestic-league FT fixtures; **20,930 teams rated**.
 - `pool='national'`: filter `league.id IN NATIONAL_POOL_LEAGUES` (18 competitions: WC, WC quals by confederation, UEFA/CONCACAF Nations Leagues, Euro, AFCON, Copa America, Asian Cup, senior Friendlies); processes ~7K FT fixtures; **583 national teams rated** (range 1037–1922).
+- **Phase 28 — rebuild governance**: nothing schedules `update_all_ratings()` for either pool (only `scripts/update_national_ratings.py` calls it, manually, for `national`); the Phase 27 settlement audit found the club-pool rebuild that ran inside the corruption window had no traceable invoker. Every call now writes one row to `elo_rebuild_log` — `pool`, `invoked_by` (caller's file:function, captured automatically via `inspect.stack()`, no call site needs to remember to pass it), `fixtures_processed`, `latest_fixture_ceiling` (max fixture date folded in).
 
 `scripts/generate_gap_predictions.py` — one-shot: writes h2h `PredictionRecord`s for club NS fixtures missing a prediction. Hybrid logic: both rated → `elo_both`; Friendlies + one unrated → `flat_prior` (H43/D27/A30); non-Friendly + one unrated → `elo_partial` (1500 default); Youth keyword → abstain. `INSERT OR IGNORE` for idempotency.
 
