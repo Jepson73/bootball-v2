@@ -367,7 +367,8 @@ class ExecutionRuntime:
             self._log_maintenance_to_db(None, success=False, error=str(e))
 
         try:
-            from src.settlement import settle_placed_bets, settle_predictions
+            from src.settlement import settle_placed_bets, settle_predictions, verify_ft_fixtures
+            verify_ft_fixtures()
             settled_bets, pnl, details = settle_placed_bets(days=30)
             settled_preds = settle_predictions(days=30)
             if settled_bets or settled_preds:

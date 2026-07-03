@@ -274,6 +274,7 @@ class DailyBaselinePipeline:
                     from_date=(now - timedelta(days=days_back)).strftime("%Y-%m-%d"),
                     to_date=now.strftime("%Y-%m-%d"),
                     status="FT",
+                    force_refresh=True,
                 )
                 if raw:
                     count = self._save_completed(raw, season)
@@ -300,10 +301,23 @@ class DailyBaselinePipeline:
                     continue
                 
                 goals = fixture.get("goals", {})
+                old_status, old_gh, old_ga = existing.status, existing.goals_home, existing.goals_away
                 existing.goals_home = goals.get("home")
                 existing.goals_away = goals.get("away")
-                existing.status = "FT"
-                
+                # Only flip to FT if not already in a terminal state — this
+                # query is filtered to status="FT" at the API level, but that
+                # filter itself can momentarily include a still-live fixture
+                # (see Phase 27: Dundee/Thor internal-freeze cases), so this
+                # write must not clobber a genuinely later live status. The
+                # fixture still gets picked up correctly once truly final,
+                # since this loop re-runs every cycle.
+                if existing.status not in ("FT", "AET", "PEN"):
+                    existing.status = "FT"
+                logger.info(
+                    "[BASELINE] _save_completed: fixture %d %s %s-%s -> %s %s-%s",
+                    fid, old_status, old_gh, old_ga, existing.status, existing.goals_home, existing.goals_away,
+                )
+
                 if goals.get("home") is not None and goals.get("away") is not None:
                     if goals["home"] > goals["away"]:
                         existing.outcome = "H"
@@ -563,7 +577,12 @@ class DailyBaselinePipeline:
 
     def _force_settlement_baseline(self):
         """Settle bets and predictions for any finished fixtures."""
-        from src.settlement import settle_placed_bets, settle_predictions
+        from src.settlement import settle_placed_bets, settle_predictions, verify_ft_fixtures
+
+        try:
+            verify_ft_fixtures()
+        except Exception:
+            logger.exception("[BASELINE] verify_ft_fixtures failed")
 
         try:
             bets_settled, pnl, _ = settle_placed_bets()

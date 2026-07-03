@@ -183,6 +183,12 @@ class Fixture(Base):
 
     fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    # Set once a fresh force-refresh confirms this fixture's FT/AET/PEN status
+    # and score. NULL means "seen as final but not yet confirmed" — reversible
+    # markets (h2h, Under X, BTTS No) must not settle until this is set. See
+    # migration 029 and settle_predictions()/verify_ft_fixtures().
+    ft_verified_at: Mapped[datetime | None] = mapped_column(DateTime)
+
     league: Mapped["League"] = relationship(back_populates="fixtures")
     home_team: Mapped["Team"] = relationship(
         foreign_keys=[home_team_id], back_populates="home_fixtures"

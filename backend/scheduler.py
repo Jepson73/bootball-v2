@@ -226,9 +226,10 @@ def job_fetch_results():
 
     # After fetching results, settle any pending bets whose fixtures are now FT
     try:
-        from src.settlement import fetch_and_update_fixtures, settle_all, backfill_missing_scores
+        from src.settlement import fetch_and_update_fixtures, settle_all, backfill_missing_scores, verify_ft_fixtures
         fetch_and_update_fixtures(days=7)
         backfill_missing_scores(days=14)
+        verify_ft_fixtures()
         result = settle_all()
         if result['bets_settled'] > 0 or result['predictions_settled'] > 0:
             logger.info(

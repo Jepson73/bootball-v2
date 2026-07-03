@@ -269,6 +269,7 @@ def fetch_and_update_fixtures(days: int = 7, force_refetch_hours: int = 3) -> in
                 from_date=cutoff.strftime("%Y-%m-%d"),
                 to_date=today_str,
                 status="FT",
+                force_refresh=True,
             )
             if results:
                 completed.extend(results)
@@ -1041,8 +1042,106 @@ def _outcomes_match(market: str, predicted_outcome: str, actual: str) -> bool:
     return str(predicted_outcome).lower() == str(actual).lower()
 
 
+
+# Markets whose result can flip right up until true full time — these must
+# never settle off an unconfirmed FT snapshot. btts=Yes and ou=Over are
+# deliberately excluded: they're irreversible the moment the threshold is
+# crossed, so they're safe to settle without waiting on ft_verified_at.
+_REVERSIBLE_MARKETS = frozenset({"h2h", "btts", "ou25", "ou15"})
+
+
+def verify_ft_fixtures(hours: int = 6, limit: int = 100) -> int:
+    """Force-refetch recently-final fixtures once before their reversible
+    markets are allowed to settle.
+
+    Phase 27: two confirmed cases (Dundee II vs Peterhead, Thor Akureyri vs
+    KR Reykjavik, 2026-07-02) had status=FT with goals frozen at the halftime
+    score — an internal freeze, since a live re-check showed the provider had
+    the correct final all along. get_market_result() already gates h2h/Under/
+    BTTS-No on is_final, but nothing ever re-verified that the FT snapshot
+    itself was trustworthy before settle_predictions() acted on it.
+
+    Finds fixtures with status in (FT, AET, PEN), ft_verified_at IS NULL, and
+    at least one unsettled prediction — force-refetches each (1 call/fixture,
+    capped at `limit`/run), overwrites goals/status with the fresh response,
+    and stamps ft_verified_at. settle_predictions() then only settles
+    reversible markets once ft_verified_at is set, so a stale/glitched FT
+    snapshot gets one authoritative correction before it can lock in a wrong
+    verdict, without blocking the irreversible-market early-settle path.
+
+    Returns the number of fixtures verified (and possibly corrected).
+    """
+    from src.storage.models import PredictionRecord
+
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    with get_session() as s:
+        fixture_ids = s.execute(
+            select(Fixture.id)
+            .join(PredictionRecord, PredictionRecord.fixture_id == Fixture.id)
+            .where(Fixture.status.in_(["FT", "AET", "PEN"]))
+            .where(Fixture.ft_verified_at.is_(None))
+            .where(Fixture.date >= cutoff)
+            .where(PredictionRecord.settled == False)
+            .distinct()
+            .limit(limit)
+        ).scalars().all()
+
+    if not fixture_ids:
+        return 0
+
+    client = APIFootballClient()
+    verified = 0
+    now = datetime.utcnow()
+    with get_session() as s:
+        for i in range(0, len(fixture_ids), 20):
+            chunk = fixture_ids[i:i + 20]
+            ids_param = "-".join(str(f) for f in chunk)
+            try:
+                raw = client.get_fixtures(ids=ids_param, force_refresh=True)
+            except Exception as e:
+                logger.warning("verify_ft_fixtures: fetch failed for chunk %s…: %s", chunk[:3], e)
+                continue
+
+            by_id = {r.get("fixture", {}).get("id"): r for r in raw}
+            for fid in chunk:
+                r = by_id.get(fid)
+                if not r:
+                    continue
+                api_status = r.get("fixture", {}).get("status", {}).get("short")
+                goals = r.get("goals", {})
+                api_gh, api_ga = goals.get("home"), goals.get("away")
+                if api_gh is None or api_ga is None:
+                    continue
+
+                fix = s.get(Fixture, fid)
+                if not fix:
+                    continue
+                if (fix.status, fix.goals_home, fix.goals_away) != (api_status, api_gh, api_ga):
+                    logger.info(
+                        "verify_ft_fixtures: fixture %d corrected %s %s-%s -> %s %s-%s",
+                        fid, fix.status, fix.goals_home, fix.goals_away, api_status, api_gh, api_ga,
+                    )
+                    fix.status = api_status
+                    fix.goals_home = api_gh
+                    fix.goals_away = api_ga
+                fix.ft_verified_at = now
+                verified += 1
+
+        if verified:
+            s.commit()
+
+    logger.info("verify_ft_fixtures: verified %d fixture(s)", verified)
+    return verified
+
+
 def settle_predictions(days: int | None = None) -> int:
     """Settle unsettled PredictionRecords for completed fixtures.
+
+    Reversible-market outcomes (h2h, Under X, BTTS No) only settle once
+    Fixture.ft_verified_at is set — see verify_ft_fixtures(). Irreversible
+    early-settle outcomes (btts=Yes, ou=Over) are unaffected: get_market_result()
+    already returns those the moment they're mathematically certain, and
+    that's independent of FT confirmation.
 
     Args:
         days: If provided, only settle predictions for fixtures from the last N days.
@@ -1050,7 +1149,6 @@ def settle_predictions(days: int | None = None) -> int:
     Returns count of settled predictions.
     """
     from src.storage.models import PredictionRecord, Fixture
-    from sqlalchemy import and_
 
     settled = 0
     with get_session() as s:
@@ -1071,12 +1169,23 @@ def settle_predictions(days: int | None = None) -> int:
 
         for pred, fixture in unsettled:
             actual = get_market_result(fixture, pred.market)
-            if actual:
-                pred.actual_outcome = actual
-                pred.won = _outcomes_match(pred.market, pred.predicted_outcome, actual)
-                pred.settled = True
-                pred.settled_at = datetime.utcnow()
-                settled += 1
+            if not actual:
+                continue
+            # Irreversible early-settle results (btts=Yes, ou=Over) are safe
+            # regardless of FT confirmation. Everything else — h2h always,
+            # and the FT-only branches of btts/ou (No/Under) — requires a
+            # verified FT snapshot before it's allowed to lock in.
+            is_irreversible_early = (
+                (pred.market == "btts" and actual == "Yes")
+                or (pred.market in ("ou25", "ou15") and actual == "Over")
+            )
+            if not is_irreversible_early and fixture.ft_verified_at is None:
+                continue
+            pred.actual_outcome = actual
+            pred.won = _outcomes_match(pred.market, pred.predicted_outcome, actual)
+            pred.settled = True
+            pred.settled_at = datetime.utcnow()
+            settled += 1
 
         if settled > 0:
             s.commit()
