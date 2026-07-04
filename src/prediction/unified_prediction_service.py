@@ -269,15 +269,19 @@ class UnifiedPredictionService:
                         else:
                             if market_odds:
                                 p_blended, p_market = blend_with_market(p_final, market_odds, normalized_outcome)
-                            else:
-                                # Missing/incomplete odds set (not an exception) — still a fallback,
-                                # still worth counting and logging loudly. A silent fallback here is
-                                # exactly how the market-blend went unnoticed for months.
+                            if not market_odds or p_market is None:
+                                # Either no full odds set, OR blend_with_market() itself
+                                # internally rejected a present odds set (outcome label
+                                # mismatch, odds < 1.01, Shin failure) — p_market stays
+                                # None either way. Checking only "market_odds truthy" and
+                                # not this second condition is exactly the silent gap that
+                                # let unblended EV back in after the first fix: catch both.
                                 self._blend_fallback_count += 1
                                 logger.warning(
-                                    "[PREDICTION] No full market-odds set for fixture %s/%s — "
-                                    "EV uses unblended calibrated_prob (%.4f) instead of market-blended.",
-                                    fixture_id, normalized_market, p_final,
+                                    "[PREDICTION] No usable market blend for fixture %s/%s "
+                                    "(outcome=%s, market_odds=%s) — EV uses unblended "
+                                    "calibrated_prob (%.4f) instead of market-blended.",
+                                    fixture_id, normalized_market, normalized_outcome, market_odds, p_final,
                                 )
 
                         ev = p_blended * odds - 1  # EV uses market-blended probability
