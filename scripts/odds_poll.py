@@ -31,6 +31,7 @@ from src.storage.models import Fixture, FixtureOdds, PredictionRecord, PlacedBet
 from src.betting.ev import expected_value
 from src.betting.alerts import BettingAlerts, BetAlert
 from src.models.calibrator import calibrate_prediction
+from src.calibration.market_blend import blend_with_market
 
 logging.basicConfig(
     level=logging.INFO,
@@ -264,16 +265,49 @@ def poll_and_update_odds(s, client, fixture_ids, dry_run=False):
     return updated
 
 
+_MARKET_OUTCOME_FIELDS = {
+    "h2h": {"1": "odd_home", "X": "odd_draw", "2": "odd_away"},
+    "btts": {"Yes": "odd_btts_yes", "No": "odd_btts_no"},
+    "ou25": {"Over": "odd_over", "Under": "odd_under"},
+    "ou15": {"Over": "odd_over15", "Under": "odd_under15"},
+}
+
+
+def _market_odds_set(s, fixture_id: int, market: str) -> dict | None:
+    """Full mutually-exclusive odds set for de-vig blending — same shape as
+    UnifiedPredictionService._get_market_odds_set(). Returns None if any
+    outcome's odds are missing. Reads attributes while the session is still
+    open (that exact ordering bug — reading after the session closed — is
+    what silently broke market-blended EV everywhere else; see Phase 30)."""
+    fields = _MARKET_OUTCOME_FIELDS.get(market)
+    if not fields:
+        return None
+    rows = s.execute(select(FixtureOdds).where(FixtureOdds.fixture_id == fixture_id)).scalars().all()
+    if not rows:
+        return None
+    result = {}
+    for label, field in fields.items():
+        value = max([getattr(r, field) for r in rows if getattr(r, field)], default=None)
+        if value is None:
+            return None
+        result[label] = value
+    return result
+
+
 def recalculate_prediction_ev(s, fixture_ids, dry_run=False):
-    """Recalculate EV for PredictionRecords when odds change."""
-    field_map = {
-        "h2h": {"1": "odd_home", "X": "odd_draw", "2": "odd_away"},
-        "btts": {"Yes": "odd_btts_yes", "No": "odd_btts_no"},
-        "ou25": {"Over": "odd_over", "Under": "odd_under"},
-        "ou15": {"Over": "odd_over15", "Under": "odd_under15"},
-    }
+    """Recalculate EV for PredictionRecords when odds change.
+
+    Phase 30: this used to compute EV straight off calibrated_prob with no
+    market blend at all — a second, independent source of the same
+    unblended-EV defect fixed in UnifiedPredictionService. Odds change
+    constantly, so every re-poll was silently overwriting a correctly
+    blended ev/blended_prob/market_prob with an unblended one. Now mirrors
+    the same blend_with_market() shrink the coordinator path uses.
+    """
+    field_map = _MARKET_OUTCOME_FIELDS
 
     updated = 0
+    blend_fallbacks = 0
 
     for fix_id in fixture_ids:
         preds = s.execute(
@@ -306,16 +340,31 @@ def recalculate_prediction_ev(s, fixture_ids, dry_run=False):
 
             calibration = calibrate_prediction(pred.market, pred.our_prob)
             calibrated_prob = calibration.calibrated_prob
-            ev = expected_value(calibrated_prob, odds_decimal)
+
+            market_odds = _market_odds_set(s, fix_id, pred.market)
+            p_blended, p_market = (calibrated_prob, None)
+            if market_odds:
+                p_blended, p_market = blend_with_market(calibrated_prob, market_odds, pred.predicted_outcome)
+            if p_market is None:
+                blend_fallbacks += 1
+                logger.warning(
+                    "recalculate_prediction_ev: no usable market-odds set for fixture %d/%s — "
+                    "EV uses unblended calibrated_prob (%.4f) instead of market-blended.",
+                    fix_id, pred.market, calibrated_prob,
+                )
+
+            ev = expected_value(p_blended, odds_decimal)
             implied_prob = 1.0 / odds_decimal
-            edge = (calibrated_prob - implied_prob) * 100
+            edge = (p_blended - implied_prob) * 100
 
             if dry_run:
-                logger.info(f"  [DRY RUN] Would update pred {pred.id}: EV={ev:.3f}, calibrated_prob={calibrated_prob:.3f}")
+                logger.info(f"  [DRY RUN] Would update pred {pred.id}: EV={ev:.3f}, blended_prob={p_blended:.3f}")
             else:
                 pred.odds_decimal = odds_decimal
                 pred.ev = ev
                 pred.calibrated_prob = calibrated_prob
+                pred.market_prob = p_market
+                pred.blended_prob = p_blended
                 pred.implied_prob = implied_prob
                 pred.edge = edge
                 pred.bookmaker = odds_row.bookmaker
@@ -324,6 +373,13 @@ def recalculate_prediction_ev(s, fixture_ids, dry_run=False):
 
         if not dry_run:
             s.commit()
+
+    if blend_fallbacks:
+        logger.error(
+            "recalculate_prediction_ev: %d/%d predictions this run fell back to unblended EV "
+            "(no market-blend applied) — see preceding warnings for which fixtures.",
+            blend_fallbacks, updated,
+        )
 
     return updated
 
