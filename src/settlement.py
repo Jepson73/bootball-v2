@@ -179,6 +179,7 @@ def update_pending_fixture_scores() -> int:
         return 0
 
     updated = 0
+    forward_dated_catches = []
     with get_session() as s:
         for fix_data in all_live:
             fix_info = fix_data.get("fixture", {})
@@ -208,6 +209,12 @@ def update_pending_fixture_scores() -> int:
                         "stored date=%s, live now at date=%s (status=%s). Correcting.",
                         fix_id, fix.date, new_date, new_status,
                     )
+                    forward_dated_catches.append({
+                        "fixture_id": fix_id,
+                        "stored_date": str(fix.date),
+                        "live_date": str(new_date),
+                        "status": new_status,
+                    })
                     fix.date = new_date
                     changed = True
             if new_status and new_status != fix.status:
@@ -234,6 +241,18 @@ def update_pending_fixture_scores() -> int:
             s.commit()
 
     logger.info("update_pending_fixture_scores: updated %d fixtures (checked %d live globally)", updated, len(all_live))
+
+    if forward_dated_catches:
+        try:
+            from src.alerts.event_bus import event_bus, Events
+            event_bus.emit(Events.SETTLEMENT_INTEGRITY_EVENT, {
+                "kind": "forward_dated_live_catch",
+                "count": len(forward_dated_catches),
+                "catches": forward_dated_catches,
+            })
+        except Exception:
+            logger.exception("update_pending_fixture_scores: failed to emit settlement-integrity event")
+
     return updated
 
 
@@ -1109,6 +1128,7 @@ def verify_ft_fixtures(hours: int = 6, limit: int = 100) -> int:
 
     client = APIFootballClient()
     verified = 0
+    corrections = []
     now = datetime.utcnow()
     with get_session() as s:
         for i in range(0, len(fixture_ids), 20):
@@ -1139,6 +1159,11 @@ def verify_ft_fixtures(hours: int = 6, limit: int = 100) -> int:
                         "verify_ft_fixtures: fixture %d corrected %s %s-%s -> %s %s-%s",
                         fid, fix.status, fix.goals_home, fix.goals_away, api_status, api_gh, api_ga,
                     )
+                    corrections.append({
+                        "fixture_id": fid,
+                        "from": f"{fix.status} {fix.goals_home}-{fix.goals_away}",
+                        "to": f"{api_status} {api_gh}-{api_ga}",
+                    })
                     fix.status = api_status
                     fix.goals_home = api_gh
                     fix.goals_away = api_ga
@@ -1149,6 +1174,18 @@ def verify_ft_fixtures(hours: int = 6, limit: int = 100) -> int:
             s.commit()
 
     logger.info("verify_ft_fixtures: verified %d fixture(s)", verified)
+
+    if corrections:
+        try:
+            from src.alerts.event_bus import event_bus, Events
+            event_bus.emit(Events.SETTLEMENT_INTEGRITY_EVENT, {
+                "kind": "verify_guard_correction",
+                "count": len(corrections),
+                "corrections": corrections,
+            })
+        except Exception:
+            logger.exception("verify_ft_fixtures: failed to emit settlement-integrity event")
+
     return verified
 
 
@@ -1284,7 +1321,46 @@ def mark_fixtures_dead(fixture_ids: list[int]) -> int:
         s.commit()
 
     logger.info("Marked %d fixtures DEAD, voided %d predictions", len(fixture_ids), voided)
+    _check_dead_mark_spike(len(fixture_ids))
     return voided
+
+
+_DEAD_MARK_HISTORY_FILE = Path("data/raw/.dead_mark_history.json")
+_DEAD_MARK_HISTORY_WINDOW = 20
+
+
+def _check_dead_mark_spike(count: int) -> None:
+    """Compare this call's DEAD-mark count against the trailing rolling baseline
+    (Phase 30) and emit a settlement-integrity event if it's a clear outlier.
+    No hard-coded baseline exists (the recurring-provider-behavior rate varies
+    by season/competition mix), so the baseline is self-computed from recent
+    calls rather than guessed — a spike is a call that runs well above what
+    this system has actually been seeing lately.
+    """
+    try:
+        history = []
+        if _DEAD_MARK_HISTORY_FILE.exists():
+            history = json.loads(_DEAD_MARK_HISTORY_FILE.read_text())
+
+        baseline = (sum(history) / len(history)) if history else 0.0
+        is_spike = count > max(3, baseline * 3)
+
+        history.append(count)
+        history = history[-_DEAD_MARK_HISTORY_WINDOW:]
+        _DEAD_MARK_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        tmp = _DEAD_MARK_HISTORY_FILE.with_suffix(".tmp")
+        tmp.write_text(json.dumps(history))
+        tmp.replace(_DEAD_MARK_HISTORY_FILE)
+
+        if is_spike:
+            from src.alerts.event_bus import event_bus, Events
+            event_bus.emit(Events.SETTLEMENT_INTEGRITY_EVENT, {
+                "kind": "dead_mark_spike",
+                "count": count,
+                "rolling_baseline": round(baseline, 2),
+            })
+    except Exception:
+        logger.exception("_check_dead_mark_spike failed (non-fatal)")
 
 
 def void_unplayable_predictions(fixture_ids: list[int] | None = None) -> int:

@@ -172,3 +172,7 @@ class Events:
     MODEL_RETRAIN_STARTED = "model_retrain_started"
     MODEL_RETRAIN_COMPLETED = "model_retrain_completed"
     MODEL_RECALIBRATION_COMPLETED = "model_recalibration_completed"
+
+    # Settlement integrity (Phase 30) — verify-guard corrections, forward-dated-live
+    # catches, DEAD-mark spikes. Data-integrity signal, distinct from betting/policy.
+    SETTLEMENT_INTEGRITY_EVENT = "settlement_integrity_event"

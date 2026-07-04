@@ -77,6 +77,13 @@ class Settings(BaseSettings):
     alerts_enabled: bool = Field(default=True)
     alerts_top_n: int = Field(default=5)
     alerts_min_ev: float = Field(default=0.05)
+    # Phase 30 (Separation Principle): the V1/betting-era coordinator notifier
+    # (Cycle Complete, Top 3 Picks, Policy Engine reports, Adaptation Score /
+    # Closed Loop Validation theater) is retired from Discord. Default OFF —
+    # only flip to re-enable V1's own notifier/consumers for debugging.
+    # discord_webhook_url stays shared: V2's notifier (src/notifications/v2_discord_notifier.py)
+    # uses it independently of this flag.
+    discord_v1_enabled: bool = Field(default=False)
 
     # ── Localisation ────────────────────────────────────────
     timezone: str = Field(default="Europe/Stockholm")

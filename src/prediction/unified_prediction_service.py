@@ -45,6 +45,7 @@ class UnifiedPredictionService:
     
     def __init__(self):
         self._system_mode = "PORTFOLIO_PRIMARY"  # Default enforcement
+        self._blend_fallback_count = 0
         logger.info("[PREDICTION] UnifiedPredictionService initialized - SINGLE SOURCE OF TRUTH")
     
     def generate(self, fixtures: list = None) -> list[dict]:
@@ -185,16 +186,16 @@ class UnifiedPredictionService:
                 select(FixtureOdds).where(FixtureOdds.fixture_id == fixture_id)
             ).scalars().all()
 
-        if not rows:
-            return None
-
-        result = {}
-        for label, field in fields.items():
-            value = max([getattr(r, field) for r in rows if getattr(r, field)], default=None)
-            if value is None:
+            if not rows:
                 return None
-            result[label] = value
-        return result
+
+            result = {}
+            for label, field in fields.items():
+                value = max([getattr(r, field) for r in rows if getattr(r, field)], default=None)
+                if value is None:
+                    return None
+                result[label] = value
+            return result
 
     def generate_with_fixture_data(self, fixture_objects: list) -> list[dict]:
         """
@@ -207,7 +208,8 @@ class UnifiedPredictionService:
             List of prediction dicts
         """
         logger.info(f"[PREDICTION] Generating predictions for {len(fixture_objects)} fixtures")
-        
+
+        self._blend_fallback_count = 0
         predictions = []
         
         for fixture in fixture_objects:
@@ -254,9 +256,29 @@ class UnifiedPredictionService:
                         # computing EV/Kelly — the market was shown to be far closer to
                         # the true outcome rate than our "calibrated" probability across
                         # every market. p_final is preserved separately for comparison.
-                        market_odds = self._get_market_odds_set(fixture_id, normalized_market)
-                        if market_odds:
-                            p_blended, p_market = blend_with_market(p_final, market_odds, normalized_outcome)
+                        try:
+                            market_odds = self._get_market_odds_set(fixture_id, normalized_market)
+                        except Exception as blend_exc:
+                            market_odds = None
+                            self._blend_fallback_count += 1
+                            logger.error(
+                                "[PREDICTION] Market-blend lookup RAISED for fixture %s/%s — "
+                                "falling back to unblended calibrated_prob (%.4f) for EV: %s",
+                                fixture_id, normalized_market, p_final, blend_exc,
+                            )
+                        else:
+                            if market_odds:
+                                p_blended, p_market = blend_with_market(p_final, market_odds, normalized_outcome)
+                            else:
+                                # Missing/incomplete odds set (not an exception) — still a fallback,
+                                # still worth counting and logging loudly. A silent fallback here is
+                                # exactly how the market-blend went unnoticed for months.
+                                self._blend_fallback_count += 1
+                                logger.warning(
+                                    "[PREDICTION] No full market-odds set for fixture %s/%s — "
+                                    "EV uses unblended calibrated_prob (%.4f) instead of market-blended.",
+                                    fixture_id, normalized_market, p_final,
+                                )
 
                         ev = p_blended * odds - 1  # EV uses market-blended probability
                         b = odds - 1
@@ -309,8 +331,15 @@ class UnifiedPredictionService:
             "timestamp": datetime.utcnow().isoformat(),
         })
         
+        if self._blend_fallback_count:
+            logger.error(
+                "[PREDICTION] %d/%d markets this cycle fell back to unblended EV "
+                "(no market-blend applied) — see preceding warnings/errors for which fixtures.",
+                self._blend_fallback_count, len(predictions),
+            )
+
         logger.info(f"[PREDICTION] Generated {len(predictions)} predictions")
-        
+
         return predictions
     
     def _pred_to_dict(self, pred):

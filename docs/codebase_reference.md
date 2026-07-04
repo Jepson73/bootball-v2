@@ -103,7 +103,7 @@ bootball-runtime.service (separate process):
 
 | File | Purpose |
 |------|---------|
-| `config/settings.py` | All env-based settings: API keys, scheduling, model dirs, runtime mode; `backfill_daily_cap` (default 60 000) soft-caps backfill quota; `collection_daily_cap` (default 15 000, Phase 25) caps `odds_trajectory_scheduler.py` daily-phase spend; leagues 777/778/779/648 added to `calendar_year_leagues`; `get_season()` resolution order (Phase 29) is `shifted_label_leagues` → `late_rollover_leagues` → `calendar_year_leagues` → default European `month>=7` — see "New-Season Readiness" in `deployment_state.md` |
+| `config/settings.py` | All env-based settings: API keys, scheduling, model dirs, runtime mode; `backfill_daily_cap` (default 60 000) soft-caps backfill quota; `collection_daily_cap` (default 15 000, Phase 25) caps `odds_trajectory_scheduler.py` daily-phase spend; leagues 777/778/779/648 added to `calendar_year_leagues`; `get_season()` resolution order (Phase 29) is `shifted_label_leagues` → `late_rollover_leagues` → `calendar_year_leagues` → default European `month>=7` — see "New-Season Readiness" in `deployment_state.md`; `discord_v1_enabled` (default `False`, Phase 30) gates V1's retired Discord notifier — see "The Separation Principle" |
 | `config/leagues.py` | `ALL_LEAGUE_IDS` — 1,225 leagues; league metadata; season definitions |
 | `config/forward_leagues.py` | Narrow 4-5-league forward-collection config (Pinnacle-covered, high goal-rate); capture bookmakers (Pinnacle, Bet365); market types (h2h, o/u 2.5, BTTS); stale-window constant — **superseded (Phase 25)** by `odds_trajectory_scheduler.py`, which covers all leagues |
 | `config/markets.py` | Market definitions (h2h, btts, ou25, ou15); outcome mappings |
@@ -367,8 +367,9 @@ HMAC-SHA256 signed model persistence.
 System-wide event pub/sub (singleton).
 
 - `event_bus` — global event bus instance
-- `Events` enum — all registered event types
+- `Events` enum — all registered event types, including `SETTLEMENT_INTEGRITY_EVENT` (Phase 30 — see "The Separation Principle")
 - `event_bus.emit(Events.X, payload)` / `event_bus.on(Events.X, handler)`
+- `event_bus.emit()` fans out three ways: direct `.subscribe()` handlers, `src/events/consumers/registry.py`'s consumer dispatch, and event persistence — see `src/notifications/v2_discord_notifier.py` (current Discord voice) and `src/notifications/discord_system_notifier.py` (retired V1 voice, `discord_v1_enabled`-gated) for the two Discord consumers of this bus
 
 ---
 
@@ -523,6 +524,25 @@ Before Phase 28, the drift monitor's input was `AgentCoordinator._run_feedback_c
 Phase 28 retargeted `live_drift_ece` to read newly-settled `PredictionRecord` rows only, with the dedup moved to a persistent per-market high-water mark (`calibration_drift_state` table) so a restart resumes instead of replaying. The old `PlacedBet`-reading code is preserved, unused, at `AgentCoordinator._fetch_placed_bet_outcomes_LEGACY_UNUSED()` — reference for whenever betting is rebuilt, at which point it gets its own layer with its own state, not a resurrection of this arrow.
 
 **Going forward:** any new metric, retrain trigger, or feedback loop touching prediction models or calibrators must be checked against this principle before it ships — if its input can be traced back through a betting-domain table (`PlacedBet`, bet P&L, ROI), it's the wrong input.
+
+**Phase 30 — silence V1's Discord, give V2 an honest voice; the unblended-EV data defect.**
+
+V1's coordinator-cycle Discord notifier (per-market picks with Kelly/EV, "Top 3 Picks", `POLICY ENGINE REPORT`, `Cycle Complete`, Adaptation Score / Closed Loop Validation theater) is now silenced by default — betting-era machinery keeps orchestrating (it writes production `PredictionRecord`s via `UnifiedPredictionService`), but it no longer has a live Discord voice. Gated by `settings.discord_v1_enabled` (`config/settings.py`, default `False`) at three independent choke points that previously each read `DISCORD_WEBHOOK_URL` and sent unconditionally:
+- `src/notifications/discord_system_notifier.py::_post()` — the single point every function in that module (and `model_registry.py`'s direct `notify_model_change()` calls) funnels through.
+- `src/events/bootstrap.py::bootstrap_consumers()` — `DiscordConsumer`, `PolicyConsumer`, `CLVEConsumer` (pure-notification consumers) are only registered when the flag is on.
+- `src/betting/alerts.py::DiscordChannel.send()` — the V1 betting-alert path (bet/settlement/bankroll pings), dormant since betting closed at Phase 8 but still wired into `settle_placed_bets()`.
+
+One coupling bug found and fixed along the way: `src/events/consumers/calibration_consumer.py`'s `process()` gated its *entire* handling of `CALIBRATION_DRIFT_DETECTED` — including the real auto-recalibration it triggers via `ModelRegistry`, not just the Discord report — behind "webhook configured." Recalibration is a prediction-layer action and must never depend on Discord config; the gate was moved down to `_send_webhook()` only, and `CalibrationConsumer` now always registers.
+
+**The +134% EV was a data defect, not a display bug.** `UnifiedPredictionService._get_market_odds_set()` (`src/prediction/unified_prediction_service.py`) fetched `FixtureOdds` rows inside a `with get_session()` block but read their attributes *after* the block exited — since `get_session()`'s sessionmaker uses the SQLAlchemy default `expire_on_commit=True`, the commit-on-exit expired every attribute, and the subsequent read raised `DetachedInstanceError` on every single call where odds existed. The caller's blanket `except Exception` swallowed it silently and fell back to the unblended `calibrated_prob` for EV — meaning `blend_with_market()` (the Shin de-vig shrink described in `src/calibration/market_blend.py`) had **never once executed successfully in production**: 100% of the 11,511 odds-bearing `prediction_records` rows carried the unblended signature (`market_prob IS NULL`), including every row the "Phase 15" `notify_top_picks()` fix was supposedly reading a genuinely-blended `pr.ev` from. Fixed by moving the attribute reads inside the `with` block. `generate_with_fixture_data()`'s blend step is now its own try/except with loud `logger.error`/`logger.warning` and a per-cycle `_blend_fallback_count` summary — a blend fallback can no longer be silent. A one-time backfill (ad hoc, not a committed script) recomputed `ev`/`blended_prob`/`market_prob` for the 160 unsettled, still-upcoming odds-bearing rows that predated the fix (159 updated, 1 left unblended — genuinely incomplete odds set); `predicted_outcome`/`our_prob`/`calibrated_prob` were left untouched, and settled history was deliberately not rewritten. **Era boundary:** any `prediction_records.ev` written before this fix (all settled history, plus any row not touched by the backfill) carries the unblended signature and should not be treated as market-blended EV.
+
+**V2's Discord voice** (`src/notifications/v2_discord_notifier.py`) is wired unconditionally (independent of `discord_v1_enabled`) and posts under a distinct `Bootball V2` username on the same shared webhook relay (confirmed generic at Phase 15) so provenance is never ambiguous. Four events, no predictions/picks/EV/Kelly ever:
+- `notify_drift_alarm()` — subscribed to `Events.CALIBRATION_DRIFT_DETECTED`; 6h per-market cooldown.
+- `notify_settlement_integrity()` — subscribed to new `Events.SETTLEMENT_INTEGRITY_EVENT`, emitted from three points in `src/settlement.py`: `verify_ft_fixtures()` FT-snapshot corrections, `update_pending_fixture_scores()` forward-dated-live catches, and a new `_check_dead_mark_spike()` in `mark_fixtures_dead()` — a self-computed trailing rolling baseline (no hard-coded number existed) persisted to `data/raw/.dead_mark_history.json`; 15min per-kind cooldown.
+- `notify_collection_heartbeat()` — new daily APScheduler job (`backend/scheduler.py::job_v2_collection_heartbeat`, 24h interval) reporting `odds_snapshots` counts and quota headroom from `logs/quota_log.csv`.
+- `notify_deploy_complete()` — called from `scripts/deploy.sh` after a restart cycle with commit hash + per-service active status, deduped by commit.
+
+Rate-limiting and restart-safety both come from one JSON state file (`data/state/v2_notifier_state.json`, last-sent timestamp per event kind + last-notified deploy commit) — read from disk rather than memory, so a process restart cannot replay an event that already fired.
 
 ---
 

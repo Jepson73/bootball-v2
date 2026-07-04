@@ -536,6 +536,24 @@ def job_daily_sanity_check():
         logger.exception("JOB: daily_sanity_check failed")
 
 
+def job_v2_collection_heartbeat():
+    """Phase 30: once-daily V2 Discord digest — snapshots captured, trajectories
+    accumulated, scheduler spend vs cap, quota headroom. Silence here is meant
+    to read as "broken", so this has to actually run once/day rather than rely
+    on some other job's side effect."""
+    if not _circuit_ok("v2_collection_heartbeat"):
+        return
+    logger.info("JOB: v2_collection_heartbeat starting")
+    try:
+        from src.notifications.v2_discord_notifier import notify_collection_heartbeat
+        notify_collection_heartbeat()
+        _circuit_success("v2_collection_heartbeat")
+        logger.info("JOB: v2_collection_heartbeat completed")
+    except Exception:
+        _circuit_failure("v2_collection_heartbeat")
+        logger.exception("JOB: v2_collection_heartbeat failed")
+
+
 def get_scheduler() -> BackgroundScheduler:
     """Create and configure the scheduler.
     
@@ -584,6 +602,7 @@ def get_scheduler() -> BackgroundScheduler:
         ("cleanup_matches", job_cleanup_matches, 'interval', {'minutes': 5}),
         ("live_settle", job_live_settle, 'interval', {'minutes': 2}),
         ("daily_sanity_check", job_daily_sanity_check, 'interval', {'hours': 24}),
+        ("v2_collection_heartbeat", job_v2_collection_heartbeat, 'interval', {'hours': 24}),
     ]
     
     for job_id, job_func, trigger_type, trigger_args in auxiliary_jobs:

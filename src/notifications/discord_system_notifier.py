@@ -109,6 +109,14 @@ _PIPELINE_REMEDIATION = {
 
 
 def _post(payload: dict) -> bool:
+    # Phase 30 (Separation Principle): this whole module is V1/betting-era
+    # (Cycle Complete, Top 3 Picks, Policy Engine reports, Adaptation Score /
+    # Closed Loop theater, model-change pings). Every caller in this file —
+    # and the direct notify_model_change() calls from model_registry.py —
+    # funnels through here, so gating this one choke point silences all of
+    # it without touching each call site. V2's notifier owns Discord now.
+    if not _settings.discord_v1_enabled:
+        return False
     if not WEBHOOK_URL:
         return False
     try:

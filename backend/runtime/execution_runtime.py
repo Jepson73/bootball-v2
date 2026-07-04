@@ -267,12 +267,32 @@ class ExecutionRuntime:
             raise
     
     def _init_discord(self):
-        """Wire Discord notifications to the event bus."""
+        """Wire Discord notifications to the event bus.
+
+        Phase 30 (Separation Principle): V2's notifier (drift alarms,
+        settlement-integrity, collection heartbeat, deploy confirmations)
+        is always wired — it's the current honest voice. V1's notifier
+        (per-market picks, Top 3 Picks, Cycle Complete, Policy Engine
+        reports, Adaptation/Closed-Loop theater) is disabled by default;
+        flip settings.discord_v1_enabled only to temporarily resurrect it
+        for debugging.
+        """
+        try:
+            from src.notifications.v2_discord_notifier import wire_v2_notifier
+            wire_v2_notifier()
+            logger.info("✅ V2 Discord notifications active")
+        except Exception as e:
+            logger.warning(f"V2 Discord init failed (non-fatal): {e}")
+
+        from config.settings import settings
+        if not settings.discord_v1_enabled:
+            logger.info("V1 Discord notifier disabled (settings.discord_v1_enabled=False) — V2 owns Discord now")
+            return
         try:
             from src.notifications.discord_system_notifier import wire_to_event_bus, send_test_message
             wire_to_event_bus()
             send_test_message()
-            logger.info("✅ Discord notifications active")
+            logger.info("✅ V1 Discord notifications active (discord_v1_enabled=True)")
         except Exception as e:
             logger.warning(f"Discord init failed (non-fatal): {e}")
 

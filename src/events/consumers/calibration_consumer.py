@@ -33,7 +33,6 @@ class CalibrationConsumer(EventConsumer):
 
     def __init__(self):
         self.webhook_url = os.getenv("DISCORD_WEBHOOK_URL")
-        self.enabled = bool(self.webhook_url)
 
         self.event_types = [
             Events.CALIBRATION_DRIFT_DETECTED,
@@ -47,10 +46,12 @@ class CalibrationConsumer(EventConsumer):
         return event_type in self.event_types
 
     def process(self, event: dict[str, Any]) -> None:
-        if not self.enabled:
-            logger.debug("Calibration consumer disabled (no webhook URL)")
-            return
-
+        # NOTE: no longer gated on webhook presence. CALIBRATION_DRIFT_DETECTED
+        # with a market key triggers real recalibration (_run_recalibration) —
+        # a prediction-layer action, not just a notification — and must keep
+        # firing regardless of Discord config. Only _send_webhook() below is
+        # gated (on settings.discord_v1_enabled), so the action always runs
+        # and only the message is silenceable.
         event_type = event.get("event_type")
         payload = event.get("payload", {})
 
@@ -217,7 +218,12 @@ class CalibrationConsumer(EventConsumer):
 
     def _send_webhook(self, message: dict) -> None:
         import requests
+        from config.settings import settings
 
+        # Phase 30 (Separation Principle): the recalibration ACTION above
+        # always runs; only the V1-era Discord ping is gated off here.
+        if not settings.discord_v1_enabled:
+            return
         if not self.webhook_url:
             logger.warning("[CALIBRATION] No Discord webhook URL configured")
             return

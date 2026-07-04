@@ -70,6 +70,7 @@ echo "Deploying commit $COMMIT_SHORT: $(git log -1 --format=%s)"
 echo
 
 FAILED=0
+declare -A SERVICE_ACTIVE
 for svc in "${SERVICES[@]}"; do
   echo "== $svc =="
   systemctl restart "$svc"
@@ -83,6 +84,7 @@ for svc in "${SERVICES[@]}"; do
     sleep 1
   done
 
+  SERVICE_ACTIVE[$svc]=$active
   if [ "$active" -eq 1 ]; then
     echo "$COMMIT" > "$STATE_DIR/${svc}.commit"
     echo "  ACTIVE (commit recorded: $COMMIT_SHORT)"
@@ -93,6 +95,22 @@ for svc in "${SERVICES[@]}"; do
   fi
   echo
 done
+
+# Phase 30: push the deploy result to Discord (V2 identity) — turns the
+# committed-but-not-running class of bug into a notification instead of a
+# silent gap discovered later. Best-effort: never fails the deploy itself.
+SERVICES_JSON="{"
+for svc in "${SERVICES[@]}"; do
+  val="false"; [ "${SERVICE_ACTIVE[$svc]}" -eq 1 ] && val="true"
+  SERVICES_JSON+="\"$svc\": $val, "
+done
+SERVICES_JSON="${SERVICES_JSON%, }}"
+python3 -c "
+import json, sys
+sys.path.insert(0, '$REPO_ROOT')
+from src.notifications.v2_discord_notifier import notify_deploy_complete
+notify_deploy_complete('$COMMIT_SHORT', json.loads('$SERVICES_JSON'))
+" || echo "  (deploy notification failed — non-fatal)"
 
 if [ "$FAILED" -ne 0 ]; then
   echo "DEPLOY FAILED — one or more services did not come back active. See above."

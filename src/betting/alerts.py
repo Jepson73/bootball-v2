@@ -75,6 +75,14 @@ class DiscordChannel(AlertChannel):
         self.webhook_url = webhook_url or os.environ.get("DISCORD_WEBHOOK_URL")
 
     def send(self, message: str) -> bool:
+        # Phase 30 (Separation Principle): this module is the V1 betting-era
+        # alert path (bet/settlement/bankroll pings). Betting closed at
+        # Phase 8; kept dormant behind the same flag as the rest of V1's
+        # Discord surface rather than left as an independent live wire.
+        from config.settings import settings
+        if not settings.discord_v1_enabled:
+            return False
+
         if not self.webhook_url:
             logger.warning("Discord not configured (missing DISCORD_WEBHOOK_URL)")
             return False
