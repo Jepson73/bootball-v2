@@ -80,6 +80,33 @@ column `NULL` instead of aggregating across bookmakers — causing it to skip up
 of predictions that do have valid odds from a different bookmaker. Out of scope for the
 blend-EV fix; does not affect the blended-vs-raw question above.
 
+## Riders (resolved 2026-07-05, decided alongside the three open questions above)
+
+**"Strip" semantics for `storage/models.py`, made explicit:** strip means the live V2 system
+drops the ORM binding/model class — it never means dropping the table or its rows. `PlacedBet`'s
+448 rows are the historical evidence the Phase 8 verdict rests on; the DB is kept by decree
+(Phase 31's ground rules). The live system loses the vocabulary (no V2 code can construct or
+query these classes); the data stays, queryable directly against the DB by anyone doing historical
+analysis.
+
+**The ~40 DEAD/UNCLEAR files (Part A) fold into Part D's move, not left out of scope.** Reversing
+the "explicitly out of scope" framing below: two independent classification agents each confirmed
+zero live importers under either V1 or V2 for this cluster, which makes moving them the
+lowest-risk action in the phase — leaving confirmed-dead code sitting in the live tree
+contradicts the point of this phase. They move to a distinct `V1_archive/dead/` (kept separate
+from `V1_archive/`'s betting-era machinery so the README can say "V1's machinery" vs "dead
+regardless of V1/V2" — these are different claims and shouldn't be visually merged). This happens
+as its own commit within Part D (not bundled into the V1-machinery archive commit), so the git
+history stays reviewable in independent pieces.
+
+**Relocation naming for adopted entangled modules (`src/betting/*`, `src/governance/*`,
+`src/alerts/*`):** no directory names are chosen in this document. The rule, decided now: nothing
+adopted survives under a betting-flavored path — `src/betting/prediction.py` being the actual
+production prediction loader is exactly the naming lie this phase exists to end. Part C's
+ownership table designs the new homes (function-named — `prediction/`, `calibration/`,
+`ingestion/`, or whatever the table yields), and the move happens exactly once alongside that
+design. No interim renaming, no second churn pass.
+
 ## `storage/models.py` — table-level adopt/strip decisions
 
 **Strip (archive with V1 — no live V2 use, confirmed by both classification agents):**
@@ -94,11 +121,23 @@ verification of which file before stripping).
 `Injury`, `Fixture`, `FixtureStats`, `FixtureEvent`, `Standing`, `FixtureOdds`, `OddsSnapshot`,
 `PredictionRecord`, `ModelVersion`, `RetrainEvent`, `LeagueCalibration`, `CalibrationDriftState`.
 
-**Conditional:** `EloRating`, `EloRebuildLog` — depend on the `src/features/elo.py` verdict
-(see Part A: actively-edited code with no scheduled/cron caller, only reachable from three
-manual scripts — flagged DEAD/UNCLEAR rather than guessed either way; human call needed on
-whether Elo predictions are an active feature or an abandoned side-branch before deciding these
-tables' fate).
+**Adopt (resolved 2026-07-05):** `EloRating`, `EloRebuildLog`, and `src/features/elo.py` itself.
+Manual invocation is elo's design, not neglect: it is the foundation of three shipped prediction
+tiers (`elo_both`/`elo_partial` club gap-predictions from Phase 16b, running as new fixtures
+arrive; `national_elo` from Phase 19, the World Cup predictions). It has no cron caller by
+documented decision — rebuilds are deliberately manual/on-demand, which is precisely why Phase 28
+added `EloRebuildLog` governance (timestamp, invoking caller, fixture ceiling) instead of a
+schedule. Contamination-audited and rebuilt as recently as Phase 27b. **Invocation model for
+Part C's ownership table: invoked by gap/national prediction generation (read path, every cycle)
++ governed manual rebuilds (write path, human-triggered, logged to `EloRebuildLog`) — not a
+scheduled job.** Recorded here so no future audit re-asks this question.
+
+**Strip (resolved 2026-07-05, by caller grep):** `WatchedFixture`, `UserPreference`. Grepped both
+symbols codebase-wide outside `storage/models.py`: the only caller of either is
+`scripts/web_ui.py` (V1's UI, port 5001) — `WatchedFixture` at lines 6689-6756, `UserPreference`
+at lines 6591-6630. V2's web app (`backend/app.py`, port 5000) has zero references to either
+symbol. Per the "strip means no live ORM binding, never a table drop" rule below, both tables'
+rows are preserved in the DB but neither gets a V2 model binding or caller.
 
 ## Not entangled — reclassified during this pass
 
@@ -106,16 +145,16 @@ tables' fate).
   closer inspection its only callers (`scripts/odds_poll.py`, `scripts/odds_trajectory_scheduler.py`)
   are both cron/data-collection jobs never touched by the V1 coordinator. **V2-NATIVE.**
 
-## Explicitly out of scope for this document
+## DEAD/UNCLEAR cluster — resolved 2026-07-05: archived in Part D, not deleted
 
 Modules classified DEAD/UNCLEAR in Part A (the `src/decision_engine/` package, `src/handlers/*`,
 `src/monitoring/*`, the orphaned `src/models/{btts,dixon_coles,ensemble,h2h,halftime,injuries,
 late_goals,overunder,poisson}.py` + their `src/features/{form,xg_features,strength}.py` feeders,
 `src/alerts/discord.py`, `src/alerts/handlers.py`, `src/betting/confidence_weighting.py`,
 `markets.py`, `risk_decisions.py`, `unified_latent.py`/`latent_shock.py`, `stress_testing.py`,
-`portfolio_optimizer.py`, and others listed in Part A) are neither adopted nor archived by this
-register — they have zero confirmed live importers under either V1 or V2 and are candidates for
-outright deletion regardless of the V1/V2 split. That's a separate cleanup decision, not an
-adoption decision, and needs its own human sign-off given "not obviously imported" is not the
-same as "safe to delete" (dynamic imports, `importlib`, or string-based dispatch were not
-exhaustively ruled out).
+`portfolio_optimizer.py`, and others listed in Part A) are **not** adopted — zero confirmed live
+importers under either V1 or V2 — but per the rider above they are no longer left in place either.
+They move to `V1_archive/dead/` in Part D, as a distinct commit from the V1-machinery archive
+move. This is a move, not a deletion: "not obviously imported" was confirmed by two independent
+agents but dynamic imports / `importlib` / string-based dispatch were not exhaustively ruled out,
+so the code remains recoverable from `V1_archive/dead/` rather than being erased outright.
