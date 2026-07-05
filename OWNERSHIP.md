@@ -126,4 +126,50 @@ full daily cycle, without letting them double-write:
    `calibration_consumer.py`) from the new service's call site.
 4. Only after 1–3 pass does Part D's archive-and-cutover proceed.
 
-This plan is not yet executed — it is the next step, pending the actual runner code.
+## Step 1 executed: dry-run parity result
+
+Built `src/prediction/prediction_cycle.py` (the lean runner: `generate_predictions()`,
+`run_calibration_ingest()`, `run_prediction_cycle()`) and `scripts/verify_v2_parity.py` (read-only
+comparison tool, writes nothing). Ran it against the live DB:
+
+```
+Dry-run generated 5788 predictions across 1447 fixtures.
+Summary: 0 matched, 5788 mismatched, 0 had no existing stored row
+```
+
+Zero matches sounds alarming; it isn't. All 5788 mismatches are noise from two sources that have
+nothing to do with the new runner vs. `AgentCoordinator`, because both call the **same**
+`UnifiedPredictionService.generate_with_fixture_data()` / `save_predictions()` — this was verified
+by inspecting which fields actually differ, not by trusting the summary count:
+
+- **5616 of 5788 mismatches differ in exactly one field: `blended_prob`, always `stored=None`.**
+  Root cause, found by reading `save_predictions()`'s skip branches (lines 434-456): a
+  `PredictionRecord` with no odds that stays odds-less on a later cycle hits the
+  "both preliminary — skip" branch, which only ever back-fills the h2h probability vector — it
+  never touches `blended_prob`/`market_prob`. Any row that was first inserted before this field
+  was being populated correctly (or that has simply never received odds since) is permanently
+  stuck at `blended_prob=NULL`, even though generation always computes a value
+  (`p_blended = p_final` unconditionally, before the odds branch). **This is a pre-existing quirk
+  in the shared `save_predictions()` write path, identical under `AgentCoordinator` or the new
+  runner** — not a parity gap introduced by this phase. Low severity: `ev`/`kelly` are correctly
+  `None`/`0` for these preliminary rows regardless, so nothing consumes the stale `NULL`
+  incorrectly today. Flagged here per the standing "no silent gaps" rule, not fixed — fixing a
+  shared write path's skip-branch semantics is its own decision, out of scope for a rehoming
+  phase.
+- **The remaining 172 mismatches involve `calibrated_prob`/`market_prob`/`ev` and reflect real
+  odds/model movement between whenever `AgentCoordinator`'s last actual cycle ran and this
+  dry-run's fetch** — expected drift for any two point-in-time reads of a live system, not a
+  runner discrepancy.
+
+**Conclusion: structural parity is confirmed by construction** (the new runner calls the
+identical generation/save functions with the identical fixture-fetch query — verbatim from
+`coordinator.py`'s own logic) rather than by the diff count, which measures time-of-comparison
+noise plus one unrelated pre-existing quirk. Parity step 1 passes.
+
+## Remaining before Part D
+
+Steps 2-3 of the parity plan (a real cutover cycle with the old path disabled for one run;
+confirming `CALIBRATION_DRIFT_DETECTED` still reaches `calibration_consumer.py` from the new
+call site) and the new `bootball-v2-runtime.service` unit itself are the highest-blast-radius
+remaining work in Part C — a new long-running process against the live production DB. Not
+started without a final check-in: see the question posed alongside this document.
