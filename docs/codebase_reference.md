@@ -61,6 +61,7 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 | `python scripts/web_ui_v2.py` | **Primary UI (V2)** — two-track Flask UI on port 5000; Track A accuracy + forward-collection + predictions; no V1 imports |
 | `gunicorn -w 1 -b 0.0.0.0:5001 scripts.web_ui:app` | **V1 UI (reference)** — legacy Flask UI on port 5001 via `bootball-web.service` |
 | `python backend/runtime/execution_runtime.py` | Core execution process — runs `AgentCoordinator.run_cycle()` every 20 minutes |
+| `python backend/runtime/v2_runtime.py` | **Phase 31 Part C** — V2 execution process (`bootball-v2-runtime.service`), runs `src.prediction.prediction_cycle.run_prediction_cycle()` every 20 minutes instead of `AgentCoordinator`; deployed alongside the V1 runtime during the parallel-verification window, gated by `V2_RUNTIME_WRITE_ENABLED` (default `false` = dry-run, generates but does not save); holds its own `RuntimeLock` file (`data/v2_execution_runtime.lock`) so it can run concurrently with V1's (`data/execution_runtime.lock`) — see `OWNERSHIP.md` |
 | `python backend/app.py` | Alternative Flask entry point |
 | `python scripts/migrate.py` | Run database schema migrations |
 | `python scripts/backfill_all.py --seasons 2023 2022` | Backfill historical data |
@@ -89,6 +90,15 @@ bootball-runtime.service (separate process):
   1. record_running_commit("bootball-runtime.service") via src/deploy_info.py
   2. backend/runtime/execution_runtime.py → AgentCoordinator.run_cycle()
      (every 20 minutes; all predictions → portfolio → bets)
+
+bootball-v2-runtime.service (Phase 31 Part C, separate process, parallel-verification window):
+  1. record_running_commit("bootball-v2-runtime.service") via src/deploy_info.py
+  2. backend/runtime/v2_runtime.py → src.prediction.prediction_cycle.run_prediction_cycle()
+     (every 20 minutes; V2_RUNTIME_WRITE_ENABLED gates save — default false/dry-run)
+  3. Acquires its own RuntimeLock file (data/v2_execution_runtime.lock), distinct from
+     bootball-runtime.service's (data/execution_runtime.lock), so both can run at once
+  4. Does NOT start backend/scheduler.py's auxiliary APScheduler — bootball-runtime.service
+     still owns fixtures/results/odds/cleanup/live_settle during this window
 ```
 
 ---
