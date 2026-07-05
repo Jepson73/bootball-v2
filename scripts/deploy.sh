@@ -22,9 +22,10 @@ cd "$REPO_ROOT"
 # Every long-running service that imports and executes this repo's code in-process.
 # If you add a new systemd service running app code, add it here too.
 SERVICES=(
-  bootball-runtime.service    # APScheduler + AgentCoordinator + settlement (backend/runtime/execution_runtime.py)
-  bootball-web-v2.service     # V2 Flask UI, port 5000 (scripts/web_ui_v2.py)
-  bootball-web.service        # V1 Flask UI, port 5001 (scripts/web_ui.py) — reference only, frozen
+  bootball-runtime.service      # APScheduler + AgentCoordinator + settlement (backend/runtime/execution_runtime.py)
+  bootball-v2-runtime.service   # Phase 31 Part C: V2 prediction-cycle runtime, parallel-verification window (backend/runtime/v2_runtime.py)
+  bootball-web-v2.service       # V2 Flask UI, port 5000 (scripts/web_ui_v2.py)
+  bootball-web.service          # V1 Flask UI, port 5001 (scripts/web_ui.py) — reference only, frozen
 )
 
 STATE_DIR="$REPO_ROOT/logs/deploy_state"

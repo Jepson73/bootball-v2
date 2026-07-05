@@ -166,10 +166,82 @@ identical generation/save functions with the identical fixture-fetch query — v
 `coordinator.py`'s own logic) rather than by the diff count, which measures time-of-comparison
 noise plus one unrelated pre-existing quirk. Parity step 1 passes.
 
-## Remaining before Part D
+## Step 2 executed: `bootball-v2-runtime.service` deployed, dry-run mode, alongside V1
 
-Steps 2-3 of the parity plan (a real cutover cycle with the old path disabled for one run;
-confirming `CALIBRATION_DRIFT_DETECTED` still reaches `calibration_consumer.py` from the new
-call site) and the new `bootball-v2-runtime.service` unit itself are the highest-blast-radius
-remaining work in Part C — a new long-running process against the live production DB. Not
-started without a final check-in: see the question posed alongside this document.
+Built `backend/runtime/v2_runtime.py` (`V2ExecutionRuntime` — same 20-minute cadence as
+`AgentCoordinator`, `run_prediction_cycle()` in place of the 1050-line pipeline) and the
+`bootball-v2-runtime.service` unit. Two things needed for it to coexist with the still-live V1
+runtime rather than replace it:
+
+- **Distinct `RuntimeLock` file.** `src/governance/runtime_lock.py`'s lock path was previously a
+  hardcoded module constant — added an optional `lock_file` param to `acquire()`/`release()`/
+  `is_locked()`/`_check_existing()`, defaulting to the original path so `AgentCoordinator`'s call
+  is unaffected. The V2 runtime acquires `data/v2_execution_runtime.lock` instead of the V1
+  runtime's `data/execution_runtime.lock` — both held simultaneously, confirmed on disk.
+- **No auxiliary scheduler.** `backend/scheduler.py`'s APScheduler (fixtures/results/odds/
+  cleanup/live_settle) stays owned by `bootball-runtime.service` alone during this window;
+  `v2_runtime.py` does not start it, to avoid double-executing ingestion against the API.
+
+Deployed `V2_RUNTIME_WRITE_ENABLED=false` (dry-run only — generates but does not call
+`save_predictions()` or the calibration ingest). First live cycle, observed directly:
+
+```
+V2_RUN_START: run_id=a99a77ca write_enabled=False
+[V2_PREDICTION_CYCLE] Fetched 1473 NS fixtures
+[PREDICTION] Generated 5500 predictions
+[V2_PREDICTION_CYCLE] DRY RUN — generated 5500 predictions, not saved
+V2_RUN_END: run_id=a99a77ca fixtures=1473 predictions=5500 saved=0 calibration_new_outcomes=0 duration=52.08s
+```
+
+`bootball-runtime.service` confirmed still `active` throughout; both lock files present on disk
+at once (`execution_runtime.lock` and `v2_execution_runtime.lock`). No write-path risk in this
+configuration — `saved=0` by construction.
+
+## Riders decided alongside this deployment
+
+**The CLVE fail-marking bug (see "Key finding" above) is documented, not fixed.** V1's historical
+run-status data (`ingestion_log`/lineage records for the `betting_pipeline` job, and anything
+that reads `AgentCoordinator`'s run outcomes as a success/failure signal) contains **false
+failures**: cycles whose predictions saved successfully but were retroactively fail-marked by
+`ClosedLoopValidationEngine` judging a dead, self-referential betting-thesis loop as "not
+adaptive." Anyone analyzing historical cycle success rates from before this phase's cutover must
+account for this — a "FAILED" run in that history does not necessarily mean predictions were
+lost. Fixing code in a file that Part D archives wholesale would be wasted motion; this paragraph
+is the fix's replacement.
+
+**The two dead cron entries move to `V1_archive/ops/` verbatim in Part D, not just noted for
+deletion.** `settle_fixtures.py`'s */30-min entry (erroring since 2026-05-25) and
+`auto_bet.py --bet-only`'s daily entry (self-blocked every run) are ops-layer artifacts, and the
+ops layer is a first-class citizen of the archive alongside the code and unit files — Part D's
+archive commit for `/etc/cron.d/bootball` preserves these two lines (commented out or moved to a
+kept-for-reference file under `V1_archive/ops/`) rather than deleting them outright, matching the
+"move, not delete" principle already applied to the DEAD/UNCLEAR code cluster.
+
+## Remaining before Part D: the concurrent write-enabled overlap test
+
+Steps 2-3 of the original parity plan (above) described disabling `AgentCoordinator` for a single
+test cycle. Revised per direction: the more informative test is to let **both** runtimes write
+concurrently for a bounded window and observe the calibration-ingest high-water-mark under real
+contention, rather than assume it from a code read. `ingest_recent_prediction_outcomes()` (see
+`src/calibration/state_calibration_engine.py:148`) dedups via a DB-persisted per-market
+`CalibrationDriftState.last_seen_prediction_id`, read and advanced inside one transaction per
+call — safe against replay after a restart by construction, but not yet observed under two
+processes hitting it on overlapping ~20-minute cycles. Before flipping
+`V2_RUNTIME_WRITE_ENABLED=true`:
+
+1. Flip it for a bounded window with both services live.
+2. Directly inspect `CalibrationDriftState` rows before/during/after: confirm
+   `last_seen_prediction_id` advances monotonically and doesn't jump backward or get corrupted by
+   the two processes' commits interleaving.
+3. Count `CALIBRATION_DRIFT_DETECTED` emissions in both processes' logs during the window — a
+   single underlying drift signal should not silently turn into two independent recalibration
+   runs; if it does, that's a finding to document (redundant-but-idempotent, most likely, since
+   both processes running `generate_report()`/recalibration on the same nearly-identical settled
+   data would produce nearly-identical refit results either way) — not a blocker fix.
+4. Confirm `PredictionRecord` rows written by both processes converge (same fixture/market lands
+   on the same or near-identical values from either writer, per Part C's already-established
+   structural-parity argument), with no thrashing.
+5. Only after 1-4 pass does the sustained "writes on until Part D" state begin, per the parity
+   gate as briefed.
+
+Not yet executed — pending the live overlap window.
