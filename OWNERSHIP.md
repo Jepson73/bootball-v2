@@ -71,7 +71,7 @@ not a repo file. Reading it now surfaces entries that need their own adopt/strip
 |---|---|---|---|
 | `scripts/settle_fixtures.py` | */30 min, most hours | **File does not exist** — deleted from the repo in the 2026-05-25 "Full codebase refresh" commit. Confirmed via `/var/log/bootball/settle_fixtures.log`: `can't open file ... No such file or directory` on every single invocation, for 6+ weeks. Pure noise, zero effect. | Delete the cron line in Part D. Not a V1/V2 question — this is just stale. |
 | `scripts/auto_bet.py --bet-only` | daily 03:00 | Runs, hits its own `check_legacy_execution_allowed()` guard (independent of `bot_enabled`), raises `RuntimeError: LEGACY EXECUTION BLOCKED`, writes nothing. Confirmed via today's (2026-07-05 03:00) log tail. | V1-only, dead-but-executing. Archive with V1; remove cron line. |
-| `scripts/daily_run.py` | daily 02:00 | Runs `DailyBaselinePipeline`, the **exact same class** `backend/scheduler.py`'s `job_fetch_fixtures` (every 6h) and `job_fetch_results` (every 1h) already invoke in-process inside `bootball-runtime.service`. This cron entry is fully redundant with jobs that already run 24+ times/day. | V2-native function; redundant schedule. Collapse to one V2-owned schedule (see table below), drop the standalone cron line. |
+| `scripts/daily_run.py` | daily 02:00 | Runs `DailyBaselinePipeline`, the **exact same class** `backend/scheduler.py`'s `job_fetch_fixtures` (every 6h) and `job_fetch_results` (every 1h) already invoke in-process inside `bootball-runtime.service`. **Revised finding (see below): this redundancy is not actually redundant in practice** — the in-process calls have been silently 100%-failing since 2026-06-29, so this cron entry is the *only* one of the three that has been doing any work. | V2-native function. Do **not** drop this cron line until the in-process path is confirmed fixed and stable — see the ownership-file-permissions finding below. |
 | `scripts/odds_poll.py` | */30 min, 08:00–24:00 CET | V2-native (adopted), but `job_fetch_odds` already runs it hourly in-process. Same redundancy shape as above. | V2-native; collapse to one schedule, owner TBD below. |
 | `scripts/odds_trajectory_scheduler.py` | */30 min, 24/7 | V2-native, cron-only — no in-process duplicate found. | Keep as-is; V2-owned cron. |
 | `scripts/probe_forward_odds.py` ×2 | one-off calendar dates (Tasmania, Norway) | V2-native, self-expiring checkpoints, read-only. | Keep as-is. |
@@ -84,7 +84,7 @@ not a repo file. Reading it now surfaces entries that need their own adopt/strip
 | Prediction generation (fetch NS fixtures → `UnifiedPredictionService` → `save_predictions`) | `AgentCoordinator.run_cycle()` inside `bootball-runtime.service`, every 20 min | New `PredictionCycleRunner` (name TBD at build time) in the new V2 service, same 20-min interval | The ~30 live lines extracted from `_run_internal`, everything else in this file dropped |
 | Live-drift calibration ingest + report (`CALIBRATION_DRIFT_DETECTED`) | Buried in `AgentCoordinator._run_feedback_cycle` Step 7.1/7.3, same 20-min cadence | Same new V2 service, called directly after prediction generation each cycle (no dependency on anything from the dropped 97%) | Must not be lost — it's the only caller today |
 | Settlement (`verify_ft_fixtures`, `settle_placed_bets`, `settle_predictions`, maintenance) | Runs from **three** places today: `execution_runtime._run_settlement()` (after every 20-min coordinator cycle), `job_fetch_results` (hourly, calls `fetch_and_update_fixtures`+`backfill_missing_scores`+`verify_ft_fixtures`+`settle_all`), `job_live_settle` (every 2 min, live-score fetch + settle) | Auxiliary scheduler jobs only (`job_fetch_results`, `job_live_settle`) — the coordinator-cycle call is dropped since it's now redundant with jobs that already run more frequently | No functional loss: 2-min/1-hour cadence already covers everything the 20-min coordinator call did |
-| Ingestion: fixtures/results (`DailyBaselinePipeline`) | Triple-scheduled: cron 02:00, `job_fetch_fixtures` (6h), `job_fetch_results` (1h), all calling the identical class | Collapse to the two APScheduler jobs only; drop the 02:00 cron line | Removes a fully redundant daily invocation with no behavior change |
+| Ingestion: fixtures/results (`DailyBaselinePipeline`) | Triple-scheduled: cron 02:00, `job_fetch_fixtures` (6h), `job_fetch_results` (1h) — **but the two in-process jobs have been silently 100%-failing** (see finding below), so only the 02:00 cron has actually been running | Fix the in-process path (done — see below), then observe a full day of real successes before dropping the cron line | Do not collapse blind; the "redundant" schedule was the only one working |
 | Ingestion: odds (`odds_poll.py`) | Double-scheduled: cron */30 min (08–24 CET) + `job_fetch_odds` (hourly) | Keep both — the cron half covers the daytime tightening (30 vs 60 min) that the hourly aux job doesn't; not true redundancy, different resolution | No change |
 | Odds trajectory capture | `scripts/odds_trajectory_scheduler.py` via cron, 24/7 */30 min | Unchanged — already V2-native, cron-owned, independent of the runtime service | No change |
 | Historical backfill | `scripts/backfill_cron.py` via cron, daily 09:00 | Unchanged | No change |
@@ -216,6 +216,54 @@ ops layer is a first-class citizen of the archive alongside the code and unit fi
 archive commit for `/etc/cron.d/bootball` preserves these two lines (commented out or moved to a
 kept-for-reference file under `V1_archive/ops/`) rather than deleting them outright, matching the
 "move, not delete" principle already applied to the DEAD/UNCLEAR code cluster.
+
+## Major finding during the parallel-run window: cron (root) vs systemd (bootball) UID split has been silently breaking in-process ingestion since 2026-06-29
+
+Discovered while investigating an `[EventBus] handler failed for settlement_integrity_event:
+[Errno 13] Permission denied: 'data/state/v2_notifier_state.tmp'` error surfaced by the live
+monitor during this parallel-run window. Root cause traced one level further and found something
+much bigger than the notifier file itself:
+
+**Every entry in `/etc/cron.d/bootball` runs as `root`** (the explicit `root` field in each cron
+line). **Every systemd service (`bootball-runtime.service`, `bootball-v2-runtime.service`,
+both web services) runs as `User=bootball`.** Any file both paths write to gets its ownership
+"won" by whichever path touched it most recently — and once root writes it, the `bootball`-user
+processes can never write it again (0644/0755, no group/other write bit).
+
+**Confirmed impact, checked directly against the logs, not assumed:**
+- `logs/quota_log.csv` (root-owned, file birth 2026-06-29) — every call to
+  `DailyBaselinePipeline.run()` starts with `_log_quota("run_start", ...)`, which raises
+  `PermissionError` immediately, before any of the pipeline's 7 steps execute. This is the
+  **first line of the function** — the exception aborts the entire pipeline, not just the log
+  write. Since `job_fetch_fixtures` and `job_fetch_results` (both `bootball-runtime.service`,
+  in-process, `User=bootball`) call this exact same class, **both have been 100% failing since
+  file birth**: `job_fetch_results` — 0 successes, 110 failures since 2026-07-01;
+  `job_fetch_fixtures` — 0 successes, 11 failures since 2026-07-01. The system has been
+  surviving entirely on the once-daily `scripts/daily_run.py` cron entry (which runs as `root`,
+  so it never hits this wall) — the "redundant" triple-scheduling this document originally
+  flagged for collapsing was, in practice, the *only* schedule doing any work.
+- `data/raw/api_cache/` — flagged to the user separately as a much larger (1.25M file), older,
+  out-of-scope issue with the same root-cause shape (nobody:nogroup + cron-root/systemd-bootball
+  split). Not fixed here — too large and unrelated to Phase 31 to touch as a drive-by.
+- `data/state/v2_notifier_state.json` (root-owned, likely from manual root-run testing during
+  Phase 30 development) — every settlement-integrity/drift-alarm dedup write has been failing
+  since 2026-07-04, meaning the persisted-state guarantee `v2_discord_notifier.py`'s docstring
+  promises ("process restart resumes from where it left off") has not actually been holding.
+
+**Fixed (both narrow, targeted, confirmed working):**
+- `chown bootball:bootball logs/quota_log.csv` — confirmed with a direct write test as the
+  `bootball` user post-fix.
+- `chown -R bootball:bootball data/state/` — confirmed via `stat`.
+
+**Not fixed, flagged for the user's own prioritization:** `data/raw/api_cache/`'s broader
+ownership problem (see the conversation for full detail) — same root cause, much larger blast
+radius, unrelated to the V1/V2 separation itself.
+
+**Effect on this document's own recommendation:** the "collapse redundant cron→APScheduler-only"
+call for `DailyBaselinePipeline` (originally in the ownership table above) is **revised** — do
+not drop the 02:00 cron line until the in-process path has been observed succeeding for a full
+day post-fix. Dropping it before confirming the fix holds would have removed the only ingestion
+path that has actually been running.
 
 ## Remaining before Part D: the concurrent write-enabled overlap test
 
