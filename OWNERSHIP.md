@@ -292,4 +292,27 @@ processes hitting it on overlapping ~20-minute cycles. Before flipping
 5. Only after 1-4 pass does the sustained "writes on until Part D" state begin, per the parity
    gate as briefed.
 
+## Overlap test executed and passed
+
+A real settlement landed during the live window — exactly one new outcome per market. Observed
+directly, not inferred:
+
+```
+21:32:35  V2: [V2_PREDICTION_CYCLE] Ingested 4 new prediction outcomes
+21:32:35  V2: Calibration report generated: error=0.000
+21:32:35  DB: CalibrationDriftState advanced h2h 43738→43742, btts 43739→43743,
+              ou25 43740→43744, ou15 43741→43745 (+1 each, exactly matching the 4 ingested)
+21:34:57  V1: [COORDINATOR] 7.1 Ingesting recent prediction outcomes (live-drift monitor)
+21:34:57  V1: [COORDINATOR] Ingested 0 new prediction outcomes for live-drift monitoring
+```
+
+V2 reached the new settlement first; V1's very next cycle (2 minutes later, its normal ~20-minute
+cadence, not specially timed) correctly saw zero new outcomes because the DB-persisted
+high-water-mark had already advanced. No double-ingestion, no duplicate
+`CALIBRATION_DRIFT_DETECTED`, no corruption of `CalibrationDriftState` — items 1-3 of the plan
+above confirmed empirically. Item 4 (write convergence) was already confirmed earlier in this
+window (V2's `run_id=ad117e40` cycle produced correctly-shaped `PredictionRecord` rows with sane
+`blended_prob`/`ev`/`odds_decimal`, no nulls or corruption). **All four parity conditions pass —
+the sustained write-enabled state may now stand as the interim configuration until Part D.**
+
 Not yet executed — pending the live overlap window.
