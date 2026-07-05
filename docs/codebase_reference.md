@@ -231,6 +231,29 @@ Predictor → Risk Manager → Execution Strategist → Portfolio Engine
 - `AgentCoordinator.run()` — thin wrapper that delegates to `run_cycle()`
 - `_write_attribution()` — writes causal attribution for each decision
 
+**Phase 31 finding (not yet cut over — see `OWNERSHIP.md`):** of this file's ~1050-line
+`_run_internal()`/`_run_feedback_cycle()`, only two things have had a live effect since betting
+closed (Phase 8, `bot_enabled=False`): the prediction-generation call (Step 1) and the live-drift
+calibration ingest buried in the feedback cycle (Step 7.1/7.3). Everything else — Risk Manager,
+Execution Strategist, Portfolio Engine, Adversary, Policy Engine, the `PlacedBet` write block,
+Learning/WeightOptimizer/EventReplay, Meta-Policy, CLVE — runs every cycle against a betting
+ledger that has taken zero new rows since 2026-06-07. `src/prediction/prediction_cycle.py` is
+the lean V2 replacement, pending Part D's cutover.
+
+### `src/prediction/prediction_cycle.py`
+
+**Phase 31 Part C.** The V2-owned replacement for `AgentCoordinator.run_cycle()`'s live core,
+built but not yet wired into the runtime service (that's Part D). Contains exactly what has a
+live effect today: fetch NS fixtures, generate + save predictions, then run the live-drift
+calibration ingest that `AgentCoordinator` was previously the sole caller of.
+
+- `generate_predictions(save=True, run_id=None)` — fetches NS fixtures, calls
+  `UnifiedPredictionService.generate_with_fixture_data()`/`save_predictions()`; `save=False` is a
+  dry-run used for parity verification against `AgentCoordinator`'s output, writes nothing
+- `run_calibration_ingest()` — calls `state_calibration_engine.ingest_recent_prediction_outcomes()`
+  and, if there were new outcomes, `.generate_report()` (fires `CALIBRATION_DRIFT_DETECTED`)
+- `run_prediction_cycle(save=True, run_id=None)` — the full cycle: both of the above together
+
 ### `src/prediction/unified_prediction_service.py`
 
 Single source of truth for all predictions.
@@ -634,5 +657,6 @@ Key test files:
 | `scripts/daily_sanity_check.py` | Sanity checks run by scheduler | Active |
 | `scripts/capture_forward_odds.py` | Capture open→close odds time-series for the narrow 4-5-league forward-collection (Pinnacle + Bet365 only) | **Superseded (Phase 25)** by `odds_trajectory_scheduler.py`; never wired into cron, kept for reference |
 | `scripts/probe_forward_odds.py` | Tasmania/Norway clock-start check for the same `--league-ids`/`--days-ahead` cron entries — now **read-only** (Phase 25): reads what `odds_trajectory_scheduler.py` already captured and reports Pinnacle presence near kickoff, instead of fetching odds itself | Active |
-| `scripts/auto_bet.py` | Legacy betting pipeline — **DEPRECATED** (not in live path) | Dead — kept for reference |
+| `scripts/auto_bet.py` | Legacy betting pipeline — **DEPRECATED** (not in live path). Phase 31 found it is still cron-triggered daily at 03:00 via `/etc/cron.d/bootball` (`--bet-only`) and fails every single run with `RuntimeError: LEGACY EXECUTION BLOCKED` from its own `check_legacy_execution_allowed()` guard — confirmed via log tail, writes nothing. Cron line to be removed in Phase 31 Part D | Dead but still cron-executing — kept for reference |
 | `scripts/live_monitor.py` | Watch live matches in real-time | Likely dead |
+| `scripts/verify_v2_parity.py` | **Phase 31 Part C** — read-only dry-run comparison of `src/prediction/prediction_cycle.py`'s output against the most recent stored `PredictionRecord` for the same fixture/market, used to verify the new V2 runner before cutover; writes nothing | Active (verification tool) |
