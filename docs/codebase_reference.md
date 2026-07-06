@@ -574,7 +574,7 @@ Rate-limiting and restart-safety both come from one JSON state file (`data/state
 
 | Pattern | Where Used |
 |---------|-----------|
-| Singleton | `RuntimeModeManager`, `ExperimentTracker`, `ExecutionEngine`, `ModelRegistry`, `event_bus`, `LeagueCalibrationEngine` |
+| Singleton | `RuntimeModeManager`, `ExperimentTracker`, `ModelRegistry`, `event_bus`, `LeagueCalibrationEngine` |
 | Context Manager | `get_session()` for DB transactions |
 | Decorator | `@mode_guard()`, `@require_training_or_dev()` for mode authorization |
 | Factory | `create_app()`, `get_model_registry()`, `get_bankroll_manager()` |
