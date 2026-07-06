@@ -12,7 +12,7 @@ from typing import Optional
 
 from config.drift_thresholds import get_threshold_config
 from src.events.event_store import get_event_store
-from src.alerts.event_bus import event_bus, Events
+from src.events.event_bus import event_bus, Events
 
 logger = logging.getLogger(__name__)
 

@@ -422,7 +422,7 @@ def notify_sanity_check(new_issues: list[dict], resolved_issues: list[dict]):
 def wire_to_event_bus():
     """Subscribe to the event bus and forward relevant events to Discord."""
     try:
-        from src.alerts.event_bus import event_bus, Events
+        from src.events.event_bus import event_bus, Events
 
         def on_run_completed(event: dict):
             notify_cycle_success(

@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Optional
 from enum import Enum
 
-from src.alerts.event_bus import event_bus, Events
+from src.events.event_bus import event_bus, Events
 from src.governance.policy_engine import PolicyDecision, PolicyDecisionType
 
 logger = logging.getLogger(__name__)

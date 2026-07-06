@@ -17,7 +17,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from src.alerts.event_bus import event_bus
+from src.events.event_bus import event_bus
 from src.agents.shared.events import AgentEvents, PORTFOLIO_PAYLOAD
 from src.agents.shared.state_store import get_state_store
 from src.betting.portfolio import get_markowitz_optimizer

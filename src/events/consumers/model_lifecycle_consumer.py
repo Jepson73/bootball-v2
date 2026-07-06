@@ -11,7 +11,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from src.alerts.event_bus import Events, event_bus
+from src.events.event_bus import Events, event_bus
 from src.events.event_store import get_event_store
 from src.events.consumers.base import EventConsumer
 

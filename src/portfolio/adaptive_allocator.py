@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Optional
 
-from src.alerts.event_bus import event_bus, Events
+from src.events.event_bus import event_bus, Events
 from src.performance.performance_tracker import get_performance_tracker
 
 logger = logging.getLogger(__name__)

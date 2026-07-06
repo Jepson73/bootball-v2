@@ -8781,7 +8781,7 @@ try:
     event_stream = get_event_stream()
     
     # Wire event bus to push events to stream
-    from src.alerts.event_bus import event_bus as bootball_event_bus
+    from src.events.event_bus import event_bus as bootball_event_bus
     
     def push_to_stream(event):
         event_stream.push_event(event)

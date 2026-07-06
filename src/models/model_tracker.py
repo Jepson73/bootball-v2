@@ -186,7 +186,7 @@ class ModelTracker:
                 s.commit()
                 logger.info(f"Recorded retrain for {self.market}: {reason}")
                 
-                from src.alerts.event_bus import event_bus, Events
+                from src.events.event_bus import event_bus, Events
                 event_bus.emit(Events.MODEL_TREND, {
                     "market": self.market,
                     "old_version_id": old_version_id,

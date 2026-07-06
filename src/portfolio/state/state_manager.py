@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Optional
 
 from src.portfolio.state.portfolio_state import PortfolioState, StateSnapshot
-from src.alerts.event_bus import event_bus
+from src.events.event_bus import event_bus
 
 logger = logging.getLogger(__name__)
 

@@ -57,7 +57,7 @@ def _log_quota(event: str, used: int) -> None:
             settings.backfill_daily_cap,
         ])
 
-from src.alerts.event_bus import event_bus as EventBus, Events
+from src.events.event_bus import event_bus as EventBus, Events
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)

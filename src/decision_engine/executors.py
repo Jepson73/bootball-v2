@@ -9,7 +9,7 @@ import logging
 from typing import Any, Callable
 
 from src.decision_engine.actions import Action
-from src.alerts.event_bus import event_bus, Events
+from src.events.event_bus import event_bus, Events
 
 logger = logging.getLogger(__name__)
 

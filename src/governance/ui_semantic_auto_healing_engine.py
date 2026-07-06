@@ -328,7 +328,7 @@ class UISemanticAutoHealingEngine:
     
     def _emit_healing_event(self, event_name: str, data: dict):
         """Emit healing events."""
-        from src.alerts.event_bus import event_bus
+        from src.events.event_bus import event_bus
         
         event_bus.emit(event_name, {
             **data,

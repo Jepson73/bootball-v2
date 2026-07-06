@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from typing import Optional
 
-from src.alerts.event_bus import event_bus
+from src.events.event_bus import event_bus
 from src.agents.shared.events import AgentEvents
 from src.agents.predictor.agent import get_predictor_agent
 from src.agents.risk_manager.agent import get_risk_manager_agent

@@ -16,7 +16,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from src.alerts.event_bus import event_bus, Events
+from src.events.event_bus import event_bus, Events
 from src.agents.shared.events import AgentEvents, PREDICTION_PAYLOAD
 from src.agents.shared.state_store import get_state_store
 

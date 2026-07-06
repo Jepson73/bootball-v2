@@ -17,7 +17,7 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from src.alerts.event_bus import event_bus, Events
+from src.events.event_bus import event_bus, Events
 from src.models.lifecycle import get_lifecycle_manager
 
 logger = logging.getLogger(__name__)

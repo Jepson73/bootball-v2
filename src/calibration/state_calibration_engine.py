@@ -22,7 +22,7 @@ from pathlib import Path
 
 import numpy as np
 
-from src.alerts.event_bus import event_bus, Events
+from src.events.event_bus import event_bus, Events
 from src.portfolio.state.portfolio_state import PortfolioState
 
 logger = logging.getLogger(__name__)

@@ -30,7 +30,7 @@ from src.agents.risk_manager.agent import get_risk_manager_agent
 from src.learning.optimizer.weight_optimizer import get_weight_optimizer
 from src.portfolio.state.portfolio_state import PortfolioState
 from src.portfolio.state.state_manager import get_state_manager
-from src.alerts.event_bus import event_bus, Events
+from src.events.event_bus import event_bus, Events
 from src.agents.shared.events import AgentEvents
 from sqlalchemy import select
 from src.storage.db import get_session

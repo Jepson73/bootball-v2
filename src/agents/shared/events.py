@@ -4,7 +4,7 @@ Shared event definitions for multi-agent architecture.
 All inter-agent communication MUST use these events.
 """
 
-from src.alerts.event_bus import Events as BaseEvents
+from src.events.event_bus import Events as BaseEvents
 
 
 class AgentEvents(BaseEvents):

@@ -8,7 +8,7 @@ about system actions (alerts, retraining, throttling, etc.).
 import logging
 from typing import Any, Callable, Optional
 
-from src.alerts.event_bus import event_bus, Events
+from src.events.event_bus import event_bus, Events
 from src.decision_engine.state import DecisionState, get_decision_state
 from src.decision_engine.rules import load_rules
 from src.decision_engine.actions import Action, SEND_ALERT

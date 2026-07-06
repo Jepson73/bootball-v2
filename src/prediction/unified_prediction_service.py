@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime
 from typing import Optional
 
-from src.alerts.event_bus import event_bus, Events
+from src.events.event_bus import event_bus, Events
 from src.prediction.market_normalizer import normalize_market, normalize_market_pick
 from src.storage.db import get_session
 from src.storage.models import Fixture, FixtureOdds, PredictionRecord

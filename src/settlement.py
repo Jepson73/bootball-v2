@@ -244,7 +244,7 @@ def update_pending_fixture_scores() -> int:
 
     if forward_dated_catches:
         try:
-            from src.alerts.event_bus import event_bus, Events
+            from src.events.event_bus import event_bus, Events
             event_bus.emit(Events.SETTLEMENT_INTEGRITY_EVENT, {
                 "kind": "forward_dated_live_catch",
                 "count": len(forward_dated_catches),
@@ -740,7 +740,7 @@ def settle_placed_bets(days: int | None = None) -> tuple[int, float, list[dict]]
             if bet_details:
                 send_settlement_alert(bet_details, total_pnl)
                 
-                from src.alerts.event_bus import event_bus, Events
+                from src.events.event_bus import event_bus, Events
                 event_bus.emit(Events.BET_SETTLED, {
                     "settled_count": settled,
                     "total_pnl": total_pnl,
@@ -1177,7 +1177,7 @@ def verify_ft_fixtures(hours: int = 6, limit: int = 100) -> int:
 
     if corrections:
         try:
-            from src.alerts.event_bus import event_bus, Events
+            from src.events.event_bus import event_bus, Events
             event_bus.emit(Events.SETTLEMENT_INTEGRITY_EVENT, {
                 "kind": "verify_guard_correction",
                 "count": len(corrections),
@@ -1353,7 +1353,7 @@ def _check_dead_mark_spike(count: int) -> None:
         tmp.replace(_DEAD_MARK_HISTORY_FILE)
 
         if is_spike:
-            from src.alerts.event_bus import event_bus, Events
+            from src.events.event_bus import event_bus, Events
             event_bus.emit(Events.SETTLEMENT_INTEGRITY_EVENT, {
                 "kind": "dead_mark_spike",
                 "count": count,

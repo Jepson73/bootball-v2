@@ -19,7 +19,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from src.alerts.event_bus import event_bus, Events
+from src.events.event_bus import event_bus, Events
 from src.betting.bankroll import BankrollManager, get_bankroll_manager
 from src.governance.execution_spine_guard import get_execution_spine_guard, ExecutionSource
 from src.governance.policy_engine import PolicyDecision

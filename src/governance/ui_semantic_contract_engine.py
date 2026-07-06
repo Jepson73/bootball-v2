@@ -292,7 +292,7 @@ class UISemanticContractEngine:
     
     def _emit_semantic_event(self, result: SemanticValidationResult):
         """Emit semantic validation events."""
-        from src.alerts.event_bus import event_bus
+        from src.events.event_bus import event_bus
         
         if result.status == SemanticValidationStatus.VALID:
             event_bus.emit("UI_SEMANTIC_VALID", {

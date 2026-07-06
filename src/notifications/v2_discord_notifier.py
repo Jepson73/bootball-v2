@@ -159,7 +159,7 @@ def wire_drift_alarm() -> None:
     """Subscribe to CALIBRATION_DRIFT_DETECTED (state_calibration_engine.py).
     Runs unconditionally — independent of the V1 discord_v1_enabled flag.
     """
-    from src.alerts.event_bus import event_bus, Events
+    from src.events.event_bus import event_bus, Events
 
     def _on_drift(event: dict) -> None:
         market = event.get("market") or "overall"
@@ -230,7 +230,7 @@ def wire_settlement_integrity() -> None:
     """Subscribe to SETTLEMENT_INTEGRITY_EVENT (src/settlement.py). Runs
     unconditionally — independent of the V1 discord_v1_enabled flag.
     """
-    from src.alerts.event_bus import event_bus, Events
+    from src.events.event_bus import event_bus, Events
 
     def _on_event(event: dict) -> None:
         kind = event.get("kind")

@@ -12,7 +12,7 @@ from datetime import datetime
 from typing import Optional, Dict, List
 from dataclasses import dataclass
 
-from src.alerts.event_bus import event_bus
+from src.events.event_bus import event_bus
 from src.agents.shared.events import AgentEvents
 from src.agents.adversary.scenarios import StressScenarios
 from src.agents.adversary.stress_models import StressModels, StressResult

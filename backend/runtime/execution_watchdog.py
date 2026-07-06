@@ -290,7 +290,7 @@ class ExecutionWatchdog:
                 logger.warning(f"Event callback failed: {e}")
         
         try:
-            from src.alerts.event_bus import event_bus, Events
+            from src.events.event_bus import event_bus, Events
             
             event_map = {
                 "RUNTIME_STALLED": "health_update",

@@ -97,7 +97,7 @@ class ExperimentTracker:
         
         logger.info(f"EXPERIMENT RUN STARTED: {run_id}")
         
-        from src.alerts.event_bus import event_bus, Events
+        from src.events.event_bus import event_bus, Events
         event_bus.emit(Events.RUN_STARTED, {
             "run_id": run_id,
             "mode": runtime_mode,
@@ -175,7 +175,7 @@ class ExperimentTracker:
         finished_run_id = self._current_run_id
         self._current_run_id = None
 
-        from src.alerts.event_bus import event_bus, Events
+        from src.events.event_bus import event_bus, Events
         event_bus.emit(Events.RUN_FINISHED, {
             "run_id": finished_run_id,
             "bankroll_snapshot": bankroll_snapshot,

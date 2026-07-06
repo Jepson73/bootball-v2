@@ -464,7 +464,7 @@ class TemporalConsistencyEngine:
     
     def _emit_temporal_event(self, state: RunTemporalState):
         """Emit temporal governance events."""
-        from src.alerts.event_bus import event_bus
+        from src.events.event_bus import event_bus
         
         event_map = {
             SystemState.IMPROVING: "SYSTEM_IMPROVING",

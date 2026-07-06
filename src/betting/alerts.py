@@ -364,7 +364,7 @@ def send_data_alert(
         f"{message}"
     )
     
-    from src.alerts.event_bus import event_bus, Events
+    from src.events.event_bus import event_bus, Events
     event_bus.emit(Events.HEALTH_UPDATE, {
         "alert_type": "data",
         "title": title,
@@ -403,7 +403,7 @@ def send_bet_placed_alert(
         + (f"League: {league}" if league else "")
     )
     
-    from src.alerts.event_bus import event_bus, Events
+    from src.events.event_bus import event_bus, Events
     event_bus.emit(Events.BETS_GENERATED, {
         "count": 1,
         "market": market,
@@ -449,7 +449,7 @@ def send_daily_run_alert(
             f"Error: {error}"
         )
     
-    from src.alerts.event_bus import event_bus, Events
+    from src.events.event_bus import event_bus, Events
     event_bus.emit(Events.RUN_FINISHED, {
         "run_type": "daily_run",
         "status": status,

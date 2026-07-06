@@ -7,7 +7,7 @@ import logging
 from typing import Any
 
 from src.events.consumers.base import EventConsumer
-from src.alerts.event_bus import Events
+from src.events.event_bus import Events
 
 logger = logging.getLogger(__name__)
 

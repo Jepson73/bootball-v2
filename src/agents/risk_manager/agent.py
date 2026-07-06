@@ -18,7 +18,7 @@ import logging
 from datetime import datetime
 from typing import Optional
 
-from src.alerts.event_bus import event_bus
+from src.events.event_bus import event_bus
 from src.agents.shared.events import AgentEvents, RISK_PROFILE_PAYLOAD
 from src.agents.shared.state_store import get_state_store
 from src.portfolio.state.portfolio_state import PortfolioState
