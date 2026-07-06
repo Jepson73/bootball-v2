@@ -7759,7 +7759,7 @@ def debug_predictions_live():
     """Debug endpoint showing live prediction status."""
     from src.storage.db import get_session
     from src.storage.models import PredictionRecord
-    from src.governance.lineage_tracker import get_lineage_tracker
+    from src.infra.lineage_tracker import get_lineage_tracker
     from sqlalchemy import select, func
     from datetime import datetime, timedelta
     

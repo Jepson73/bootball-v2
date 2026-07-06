@@ -92,7 +92,7 @@ class ExecutionRuntime:
     
     def start(self):
         """Start the execution runtime loop."""
-        from src.governance.runtime_lock import RuntimeLock
+        from src.infra.runtime_lock import RuntimeLock
         
         try:
             RuntimeLock.acquire(self._instance_id)
@@ -175,7 +175,7 @@ class ExecutionRuntime:
         start_time = time.time()
         
         # Initialize lineage tracking
-        from src.governance.lineage_tracker import start_lineage
+        from src.infra.lineage_tracker import start_lineage
         lineage = start_lineage(run_id)
         
         try:
@@ -196,7 +196,7 @@ class ExecutionRuntime:
             # HARD ASSERTION - predictions must exist
             if predictions == 0:
                 logger.error(f"RUN_FAILED: run_id={run_id}, reason=NO_PREDICTIONS")
-                from src.governance.lineage_tracker import complete_lineage
+                from src.infra.lineage_tracker import complete_lineage
                 complete_lineage("FAILED")
                 raise RuntimeError("PIPELINE DEAD: NO PREDICTIONS GENERATED")
             
@@ -204,7 +204,7 @@ class ExecutionRuntime:
             assert run_id is not None, "RUN_ID_IS_NONE"
             
             # Set run metrics before completing
-            from src.governance.lineage_tracker import get_lineage_tracker
+            from src.infra.lineage_tracker import get_lineage_tracker
             tracker = get_lineage_tracker()
             tracker.set_run_metrics(
                 prediction_count=predictions,
@@ -213,7 +213,7 @@ class ExecutionRuntime:
             )
             
             # Complete lineage - ALWAYS executes
-            from src.governance.lineage_tracker import complete_lineage
+            from src.infra.lineage_tracker import complete_lineage
             complete_lineage("COMPLETE")
             logger.info(f"Lineage completed: run_id={run_id}, predictions={predictions}, bets={bets}")
             
@@ -243,7 +243,7 @@ class ExecutionRuntime:
 
             # ALWAYS mark lineage as failed - even if exception in lineage handling
             try:
-                from src.governance.lineage_tracker import get_lineage_tracker, complete_lineage
+                from src.infra.lineage_tracker import get_lineage_tracker, complete_lineage
                 tracker = get_lineage_tracker()
                 tracker.set_run_metrics(
                     prediction_count=0,
@@ -413,7 +413,7 @@ class ExecutionRuntime:
         """Graceful shutdown."""
         logger.info("🛑 Shutting down execution runtime...")
         
-        from src.governance.runtime_lock import RuntimeLock
+        from src.infra.runtime_lock import RuntimeLock
         try:
             RuntimeLock.release()
             logger.info("✅ RuntimeLock released")

@@ -85,7 +85,7 @@ class V2ExecutionRuntime:
         logger.info("=" * 60)
 
     def start(self):
-        from src.governance.runtime_lock import RuntimeLock
+        from src.infra.runtime_lock import RuntimeLock
 
         try:
             RuntimeLock.acquire(self._instance_id, lock_file=V2_LOCK_FILE)
@@ -213,7 +213,7 @@ class V2ExecutionRuntime:
 
     def _shutdown(self):
         logger.info("🛑 Shutting down V2 execution runtime...")
-        from src.governance.runtime_lock import RuntimeLock
+        from src.infra.runtime_lock import RuntimeLock
         try:
             RuntimeLock.release()
             logger.info("✅ V2 RuntimeLock released")

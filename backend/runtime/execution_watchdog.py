@@ -124,7 +124,7 @@ class ExecutionWatchdog:
     
     def _check_health(self):
         """Check runtime health and detect failures."""
-        from src.governance.runtime_lock import RuntimeLock, verify_execution_ownership
+        from src.infra.runtime_lock import RuntimeLock, verify_execution_ownership
         
         current_time = datetime.utcnow()
         
@@ -214,7 +214,7 @@ class ExecutionWatchdog:
         logger.info(f"🔄 Attempting restart #{self._restart_count + 1}...")
         
         try:
-            from src.governance.runtime_lock import RuntimeLock
+            from src.infra.runtime_lock import RuntimeLock
             RuntimeLock.release()
         except:
             pass

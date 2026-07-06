@@ -301,7 +301,7 @@ class SystemTruthSnapshot:
     def _get_lineage(self) -> dict:
         """Get lineage state."""
         try:
-            from src.governance.lineage_tracker import get_lineage_tracker
+            from src.infra.lineage_tracker import get_lineage_tracker
             
             lt = get_lineage_tracker()
             runs = lt.list_runs(limit=10)
@@ -323,7 +323,7 @@ class SystemTruthSnapshot:
                 
                 execution_status = {"execution_authority": "unknown", "lock_holder": None}
                 try:
-                    from src.governance.runtime_lock import RuntimeLock, is_execution_allowed, verify_execution_ownership
+                    from src.infra.runtime_lock import RuntimeLock, is_execution_allowed, verify_execution_ownership
                     execution_status = {
                         "execution_authority": "self" if verify_execution_ownership() else "external",
                         "lock_holder": RuntimeLock.get_active_instance(),

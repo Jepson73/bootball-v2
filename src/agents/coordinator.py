@@ -47,8 +47,8 @@ from src.contracts.pipeline_contracts import (
     PipelineTrace, PipelineStage, FailureClassification, PolicyDecision,
     ContractValidator, ContractValidationError
 )
-from src.governance.system_versioning import get_system_version, create_run_lineage
-from src.governance.lineage_tracker import get_lineage_tracker
+from src.infra.system_versioning import get_system_version, create_run_lineage
+from src.infra.lineage_tracker import get_lineage_tracker
 logger = logging.getLogger(__name__)
 
 

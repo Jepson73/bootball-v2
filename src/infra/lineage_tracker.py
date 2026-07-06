@@ -13,7 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from src.governance.system_versioning import RunLineage, VersionManager
+from src.infra.system_versioning import RunLineage, VersionManager
 
 logger = logging.getLogger(__name__)
 
