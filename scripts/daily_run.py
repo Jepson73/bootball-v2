@@ -13,7 +13,8 @@ MUST NOT:
 - call portfolio engine  
 - call execution engine
 
-The continuous prediction/betting is handled by run_continuous_cycle()
+Continuous prediction generation is handled by src.prediction.prediction_cycle
+(Phase 31 Part C/D), invoked from backend/runtime/v2_runtime.py.
 """
 
 import argparse
