@@ -574,7 +574,7 @@ Rate-limiting and restart-safety both come from one JSON state file (`data/state
 
 | Pattern | Where Used |
 |---------|-----------|
-| Singleton | `RuntimeModeManager`, `ExperimentTracker`, `ModelRegistry`, `event_bus`, `LeagueCalibrationEngine` |
+| Singleton | `RuntimeModeManager`, `ExperimentTracker`, `ModelRegistry`, `event_bus`, `LeagueCalibrationEngine`, `ExecutionEngine` (now only `src/betting/execution_engine.py` — `backend/execution_engine.py`'s same-named class was archived in Phase 31 Part D; this one is V1-only too, moving to `V1_archive/` in Part D's next step) |
 | Context Manager | `get_session()` for DB transactions |
 | Decorator | `@mode_guard()`, `@require_training_or_dev()` for mode authorization |
 | Factory | `create_app()`, `get_model_registry()`, `get_bankroll_manager()` |
