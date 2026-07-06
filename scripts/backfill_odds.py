@@ -15,7 +15,7 @@ from src.ingestion.client import APIFootballClient
 from src.storage.db import get_session
 from src.storage.models import Fixture, FixtureOdds, PredictionRecord
 from sqlalchemy import select
-from src.betting.ev import expected_value
+from src.prediction.lib.ev import expected_value
 from src.models.calibrator import calibrate_prediction
 
 MARKET_ODDS_MAP = {

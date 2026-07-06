@@ -70,7 +70,7 @@ def compute_baseline_confidence(league_id: int, window_matches: int = 50) -> Lay
 def compute_regime_confidence(league_id: int) -> LayerConfidence:
     """Compute confidence for regime classification."""
     
-    from src.betting.temporal_adapter import get_rolling_baseline, classify_regime
+    from src.prediction.lib.temporal_adapter import get_rolling_baseline, classify_regime
     
     rolling = get_rolling_baseline(league_id)
     if rolling is None:
@@ -109,7 +109,7 @@ def compute_regime_confidence(league_id: int) -> LayerConfidence:
 def compute_drift_confidence(league_id: int, market: str) -> LayerConfidence:
     """Compute confidence for drift detection signal."""
     
-    from src.betting.temporal_adapter import compute_drift_score, DRIFT_THRESHOLD
+    from src.prediction.lib.temporal_adapter import compute_drift_score, DRIFT_THRESHOLD
     
     drift = compute_drift_score(league_id, market)
     drift_score = drift.get("drift_score", 0)
@@ -251,8 +251,8 @@ def combine_with_confidence(
 def compute_adjustments(league_id: int, market: str, model_prob: float) -> Dict[str, float]:
     """Compute adjustment factors for each layer."""
     
-    from src.betting.league_normalizer import get_league_baseline
-    from src.betting.temporal_adapter import get_rolling_baseline, classify_regime, compute_drift_score
+    from src.prediction.lib.league_normalizer import get_league_baseline
+    from src.prediction.lib.temporal_adapter import get_rolling_baseline, classify_regime, compute_drift_score
     
     adjustments = {
         "baseline": 0.0,

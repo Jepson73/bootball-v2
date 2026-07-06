@@ -3,9 +3,9 @@ tests/test_betting.py
 Run: pytest tests/test_betting.py -v
 """
 import pytest
-from src.betting.ev import expected_value, implied_probability
+from src.prediction.lib.ev import expected_value, implied_probability
 from src.betting.kelly import kelly_fraction, fractional_kelly, kelly_stake as stake
-from src.betting.shin import shin_probabilities, overround
+from src.prediction.lib.shin import shin_probabilities, overround
 from src.evaluation.calibration import brier_score, log_loss
 
 

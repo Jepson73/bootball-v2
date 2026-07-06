@@ -21,7 +21,7 @@ from __future__ import annotations
 
 from typing import Optional
 
-from src.betting.shin import shin_probabilities
+from src.prediction.lib.shin import shin_probabilities
 
 # Weight given to the model's own probability; the rest goes to the
 # de-vigged market-implied probability. Deliberately model-skeptical:

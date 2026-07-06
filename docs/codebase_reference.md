@@ -286,19 +286,30 @@ Kelly criterion stake sizing.
 - `fractional_kelly(p, b, fraction)` — risk-reduced Kelly
 - `kelly_stake(bankroll, p, b, fraction, cap)` — final stake with bankroll cap
 
-### `src/betting/ev.py`
+### `src/prediction/lib/ev.py`
 
-Expected value and implied probability.
+Expected value and implied probability. (Phase 31 Part D: relocated from `src/betting/ev.py` —
+live production math living under a "betting" path was exactly the naming lie this phase exists
+to end; see `ADOPTION.md`.)
 
 - `expected_value(prob, decimal_odds)` → float
 - `implied_probability(decimal_odds)` → float
 
-### `src/betting/shin.py`
+### `src/prediction/lib/shin.py`
 
-Fair probability extraction from bookmaker odds.
+Fair probability extraction from bookmaker odds. (Phase 31 Part D: relocated from
+`src/betting/shin.py`, same rationale as `ev.py` above.)
 
 - `shin_probabilities(odds_list)` — removes overround via Shin model
 - `overround(odds_list)` — calculates bookmaker margin
+
+### `src/prediction/lib/prediction.py`, `market_taxonomy.py`, `league_normalizer.py`, `temporal_adapter.py`
+
+Relocated from `src/betting/` in Phase 31 Part D (same rationale) — feature engineering and
+league/temporal baseline adjustment feeding `unified_prediction_service.py`'s blend step.
+`prediction.py::get_model_prediction()` is the actual production prediction loader; it was
+previously the most misleading case of the naming problem this phase fixes, since "the real
+prediction code lives in the betting package" was true and confusing.
 
 ### `src/models/model_registry.py`
 

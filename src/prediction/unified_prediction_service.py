@@ -18,7 +18,7 @@ from src.alerts.event_bus import event_bus, Events
 from src.prediction.market_normalizer import normalize_market, normalize_market_pick
 from src.storage.db import get_session
 from src.storage.models import Fixture, FixtureOdds, PredictionRecord
-from src.betting.prediction import get_model_prediction
+from src.prediction.lib.prediction import get_model_prediction
 from src.calibration.league_calibration_engine import LeagueCalibrationEngine
 from src.calibration.market_blend import blend_with_market
 

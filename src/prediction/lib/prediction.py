@@ -12,7 +12,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 
 from src.storage.db import get_session
 from src.storage.models import Standing, Fixture, FixtureStats
-from src.betting.market_taxonomy import get_market_info, get_model_family
+from src.prediction.lib.market_taxonomy import get_market_info, get_model_family
 
 logger = logging.getLogger(__name__)
 
@@ -164,14 +164,14 @@ def build_features_for_market(market: str, home: Standing, away: Standing, fixtu
     If league_id is provided, features are normalized against league baseline.
     If use_rolling is True (default), uses time-decayed rolling baselines with regime adjustment.
     """
-    from src.betting.league_normalizer import get_league_baseline, get_default_baseline
+    from src.prediction.lib.league_normalizer import get_league_baseline, get_default_baseline
     
     taxonomy = get_market_info(market)
     
     baseline = None
     if league_id:
         if use_rolling:
-            from src.betting.temporal_adapter import get_regime_adjusted_baseline
+            from src.prediction.lib.temporal_adapter import get_regime_adjusted_baseline
             try:
                 rolling = get_regime_adjusted_baseline(league_id)
                 if rolling:

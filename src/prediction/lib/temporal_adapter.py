@@ -241,7 +241,7 @@ def get_regime_adjusted_baseline(league_id: int) -> RollingBaseline:
     
     rolling = get_rolling_baseline(league_id)
     if rolling is None:
-        from src.betting.league_normalizer import get_default_baseline
+        from src.prediction.lib.league_normalizer import get_default_baseline
         default = get_default_baseline()
         return RollingBaseline(
             league_id=league_id,
@@ -275,7 +275,7 @@ def should_trigger_retrain(league_id: int, market: str) -> bool:
 
 def get_all_league_regimes() -> dict:
     """Get current regime for all leagues with sufficient data."""
-    from src.betting.league_normalizer import get_all_league_baselines
+    from src.prediction.lib.league_normalizer import get_all_league_baselines
     
     baselines = get_all_league_baselines()
     regimes = {}

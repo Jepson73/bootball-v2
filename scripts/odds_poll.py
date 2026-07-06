@@ -28,7 +28,7 @@ from src.ingestion.client import APIFootballClient, calls_remaining_today
 from src.ingestion.odds_snapshot_capture import write_snapshots_from_response
 from src.storage.db import get_session, init_db
 from src.storage.models import Fixture, FixtureOdds, PredictionRecord, PlacedBet
-from src.betting.ev import expected_value
+from src.prediction.lib.ev import expected_value
 from src.betting.alerts import BettingAlerts, BetAlert
 from src.models.calibrator import calibrate_prediction
 from src.calibration.market_blend import blend_with_market

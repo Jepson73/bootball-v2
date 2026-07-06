@@ -47,9 +47,9 @@ from src.storage.models import (
 )
 from src.betting.kelly import fractional_kelly, kelly_stake
 from src.betting.alerts import BettingAlerts, BetAlert
-from src.betting.ev import expected_value
-from src.betting.shin import shin_probabilities
-from src.betting.prediction import get_model_prediction, MARKET_OUTCOMES
+from src.prediction.lib.ev import expected_value
+from src.prediction.lib.shin import shin_probabilities
+from src.prediction.lib.prediction import get_model_prediction, MARKET_OUTCOMES
 from src.betting.market_feasibility import should_place_bet, get_all_market_statuses
 
 # ===== MIGRATION MODE CONFIGURATION =====

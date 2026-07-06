@@ -70,7 +70,7 @@ class PredictorAgent:
         from src.storage.models import PredictionRecord, Fixture
         from src.storage.connection import get_session
         from sqlalchemy import select, func
-        from src.betting.prediction import get_model_prediction
+        from src.prediction.lib.prediction import get_model_prediction
         
         predictions = []
         

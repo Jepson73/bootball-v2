@@ -31,8 +31,8 @@ from sqlalchemy import select, func
 from config.leagues import LEAGUES
 from src.storage.db import get_session
 from src.storage.models import Fixture
-from src.betting.prediction import get_model_prediction, MARKET_OUTCOMES
-from src.betting.ev import expected_value
+from src.prediction.lib.prediction import get_model_prediction, MARKET_OUTCOMES
+from src.prediction.lib.ev import expected_value
 from src.betting.kelly import fractional_kelly
 from src.evaluation.sharpe import risk_metrics_from_pnl
 

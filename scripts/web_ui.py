@@ -53,7 +53,7 @@ from src.cache.prediction_cache import get_prediction_cache, cache_prediction, g
 from src.models.calibrator import get_calibration_cache, calibrate_prediction
 from src.models.model_tracker import get_model_tracker, ModelTracker
 from src.models.iteration_graph import generate_all_graphs
-from src.betting.prediction import build_features_h2h
+from src.prediction.lib.prediction import build_features_h2h
 from src.storage.db import get_session, init_db
 from src.storage.models import (
     Fixture, FixtureOdds, Standing, PredictionRecord, PlacedBet,
@@ -8406,7 +8406,7 @@ def betting_action():
 
             elif action == 'place-bets':
                 from src.betting.kelly import fractional_kelly, kelly_stake
-                from src.betting.ev import expected_value
+                from src.prediction.lib.ev import expected_value
                 from src.models.trainer import get_cache_path
                 from src.betting.round_manager import close_round_if_full
                 import pickle

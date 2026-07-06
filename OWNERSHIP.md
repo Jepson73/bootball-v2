@@ -391,6 +391,26 @@ otherwise-live/adopted file — its sibling `bootstrap_consumers()` is what V2 a
 `src.alerts.handlers`, `src.portfolio.adaptive_allocator` — all V1-only — so stripping it is also
 what lets `src/events/bootstrap.py` pass ADOPTION.md's criterion 2 cleanly).
 
+**Another Part B gap found during D4's relocation:** `src/betting/alerts.py` (`BettingAlerts`,
+`BetAlert`) is entangled with three files ADOPTION.md classified as V2-native/live —
+`scripts/odds_poll.py`, `src/settlement.py`, and `scripts/live_monitor.py` — but was never itself
+put through the adoption criteria. Checked both live call sites directly rather than assuming
+either way:
+- `odds_poll.py::main()`'s cron path (every 30 min, 08:00–24:00 CET) does reach
+  `BettingAlerts.send_bet_alert()` whenever `updated_odds > 0` (1029+ calls found in
+  `/var/log/bootball/odds_poll.log`), but `DiscordNotifier.send()` gates on
+  `settings.discord_v1_enabled` (`False`) before ever posting — same silencing pattern as the
+  Phase 30 Discord work, confirmed inert, not a live bug.
+- `src/settlement.py::send_settlement_alert()` is only reachable from a `pending_bets`/
+  `PlacedBet`-keyed code path that requires `bet_details` to be non-empty — impossible today
+  since `PlacedBet` has taken zero new rows since 2026-06-07 (`bot_enabled=False`). Dead in
+  practice, not by a flag.
+
+Not moved or fixed this phase — it's inert on both live paths by the same mechanisms already
+documented elsewhere (Discord silencing, `bot_enabled=False`), and `alerts.py` itself is staying
+in `src/betting/` to be archived wholesale with the rest of that directory's dead cluster in D7.
+Flagged so a future audit doesn't have to re-derive this from scratch.
+
 **One gap surfaced as a side effect, flagged not fixed:** manual model retraining today has
 exactly one trigger — `scripts/web_ui.py`'s (V1, port 5001) `/api/admin/train` endpoint, which
 calls `_train_market_with_calibration()` directly (bypassing `ExecutionEngine` entirely — it was
