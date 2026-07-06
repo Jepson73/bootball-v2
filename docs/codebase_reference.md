@@ -62,11 +62,13 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 | `gunicorn -w 1 -b 0.0.0.0:5001 scripts.web_ui:app` | **V1 UI (reference)** — legacy Flask UI on port 5001 via `bootball-web.service` |
 | `python backend/runtime/execution_runtime.py` | Core execution process — runs `AgentCoordinator.run_cycle()` every 20 minutes |
 | `python backend/runtime/v2_runtime.py` | **Phase 31 Part C** — V2 execution process (`bootball-v2-runtime.service`), runs `src.prediction.prediction_cycle.run_prediction_cycle()` every 20 minutes instead of `AgentCoordinator`; deployed alongside the V1 runtime during the parallel-verification window, gated by `V2_RUNTIME_WRITE_ENABLED` (default `false` = dry-run, generates but does not save); holds its own `RuntimeLock` file (`data/v2_execution_runtime.lock`) so it can run concurrently with V1's (`data/execution_runtime.lock`) — see `OWNERSHIP.md` |
-| `python backend/app.py` | Alternative Flask entry point |
 | `python scripts/migrate.py` | Run database schema migrations |
 | `python scripts/backfill_all.py --seasons 2023 2022` | Backfill historical data |
 | `python src/cli/backtest.py` | Historical strategy simulation |
 | `python src/cli/event_replay.py` | Replay and debug event sequences |
+
+(Phase 31 Part D: `python backend/app.py`, a second unused Flask app-factory with zero
+importers anywhere in the live tree, archived to `V1_archive/backend/app.py`.)
 
 ### Startup Sequence
 
@@ -153,14 +155,6 @@ Core execution loop — the single spine driving predictions and bet placement.
 - This is the entry point for all betting activity; APScheduler only handles data-fetch auxiliary jobs
 - `_run_settlement()` calls `src.settlement.verify_ft_fixtures()` (Phase 27) before `settle_placed_bets()`/`settle_predictions()`
 
-### `backend/execution_engine.py`
-
-Legacy job dispatcher (singleton) — largely superseded by `ExecutionRuntime`.
-
-- `JobType`, `ExecutionStatus` — enums
-- `ExecutionEngine.execute()` — routes scheduler jobs to handlers
-- Note: still imported by some scripts; the live betting path bypasses this entirely in favour of `AgentCoordinator.run_cycle()` via `ExecutionRuntime`
-
 ### `backend/experiment_tracker.py`
 
 Tracks experiment runs end-to-end (singleton).
@@ -168,13 +162,6 @@ Tracks experiment runs end-to-end (singleton).
 - `SystemSnapshot` — captures model versions, config hash, run metadata
 - `ExperimentTracker.start_run()`, `capture_system_snapshot()`, `finalize_run()`
 - Writes to `experiment_runs` table; run artifacts viewable at `/runs/{run_id}`
-
-### `backend/auto_healing_engine.py`
-
-Detects and repairs broken experiment runs.
-
-- `RunHealthAnalyzer` — diagnoses missing pipeline stages
-- `AutoHealingEngine` — replays missing stages to restore run integrity
 
 ### `backend/causal_graph.py`
 
@@ -550,7 +537,7 @@ Governs Track A (prediction accuracy, scored on outcomes regardless of odds) and
 **Case study — the ghost alarm (Phase 27b/28).** Two unrelated metrics were both called "ECE," and the confusion is exactly the kind of arrow this principle forbids:
 
 - `live_drift_ece` (`StateCalibrationEngine.compute_calibration_metrics()`) — the drift monitor. Fires `CALIBRATION_DRIFT_DETECTED`, which triggers a live recalibration of the market's calibrator.
-- `postfit_eval_ece` (`ModelVersion.ece`, from `backend/execution_engine.py::_fit_calibrator_for_market()`) — a specific calibrator's own held-out post-fit eval score. Healthy: near-zero through May 2026, 0.05–0.13 since mid-June.
+- `postfit_eval_ece` (`ModelVersion.ece`, from `src/calibration/calibrator_fitting.py::fit_calibrator_for_market()`, relocated from `backend/execution_engine.py` in Phase 31 Part D) — a specific calibrator's own held-out post-fit eval score. Healthy: near-zero through May 2026, 0.05–0.13 since mid-June.
 
 Before Phase 28, the drift monitor's input was `AgentCoordinator._run_feedback_cycle()` pulling the 100 most recent settled `PlacedBet` rows — a betting-layer artifact — into `live_drift_ece`'s computation. Betting closed 2026-06-11 (Phase 8); those 100 rows never changed again. The in-memory dedup (`_calibration_seen_bet_ids`) reset on every process restart, so the same 25 frozen h2h bets replayed as "new" forever, recomputing the identical `live_drift_ece=0.2807167287008361` on every restart and firing 94 pointless h2h recalibrations — a betting-layer number silently driving prediction-layer retraining, the last live arrow pointing backward. `postfit_eval_ece` was fine the whole time (0.05–0.13); the alarm reading a dead, disconnected pipeline is what never went away.
 
@@ -649,13 +636,11 @@ Key test files:
 | `scripts/web_ui_v2.py` | **Primary UI (V2)** — two-track Flask app on port 5000; strict V1 isolation; registers v2/ blueprints (home, track_a, predictions, collection, explorer) | Active |
 | `scripts/web_ui.py` | V1 Flask UI + APScheduler on port 5001 (via gunicorn in `bootball-web.service`); reference build | Active |
 | `scripts/deploy.sh` | Post-commit deployment orchestrator; restarts all long-running services and verifies they start with current commit; `check` subcommand reports staleness without restarting | Active |
-| `scripts/run_continuous_cycle.py` | Core execution pipeline — called by `ExecutionRuntime` | Active |
 | `scripts/daily_run.py` | Data pipeline only (no prediction/betting); enforces `backfill_daily_cap` in `_fetch_completed()`; logs per-run quota snapshots to `logs/quota_log.csv`; `_fetch_completed()`'s per-league `status="FT"` fetch now `force_refresh=True` and `_save_completed()` won't clobber a fixture already in a terminal status (Phase 27); `_force_settlement_baseline()` calls `verify_ft_fixtures()` before settling | Active |
 | `scripts/backfill_all.py` | Historical data ingestion (multi-season) | Active |
 | `scripts/backfill_cron.py` | Nightly incremental backfill (4am cron) | Active |
 | `scripts/backfill_odds.py` | Odds-specific backfill | Active |
 | `scripts/backfill_standings.py` | Standings-specific backfill | Active |
-| `scripts/make_predictions.py` | Manual prediction generation | Active |
 | `scripts/odds_poll.py` | Poll odds; recalculate EV; also passively piggybacks `odds_snapshots` writes onto its own fetches (Phase 25, zero extra API cost) | Active |
 | `scripts/odds_trajectory_scheduler.py` | Active `odds_snapshots` capture for ALL odds-carrying fixtures (Phase 25) — ~1 touch/day until 6h before kickoff then ~hourly; near-kickoff never subject to `collection_daily_cap`; per-fixture attempt tracking in `logs/trajectory_last_attempt.json`; flock-serialized runs | Active |
 | `scripts/migrate.py` | Database schema migration runner | Active |
