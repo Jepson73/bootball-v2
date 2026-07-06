@@ -137,11 +137,10 @@ Unified runtime mode enforcement.
 
 APScheduler auxiliary job definitions and circuit breaker.
 
-- **6 registered auxiliary jobs:** `job_fetch_fixtures` (6h), `job_fetch_results` (1h), `job_fetch_odds` (1h), `job_cleanup_matches` (5m), `job_live_settle` (2m), `job_daily_sanity_check` (24h)
+- **7 registered auxiliary jobs:** `job_fetch_fixtures` (6h), `job_fetch_results` (1h), `job_fetch_odds` (1h), `job_cleanup_matches` (5m), `job_live_settle` (2m), `job_daily_sanity_check` (24h), `job_v2_collection_heartbeat` (24h)
 - `job_fetch_results` now calls `src.settlement.verify_ft_fixtures()` (Phase 27) right before `settle_all()`, so reversible markets never settle off an unconfirmed FT snapshot
-- 4 additional `job_*()` functions are defined but **not registered** in APScheduler: `job_auto_heal_runs`, `job_retrain_models`, `job_run_betting_bot`, `job_run_continuous_cycle` — these are superseded by `ExecutionRuntime`
+- Phase 31 Part D: removed `job_auto_heal_runs`, `job_retrain_models`, `job_run_betting_bot`, `job_run_continuous_cycle`, `MUTATING_JOBS`, and `is_job_allowed_in_mode()` — none of the four job functions were ever wired into the registered list above (confirmed live), and all four only existed to dispatch into V1's `ExecutionEngine`/`AgentCoordinator`/`run_continuous_cycle.py`, which Part D archives. The mode-gating function existed solely to guard these four job types.
 - `_circuit_ok()` / `_circuit_failure()` — fault-tolerant job execution
-- `is_job_allowed_in_mode()` — mode-based job filtering
 
 ### `backend/runtime/execution_runtime.py`
 
@@ -458,11 +457,12 @@ LeagueCalibrationEngine.apply() applies: league-specific → L0000 global → ra
 .env RUNTIME_MODE=live
   ↓
 RuntimeModeManager._mode = RuntimeMode.LIVE
-  ↓  Scheduler job check
-is_job_allowed_in_mode("retrain_models", LIVE) → False → skip
   ↓  Decorator check
 @mode_guard([TRAINING, DEV]) on train functions → raises RuntimeError in LIVE
 ```
+
+(Phase 31 Part D: the scheduler-job mode check shown here previously, `is_job_allowed_in_mode()`,
+was removed along with the four job types it existed to gate — see `backend/scheduler.py` above.)
 
 ---
 
