@@ -21,15 +21,13 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 │   ├── contracts/     Pipeline stage data contracts
 │   ├── evaluation/    Model metrics (Brier score, Sharpe, calibration)
 │   ├── events/        Event-driven architecture (types, store, routing)
-│   ├── features/      Feature engineering (Elo, form, strength, xG)
+│   ├── features/      Elo (form.py/strength.py/xg_features.py archived to V1_archive/dead/ in Phase 31 D7 — zero live importers, orphaned feeders for the archived per-market models below)
 │   ├── governance/    Policy engine, closed-loop validation — V1-only, pending Part D archive (Phase 31: runtime_lock.py/system_versioning.py/lineage_tracker.py moved out to infra/, the only genuinely generic modules in the directory)
-│   ├── handlers/      Event handlers (settlement, odds, backfill)
 │   ├── infra/         Phase 31 Part D: RuntimeLock (single-instance guard), run versioning/lineage tracking — relocated out of governance/, which otherwise means policy/CLVE/meta-policy
 │   ├── ingestion/     API-Football v3 client, backfill pipeline
 │   ├── learning/      Feedback loop, weight optimizer, event replay
 │   ├── maintenance.py Database cleanup utilities
-│   ├── models/        ML model training, calibration, registry, drift detection
-│   ├── monitoring/    Health checks, drift coordinator
+│   ├── models/        ML model training, calibration, registry, drift detection (Phase 31 D7: the 9 orphaned per-market statistical models — btts/dixon_coles/ensemble/h2h/halftime/injuries/late_goals/overunder/poisson — archived to V1_archive/dead/, zero live importers)
 │   ├── notifications/ Discord notifier, agent reporter
 │   ├── performance/   Performance metrics tracker
 │   ├── portfolio/     Self-optimizing and adaptive allocators
