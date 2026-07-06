@@ -16,8 +16,6 @@ jobstores = {
     'default': SQLAlchemyJobStore(url=f'sqlite:///{_SCHEDULER_DB}')
 }
 
-MUTATING_JOBS = {"retrain_models", "run_betting_bot", "run_continuous_cycle"}
-
 # ── Circuit Breaker ────────────────────────────────────────────────────────────
 # Tracks consecutive failures per job. After CIRCUIT_OPEN_AFTER failures the job
 # is skipped for an exponentially increasing cooldown before resetting.
@@ -64,43 +62,6 @@ def _circuit_failure(job_id: str) -> None:
             job_id, failures, cooldown,
         )
 
-
-def is_job_allowed_in_mode(job_id: str) -> bool:
-    """Check if a job is allowed to run in the current runtime mode.
-    
-    Uses unified RuntimeModeManager as SINGLE SOURCE OF TRUTH.
-    """
-    from backend.runtime_mode import (
-        is_live_eval_mode, is_training_mode, is_live_mode, 
-        is_backtest_mode, allow_execution
-    )
-    
-    if job_id in MUTATING_JOBS:
-        if is_live_eval_mode():
-            logger.warning(
-                f"⏭️  SCHEDULER SKIP: Job '{job_id}' is a mutating job and is "
-                f"BLOCKED in LIVE_EVAL mode for evaluation integrity"
-            )
-            return False
-        elif is_backtest_mode():
-            logger.warning(
-                f"⏭️  SCHEDULER SKIP: Job '{job_id}' is a mutating job and is "
-                f"BLOCKED in BACKTEST mode"
-            )
-            return False
-        elif is_training_mode():
-            if job_id in ("run_betting_bot", "run_continuous_cycle"):
-                logger.warning(
-                    f"⏭️  SCHEDULER SKIP: Job '{job_id}' (betting/prediction) is "
-                    f"BLOCKED in TRAINING mode"
-                )
-                return False
-    
-    if job_id == "run_betting_bot" and not allow_execution():
-        logger.warning(f"⏭️  SCHEDULER SKIP: {job_id} not allowed in current mode")
-        return False
-    
-    return True
 
 
 def job_fetch_fixtures():
@@ -322,17 +283,6 @@ def job_fetch_odds():
         logger.exception("JOB: fetch_odds — failed to write ingestion_log")
 
 
-def job_auto_heal_runs():
-    """Auto-healing: detect and fix broken runs."""
-    logger.info("JOB: auto_heal_runs starting")
-    try:
-        from backend.auto_healing_engine import run_auto_healing
-        result = run_auto_healing()
-        logger.info(f"JOB: auto_heal_runs completed - {result.get('healed_count', 0)} runs healed")
-    except Exception:
-        logger.exception("JOB: auto_heal_runs failed")
-
-
 def job_cleanup_matches():
     """Cleanup stale live matches and archive old finished matches."""
     if not _circuit_ok("cleanup_matches"):
@@ -364,161 +314,6 @@ def job_cleanup_matches():
             s.commit()
     except Exception:
         logger.exception("JOB: cleanup_matches — failed to write ingestion_log")
-
-
-
-def job_retrain_models():
-    """Full retrain, write model_versions + retrain_events."""
-    logger.info("JOB: retrain_models starting")
-    
-    from backend.runtime_mode import get_mode_name
-    from backend.run_context import create_run_context
-    from backend.experiment_tracker import get_tracker
-    from backend.execution_engine import get_execution_engine
-    
-    mode = get_mode_name()
-    tracker = get_tracker()
-    engine = get_execution_engine()
-    run_id = None
-    context = None
-    
-    try:
-        if mode in ['training', 'dev']:
-            run_id = tracker.start_run(runtime_mode=mode)
-            logger.info(f"JOB: Started experiment run {run_id}")
-            context = create_run_context(run_id, mode)
-            
-            # TEMP DEBUG: fail-fast guard
-            if run_id is None:
-                raise RuntimeError("CRITICAL: Run ID not created in allowed mode")
-        
-        engine.run_job("retrain_models", context)
-        
-        if run_id:
-            tracker.finalize_run(run_id)
-            logger.info(f"JOB: Finalized experiment run {run_id}")
-        
-        logger.info("JOB: retrain_models completed")
-    except Exception:
-        logger.exception("JOB: retrain_models failed")
-        if run_id:
-            try:
-                tracker.finalize_run(run_id, status='failed')
-            except Exception:
-                logger.exception("JOB: retrain_models — failed to finalize run %s as failed", run_id)
-
-
-def job_run_betting_bot():
-    """Execute betting via AgentCoordinator (PORTFOLIO PRIMARY PATH)."""
-    logger.info("JOB: run_betting_bot starting - USING AGENTCOORDINATOR")
-    
-    from backend.runtime_mode import get_mode_name, is_live_eval_mode
-    from backend.run_context import create_run_context
-    from backend.experiment_tracker import get_tracker
-    
-    mode = get_mode_name()
-    tracker = get_tracker()
-    run_id = None
-    context = None
-    
-    try:
-        if mode in ['training', 'dev']:
-            run_id = tracker.start_run(runtime_mode=mode)
-            logger.info(f"JOB: Started experiment run {run_id}")
-            context = create_run_context(run_id, mode)
-            
-            if run_id is None:
-                raise RuntimeError("CRITICAL: Run ID not created in allowed mode")
-        
-        # Check runtime mode
-        import os
-        runtime_mode = os.getenv("BOOTBALL_RUNTIME_MODE", "PORTFOLIO_PRIMARY")
-        
-        if runtime_mode == "PORTFOLIO_PRIMARY":
-            # PRIMARY PATH: Use AgentCoordinator
-            from src.agents.coordinator import run_multi_agent_pipeline
-            result = run_multi_agent_pipeline()
-            logger.info(f"JOB: AgentCoordinator completed: {result}")
-        else:
-            # Legacy mode - warn and use old path
-            logger.warning(f"JOB: Runtime mode {runtime_mode} - using legacy path")
-            from backend.execution_engine import get_execution_engine
-            engine = get_execution_engine()
-            engine.run_job("betting_pipeline", context)
-        
-        if run_id:
-            tracker.finalize_run(run_id)
-            logger.info(f"JOB: Finalized experiment run {run_id}")
-        
-        logger.info("JOB: run_betting_bot completed via AgentCoordinator")
-    except Exception:
-        logger.exception("JOB: run_betting_bot failed")
-        if run_id:
-            try:
-                tracker.finalize_run(run_id, status='failed')
-            except Exception:
-                logger.exception("JOB: run_betting_bot — failed to finalize run %s as failed", run_id)
-        raise
-
-
-def job_run_continuous_cycle():
-    """Continuous prediction pipeline - SINGLE EXECUTION SPINE.
-    
-    ENFORCEMENT RULE:
-    This is the ONLY entry point for prediction pipeline execution.
-    All execution must flow through AgentCoordinator.
-    
-    Flow (SINGLE PATH):
-    1. Scheduler triggers this job
-    2. → AgentCoordinator.run_cycle() [SINGLE ENTRY POINT]
-    3. → UnifiedPredictionService.generate()
-    4. → PortfolioEngine.compute_allocation()
-    5. → RiskEngine.evaluate()
-    6. → PolicyEngine.evaluate()
-    7. → ExecutionEngine.execute()
-    
-    NO other execution paths allowed.
-    """
-    logger.info("JOB: run_continuous_cycle starting - SINGLE EXECUTION SPINE")
-    
-    from backend.runtime_mode import get_mode_name, allow_execution
-    from backend.run_context import create_run_context
-    from backend.experiment_tracker import get_tracker
-    
-    mode = get_mode_name()
-    tracker = get_tracker()
-    run_id = None
-    context = None
-    
-    if not allow_execution():
-        logger.warning(f"⏭️  SCHEDULER SKIP: Execution not allowed in {mode} mode")
-        return
-    
-    try:
-        if mode in ['training', 'dev', 'live']:
-            run_id = tracker.start_run(runtime_mode=mode)
-            logger.info(f"JOB: Started experiment run {run_id}")
-            context = create_run_context(run_id, mode)
-            
-            if run_id is None:
-                raise RuntimeError("CRITICAL: Run ID not created in allowed mode")
-        
-        from scripts.run_continuous_cycle import run_continuous_cycle
-        result = run_continuous_cycle(run_id, context)
-        logger.info(f"JOB: run_continuous_cycle completed: {result}")
-        
-        if run_id:
-            tracker.finalize_run(run_id)
-            logger.info(f"JOB: Finalized experiment run {run_id}")
-        
-    except Exception:
-        logger.exception("JOB: run_continuous_cycle failed")
-        if run_id:
-            try:
-                tracker.finalize_run(run_id, status='failed')
-            except Exception:
-                logger.exception("JOB: run_continuous_cycle — failed to finalize run %s as failed", run_id)
-        raise
 
 
 def job_daily_sanity_check():
@@ -606,10 +401,6 @@ def get_scheduler() -> BackgroundScheduler:
     ]
     
     for job_id, job_func, trigger_type, trigger_args in auxiliary_jobs:
-        if not is_job_allowed_in_mode(job_id):
-            logger.info(f"   → Skipping job: {job_id}")
-            continue
-            
         scheduler.add_job(
             job_func,
             trigger_type,
