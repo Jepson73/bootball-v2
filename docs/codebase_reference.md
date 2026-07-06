@@ -14,7 +14,7 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 │   ├── analytics/     Reporting and analysis
 │   ├── api/           Internal API utilities
 │   ├── backtesting/   Historical simulation framework
-│   ├── betting/       Kelly, risk decisions, portfolio machinery — V1-only, pending Part D archive (Phase 31: prediction.py/market_taxonomy.py/league_normalizer.py/temporal_adapter.py/ev.py/shin.py moved out to prediction/lib/, alerts.py entangled but inert — see OWNERSHIP.md)
+│   ├── betting/       Kelly, portfolio machinery, execution engine — V1-only, still required by the still-running coordinator.py/web_ui.py until Part D's cutover (Phase 31: prediction.py/market_taxonomy.py/league_normalizer.py/temporal_adapter.py/ev.py/shin.py moved out to prediction/lib/ in D4; confidence_weighting.py/markets.py/risk_decisions.py/unified_latent.py/latent_shock.py/stress_testing.py/portfolio_optimizer.py/capital_allocator.py/market_feasibility.py archived to V1_archive/ in D7b as confirmed-safe-now; alerts.py entangled but inert — see OWNERSHIP.md)
 │   ├── calibration/   State calibration engine, calibrator fitting (Phase 31: fit_calibrator_for_market relocated in from backend/execution_engine.py)
 │   ├── cache/         Prediction caching
 │   ├── cli/           Command-line tools (backtest, event replay)
@@ -266,15 +266,6 @@ Single source of truth for all predictions.
 - Delegates QP solving to `markowitz_optimizer.py` (primary, SCS solver) with `cvxpy_optimizer.py` as fallback
 - `_apply_learning_weights()` — applies market performance weights from `AdaptiveAllocator`
 - `_enforce_market_caps()` — enforces per-market concentration limit (default 60%)
-
-### `src/betting/portfolio_optimizer.py`
-
-Legacy allocation module — **not called by coordinator**; semi-active.
-
-- `PortfolioConfig` — diversification limits, correlation caps, max concentration
-- `CandidateBet` — raw bet candidate with EV and Kelly fraction
-- `OptimizedBet` — final bet with allocated stake
-- Implements Markowitz mean-variance optimization and correlation-aware filtering independently of the primary portfolio engine path above
 
 ### `src/betting/kelly.py`
 
@@ -615,14 +606,15 @@ Key test files:
 
 | Path | Coverage |
 |------|---------|
-| `tests/test_betting.py` | EV, Kelly, Shin, calibration metrics |
-| `tests/integration/test_portfolio_optimizer.py` | Capital allocation |
-| `tests/integration/test_policy_constraints.py` | Risk constraint enforcement |
 | `tests/integration/test_safe_load.py` | Model signing/loading security |
 | `tests/models/test_calibration.py` | Platt calibration |
 | `tests/models/test_drift.py` | Drift detection |
 | `tests/security/test_validation.py` | Input validation |
 | `tests/web_ui/test_predictions_api.py` | Prediction API endpoints |
+
+(Phase 31 Part D: `tests/test_betting.py`, `tests/integration/test_portfolio_optimizer.py`,
+`tests/integration/test_policy_constraints.py` archived to `V1_archive/tests/` alongside the
+V1 betting-thesis code they tested.)
 
 ---
 
@@ -663,6 +655,9 @@ Key test files:
 | `scripts/daily_sanity_check.py` | Sanity checks run by scheduler | Active |
 | `scripts/capture_forward_odds.py` | Capture open→close odds time-series for the narrow 4-5-league forward-collection (Pinnacle + Bet365 only) | **Superseded (Phase 25)** by `odds_trajectory_scheduler.py`; never wired into cron, kept for reference |
 | `scripts/probe_forward_odds.py` | Tasmania/Norway clock-start check for the same `--league-ids`/`--days-ahead` cron entries — now **read-only** (Phase 25): reads what `odds_trajectory_scheduler.py` already captured and reports Pinnacle presence near kickoff, instead of fetching odds itself | Active |
-| `scripts/auto_bet.py` | Legacy betting pipeline — **DEPRECATED** (not in live path). Phase 31 found it is still cron-triggered daily at 03:00 via `/etc/cron.d/bootball` (`--bet-only`) and fails every single run with `RuntimeError: LEGACY EXECUTION BLOCKED` from its own `check_legacy_execution_allowed()` guard — confirmed via log tail, writes nothing. Cron line to be removed in Phase 31 Part D | Dead but still cron-executing — kept for reference |
-| `scripts/live_monitor.py` | Watch live matches in real-time | Likely dead |
 | `scripts/verify_v2_parity.py` | **Phase 31 Part C** — read-only dry-run comparison of `src/prediction/prediction_cycle.py`'s output against the most recent stored `PredictionRecord` for the same fixture/market, used to verify the new V2 runner before cutover; writes nothing | Active (verification tool) |
+
+(Phase 31 Part D: `scripts/auto_bet.py` (dead-but-cron-executing daily, cron line
+removed in Part D), `scripts/live_monitor.py`, `scripts/backtest.py`,
+`scripts/analysis/walk_forward_backtest.py`, and `src/evaluation/backtesting.py`
+archived to `V1_archive/` — all confirmed zero live importers.)
