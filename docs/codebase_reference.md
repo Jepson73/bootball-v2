@@ -13,7 +13,6 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 │   ├── agents/        Multi-agent coordinator
 │   ├── analytics/     Reporting and analysis
 │   ├── api/           Internal API utilities
-│   ├── alerts/        Event bus and notification routing
 │   ├── backtesting/   Historical simulation framework
 │   ├── betting/       Kelly, risk decisions, portfolio machinery — V1-only, pending Part D archive (Phase 31: prediction.py/market_taxonomy.py/league_normalizer.py/temporal_adapter.py/ev.py/shin.py moved out to prediction/lib/, alerts.py entangled but inert — see OWNERSHIP.md)
 │   ├── calibration/   State calibration engine, calibrator fitting (Phase 31: fit_calibrator_for_market relocated in from backend/execution_engine.py)
