@@ -315,4 +315,87 @@ window (V2's `run_id=ad117e40` cycle produced correctly-shaped `PredictionRecord
 `blended_prob`/`ev`/`odds_decimal`, no nulls or corruption). **All four parity conditions pass —
 the sustained write-enabled state may now stand as the interim configuration until Part D.**
 
-Not yet executed — pending the live overlap window.
+## 24-hour observation gate: passed (2026-07-06)
+
+User's condition for starting Part D: run the interim dual-service state for a full day and
+confirm four criteria. Checked directly against `journalctl`/`quota_log.csv`/DB state at the
+~17.5h mark (fix landed 2026-07-05 21:22 UTC; checked 2026-07-06 14:54 UTC) rather than waiting
+out the literal 24h, since every criterion was already unambiguous — user accepted this tradeoff
+explicitly rather than have it assumed.
+
+1. **`job_fetch_fixtures`/`job_fetch_results` since the ownership fix:** `fetch_results` 17/17
+   successful hourly runs, `fetch_fixtures` 2/2 successful 6-hourly runs, zero failures, zero
+   `PermissionError`. `logs/quota_log.csv` confirmed `bootball:bootball`-owned and actively
+   written throughout.
+2. **Daily collection heartbeat:** `scripts/daily_run.py`'s 02:00 UTC cron (root — the other
+   side of the UID split) completed cleanly for the first time since the bug started —
+   `Pipeline succeeded: 0 errors in 346.8s`, all 7 baseline-pipeline steps including the
+   previously-crashing `_log_quota()` call.
+3. **Prediction volume from the V2 runner:** 48 cycles at the expected ~20-21 min cadence, each
+   saving a steady ~9,800–10,150 `PredictionRecord` rows, no gaps, no failed cycles.
+4. **No interference/duplicate-ingest:** every V1↔V2 calibration-ingest pairing across the full
+   window checked (not just the earlier single spot-check) — both occurrences where V2 reported
+   `calibration_new_outcomes=4` were immediately followed by V1's next cycle reporting `Ingested
+   0 new prediction outcomes`. Zero double-ingestion across 48+ cycle pairs.
+
+**User's rider for the cutover itself, since the parallel window couldn't test this:** the
+observation window only proves V2 works *alongside* V1. The moment `bootball-runtime.service`
+(V1) stops, Part D's cutover must explicitly confirm the rehomed auxiliary jobs actually fire
+from their new V2 owner on their next scheduled slot — `fetch_results`' next hourly run, the
+odds-trajectory scheduler's next cycle, and (the next day) the 02:00 daily. This is tracked as
+the last step of Part D below, not assumed from the parity evidence above.
+
+## New finding during Part D execution: `backend/execution_engine.py` is itself a live/dead split, missed by Part A/C
+
+Not caught by the original inventory or ownership table — found while tracing "resurrection
+path" candidates per the user's Part D brief (`run_continuous_cycle`'s admin trigger,
+`bootstrap_system`/`ExecutionEngine`). Grepping every caller of `backend.execution_engine`
+directly (not assuming from the file's own docstring, which claims to be "the ONLY valid entry
+point for running pipelines") surfaces two unrelated things sharing one file:
+
+- **Dead (resurrection machinery):** the `ExecutionEngine` class itself (`JobType`,
+  `ExecutionStatus`, `ExecutionLog`, `get_execution_engine()`, `enforce_execution_boundary()`,
+  `_run_daily_predictions`/`_run_betting_pipeline`/`_run_retrain_models`/`_run_fetch_fixtures`/
+  `_run_fetch_odds` handlers). Its only callers are `backend/scheduler.py`'s
+  `job_run_betting_bot()`/`job_run_continuous_cycle()`/`job_retrain_models()` and
+  `backend/auto_healing_engine.py` — **none of which are wired into `get_scheduler()`'s
+  `auxiliary_jobs` list** (confirmed by reading it: only `fetch_fixtures`, `fetch_results`,
+  `fetch_odds`, `cleanup_matches`, `live_settle`, `daily_sanity_check`,
+  `v2_collection_heartbeat` are registered). Fully dead, fully functional, sitting in the tree —
+  exactly a resurrection path: nothing calls it today, but it would restore the full V1 spine
+  (AgentCoordinator-adjacent portfolio/policy dispatch, `PlacedBet` writes gated only by
+  `bot_enabled`) if anything ever called `scheduler.add_job()` for these job functions again.
+- **Live (load-bearing, must survive):** `_fit_calibrator_for_market()`, imported at call-time by
+  `src/events/consumers/calibration_consumer.py::_run_recalibration()` — **the actual handler for
+  `CALIBRATION_DRIFT_DETECTED`**, i.e. the real-recalibration action OWNERSHIP.md's "Key finding"
+  already identified as critical to preserve. If `backend/execution_engine.py` were archived
+  wholesale (the naive read of "dead resurrection machinery, archive it"), live-drift
+  recalibration would silently break the moment V1 stops importing anything that keeps the file
+  warm.
+
+**Resolution:** extract `_fit_calibrator_for_market()` into a new V2-owned module before
+archiving the rest of the file (Part D step D1). Same "3% live / 97% dead" shape as
+`AgentCoordinator.run_cycle()` — same treatment: keep the load-bearing sliver, archive the shell.
+
+**Also found in the same trace, same treatment (dead, unwired into `auxiliary_jobs`, archived
+with V1 in Part D):** `backend/app.py` (a second, unused Flask app-factory reimplementing the
+"single execution spine" startup, zero importers anywhere in the live tree — confirmed by grep),
+`scripts/run_continuous_cycle.py` (sole caller was the dead `job_run_continuous_cycle`),
+`backend/auto_healing_engine.py` (sole live-adjacent caller was the dead `job_auto_heal_runs`;
+the other two callers — `scripts/web_ui.py` and `src/governance/ui_semantic_auto_healing_engine.py`
+— are themselves V1-UI/dead-cluster and move together), `scripts/make_predictions.py` (zero
+callers outside itself and the now-dead `_run_daily_predictions` handler), and
+`src/events/bootstrap.py::bootstrap_system()` (a second, unused bootstrap function in an
+otherwise-live/adopted file — its sibling `bootstrap_consumers()` is what V2 actually calls;
+`bootstrap_system()` additionally imports `src.betting.execution_engine`, `src.decision_engine`,
+`src.alerts.handlers`, `src.portfolio.adaptive_allocator` — all V1-only — so stripping it is also
+what lets `src/events/bootstrap.py` pass ADOPTION.md's criterion 2 cleanly).
+
+**One gap surfaced as a side effect, flagged not fixed:** manual model retraining today has
+exactly one trigger — `scripts/web_ui.py`'s (V1, port 5001) `/api/admin/train` endpoint, which
+calls `_train_market_with_calibration()` directly (bypassing `ExecutionEngine` entirely — it was
+never wired through the dead dispatcher either). V2's web UI (`scripts/web_ui_v2.py`, port 5000)
+has no equivalent endpoint. Once port 5001 goes dark (this Part D's own cutover step), manual
+retraining loses its only UI trigger — recalibration (drift-triggered, automatic) is unaffected,
+this is specifically the human-initiated full retrain path. Not a regression this phase
+introduces (V2's UI never had this button), but worth the user's attention post-cutover.
