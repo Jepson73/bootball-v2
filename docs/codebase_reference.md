@@ -393,9 +393,11 @@ HMAC-SHA256 signed model persistence.
 - `safe_model_save(model, path)` — saves model + detached `.sig` file
 - `safe_model_load(path)` — verifies signature before loading; raises on tamper
 
-### `src/alerts/event_bus.py`
+### `src/events/event_bus.py`
 
-System-wide event pub/sub (singleton).
+System-wide event pub/sub (singleton). (Phase 31 Part D: relocated from `src/alerts/event_bus.py`
+into `src/events/`, alongside the rest of the event-driven architecture it was already the hub
+of — `src/alerts/` otherwise held only two now-archived, Discord-only dead files.)
 
 - `event_bus` — global event bus instance
 - `Events` enum — all registered event types, including `SETTLEMENT_INTEGRITY_EVENT` (Phase 30 — see "The Separation Principle")
