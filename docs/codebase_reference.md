@@ -15,16 +15,17 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 │   ├── api/           Internal API utilities
 │   ├── alerts/        Event bus and notification routing
 │   ├── backtesting/   Historical simulation framework
-│   ├── betting/       Portfolio optimizer, Kelly, EV, risk decisions
-│   ├── calibration/   State calibration engine
+│   ├── betting/       Kelly, risk decisions, portfolio machinery — V1-only, pending Part D archive (Phase 31: prediction.py/market_taxonomy.py/league_normalizer.py/temporal_adapter.py/ev.py/shin.py moved out to prediction/lib/, alerts.py entangled but inert — see OWNERSHIP.md)
+│   ├── calibration/   State calibration engine, calibrator fitting (Phase 31: fit_calibrator_for_market relocated in from backend/execution_engine.py)
 │   ├── cache/         Prediction caching
 │   ├── cli/           Command-line tools (backtest, event replay)
 │   ├── contracts/     Pipeline stage data contracts
 │   ├── evaluation/    Model metrics (Brier score, Sharpe, calibration)
 │   ├── events/        Event-driven architecture (types, store, routing)
 │   ├── features/      Feature engineering (Elo, form, strength, xG)
-│   ├── governance/    Policy engine, closed-loop validation, lineage tracking
+│   ├── governance/    Policy engine, closed-loop validation — V1-only, pending Part D archive (Phase 31: runtime_lock.py/system_versioning.py/lineage_tracker.py moved out to infra/, the only genuinely generic modules in the directory)
 │   ├── handlers/      Event handlers (settlement, odds, backfill)
+│   ├── infra/         Phase 31 Part D: RuntimeLock (single-instance guard), run versioning/lineage tracking — relocated out of governance/, which otherwise means policy/CLVE/meta-policy
 │   ├── ingestion/     API-Football v3 client, backfill pipeline
 │   ├── learning/      Feedback loop, weight optimizer, event replay
 │   ├── maintenance.py Database cleanup utilities
@@ -33,7 +34,7 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 │   ├── notifications/ Discord notifier, agent reporter
 │   ├── performance/   Performance metrics tracker
 │   ├── portfolio/     Self-optimizing and adaptive allocators
-│   ├── prediction/    Unified prediction service, market normalizer
+│   ├── prediction/    Unified prediction service, market normalizer, prediction cycle; lib/ — feature engineering + EV math relocated from betting/ in Phase 31 (prediction.py, market_taxonomy.py, league_normalizer.py, temporal_adapter.py, ev.py, shin.py)
 │   ├── realtime/      WebSocket server, event streaming
 │   ├── security/      HMAC model signing, validation, rate limiting
 │   ├── settlement.py  Bet settlement, result fetching, P/L calculation
