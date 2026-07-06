@@ -85,10 +85,10 @@ class CalibrationConsumer(EventConsumer):
     def _run_recalibration(self, market: str, payload: dict[str, Any]) -> None:
         """Fit a new calibrator for the market, register it, and notify Discord."""
         try:
-            from backend.execution_engine import _fit_calibrator_for_market
+            from src.calibration.calibrator_fitting import fit_calibrator_for_market
             from src.models.model_registry import get_model_registry
 
-            calibrator, cal_metrics = _fit_calibrator_for_market(market)
+            calibrator, cal_metrics = fit_calibrator_for_market(market)
             if calibrator is None:
                 self._send_webhook({
                     "title": f"⚠️ RECALIBRATION SKIPPED: {market.upper()}",
@@ -105,7 +105,7 @@ class CalibrationConsumer(EventConsumer):
             # live_drift_ece: the drift monitor's own ECE (recent PredictionRecord
             # settlements, StateCalibrationEngine) — what triggered this recalibration.
             # postfit_eval_ece: the newly-fit calibrator's held-out eval ECE
-            # (_fit_calibrator_for_market) — NOT the same metric; see Phase 27b/28
+            # (fit_calibrator_for_market) — NOT the same metric; see Phase 27b/28
             # and the Separation Principle in docs/codebase_reference.md.
             trigger_live_drift_ece = payload.get("live_drift_ece", 0)
             post_postfit_eval_ece = (cal_metrics or {}).get("postfit_eval_ece", 0)

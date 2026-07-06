@@ -7159,9 +7159,9 @@ def api_model_recalibrate(market):
     Refits the isotonic calibrator on recent settled prediction_records.
     """
     from src.models.model_registry import get_model_registry
-    from backend.execution_engine import _fit_calibrator_for_market
+    from src.calibration.calibrator_fitting import fit_calibrator_for_market
 
-    calibrator, cal_metrics = _fit_calibrator_for_market(market)
+    calibrator, cal_metrics = fit_calibrator_for_market(market)
     if calibrator is None:
         return jsonify({"error": "insufficient settled prediction data for recalibration"}), 400
 
