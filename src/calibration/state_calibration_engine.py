@@ -23,7 +23,6 @@ from pathlib import Path
 import numpy as np
 
 from src.events.event_bus import event_bus, Events
-from src.portfolio.state.portfolio_state import PortfolioState
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +93,7 @@ class StateCalibrationEngine:
         self.reports_dir.mkdir(parents=True, exist_ok=True)
 
         self._prediction_outcomes: list[PredictionOutcome] = []
-        self._portfolio_history: list[PortfolioState] = []
+        self._portfolio_history: list = []
         self._monte_carlo_comparisons: list[dict] = []
         self._last_triggered: dict[tuple, datetime] = {}
 
@@ -215,14 +214,6 @@ class StateCalibrationEngine:
             session.commit()
 
         return total_ingested
-    
-    def add_portfolio_state(self, state: PortfolioState) -> None:
-        """Add a portfolio state snapshot."""
-        self._portfolio_history.append(state)
-        
-        # Keep only last 100 states
-        if len(self._portfolio_history) > 100:
-            self._portfolio_history = self._portfolio_history[-100:]
     
     def add_monte_carlo_comparison(
         self,
