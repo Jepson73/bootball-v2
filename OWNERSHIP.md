@@ -411,6 +411,39 @@ documented elsewhere (Discord silencing, `bot_enabled=False`), and `alerts.py` i
 in `src/betting/` to be archived wholesale with the rest of that directory's dead cluster in D7.
 Flagged so a future audit doesn't have to re-derive this from scratch.
 
+## D7 split in two: coordinator.py's own dependents can't move until after cutover
+
+Computed a full import-reachability graph rooted at every still-live entry point
+(`backend/runtime/execution_runtime.py`, `src/agents/coordinator.py`, `scripts/web_ui.py`) before
+archiving anything, rather than trusting Part A/B's file-level classification alone — it predates
+several of this session's own edits (D1's extraction, D2's strip) and needed re-verification
+against the current tree. Result: of the ~86 files classified DEAD/V1-only across Part A/B and
+this session's own discoveries, only 60 are actually free of live callers *right now*. The other
+26 — `src/agents/coordinator.py` itself, all of `src/agents/{adversary,execution_strategist,
+predictor,risk_manager,shared}/`, `src/betting/{alerts,attribution_engine,bankroll,execution_engine,
+kelly,layer_ablation_engine,layer_evolution,round_manager}.py` + `correlation/` + `portfolio/`,
+`src/governance/{closed_loop_validation_engine,execution_spine_guard,policy_engine,
+temporal_consistency_engine,ui_semantic_auto_healing_engine,ui_semantic_contract_engine}.py` +
+`meta_policy/`, `src/performance/performance_tracker.py`, `src/portfolio/{adaptive_allocator,
+state/*}.py`, `src/state/betting_state.py`, `src/api/system_truth_snapshot.py`, and
+`scripts/web_ui.py` itself — are transitively imported by `execution_runtime.py` (which calls
+`coordinator.py` every 20 minutes) or by `web_ui.py` (still serving port 5001). **Archiving these
+now would break the still-running V1 service** — they move only after D9/D10 stop it.
+
+D7 executed in two commits covering the 43 files confirmed safe right now (26 DEAD/UNCLEAR to
+`V1_archive/dead/`, 17 V1-betting-thesis-flavored to `V1_archive/`) — see commits for exact lists.
+The remaining 26 move in a third D7 commit, immediately after D10's cutover is verified, before
+Part E's audit begins.
+
+**One fix made along the way, not just a finding:** `state_calibration_engine.py` (live, called
+every cycle) imported `src.portfolio.state.portfolio_state.PortfolioState` solely for
+`add_portfolio_state()`, a method with zero callers anywhere — ADOPTION.md flagged this back in
+Part B but it was never executed. Stripped now (method + import; the two methods reading the
+resulting permanently-empty `_portfolio_history` list were left as-is, since they don't reference
+`PortfolioState` by name and weren't flagged for removal) — this is what let
+`src/portfolio/state/portfolio_state.py` be correctly classified as "still needed, but only by
+`coordinator.py`" instead of "still needed by V2 too."
+
 **One gap surfaced as a side effect, flagged not fixed:** manual model retraining today has
 exactly one trigger — `scripts/web_ui.py`'s (V1, port 5001) `/api/admin/train` endpoint, which
 calls `_train_market_with_calibration()` directly (bypassing `ExecutionEngine` entirely — it was
