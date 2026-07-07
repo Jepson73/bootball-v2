@@ -217,6 +217,14 @@ archive commit for `/etc/cron.d/bootball` preserves these two lines (commented o
 kept-for-reference file under `V1_archive/ops/`) rather than deleting them outright, matching the
 "move, not delete" principle already applied to the DEAD/UNCLEAR code cluster.
 
+**D8 status (2026-07-07): cron half done.** Both lines preserved verbatim in
+`V1_archive/ops/cron_bootball_removed_entries.md`, then removed from the live
+`/etc/cron.d/bootball` (diffed before/after to confirm only those two entries changed; the
+still-load-bearing `daily_run.py` 02:00 line above is untouched, per the "do not drop until
+observed succeeding for a full day post-fix" note above). The unit-file half of D8
+(`bootball-runtime.service`, `bootball-web.service` → `V1_archive/ops/`) waits for D10, since
+those units are still active.
+
 ## Major finding during the parallel-run window: cron (root) vs systemd (bootball) UID split has been silently breaking in-process ingestion since 2026-06-29
 
 Discovered while investigating an `[EventBus] handler failed for settlement_integrity_event:
