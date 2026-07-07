@@ -97,8 +97,9 @@ bootball-v2-runtime.service (Phase 31 Part C, separate process, parallel-verific
      (every 20 minutes; V2_RUNTIME_WRITE_ENABLED gates save — default false/dry-run)
   3. Acquires its own RuntimeLock file (data/v2_execution_runtime.lock), distinct from
      bootball-runtime.service's (data/execution_runtime.lock), so both can run at once
-  4. Does NOT start backend/scheduler.py's auxiliary APScheduler — bootball-runtime.service
-     still owns fixtures/results/odds/cleanup/live_settle during this window
+  4. Starts backend/scheduler.py's auxiliary APScheduler (Phase 31 D9: fixtures/results/
+     odds/cleanup/live_settle/daily_sanity_check/v2_collection_heartbeat) — code lands in D9,
+     activates at D10's cutover restart once bootball-runtime.service stops owning it
 ```
 
 ---

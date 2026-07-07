@@ -13,10 +13,6 @@ PARALLEL-VERIFICATION WINDOW (Phase 31 Part C, temporary):
   bootball-runtime.service's (data/execution_runtime.lock), so both can run
   concurrently while V1 is still live. At Part D's cutover, once V1 is retired,
   there is only one runtime again and this distinction stops mattering.
-- Does NOT start backend/scheduler.py's auxiliary APScheduler (fixtures/results/
-  odds/cleanup/live_settle) — bootball-runtime.service still owns that during this
-  window. Starting it here too would double-execute ingestion against the API and
-  the DB. Ownership of the auxiliary scheduler moves to this service at Part D.
 - Prediction/calibration writes are gated by V2_RUNTIME_WRITE_ENABLED (default
   "false" — dry-run only, generates but does not save, does not run calibration
   ingest). Flip to "true" only for the deliberate, supervised parity-verification
@@ -25,6 +21,14 @@ PARALLEL-VERIFICATION WINDOW (Phase 31 Part C, temporary):
   concurrently on the same 20-minute cadence — this is intentional, to observe the
   Phase 28 calibration high-water-mark dedup behavior under real concurrency rather
   than assuming it from a code read.
+
+CUTOVER (Phase 31 Part D, D9): starts backend/scheduler.py's auxiliary APScheduler
+(fixtures/results/odds/cleanup/live_settle/daily_sanity_check/v2_collection_heartbeat)
+directly, same as ExecutionRuntime used to. This code change ships ahead of the actual
+cutover — do not restart bootball-v2-runtime.service with it live while
+bootball-runtime.service is still running, or both processes will register jobs
+against the same backend/scheduler.py jobstore (data/scheduler.db) and double-execute
+ingestion. The restart that picks this up happens at D10, synchronized with stopping V1.
 """
 
 import os
@@ -76,6 +80,7 @@ class V2ExecutionRuntime:
         self._instance_id = f"v2_runtime_{datetime.utcnow().strftime('%Y%m%d_%H%M%S')}"
         self._shutdown_event = threading.Event()
         self._watchdog = None
+        self._scheduler = None
 
         logger.info("=" * 60)
         logger.info("V2 EXECUTION RUNTIME INITIALIZING")
@@ -100,6 +105,7 @@ class V2ExecutionRuntime:
         self._init_watchdog()
         self._init_discord()
         self._bootstrap_consumers()
+        self._start_scheduler()
         self._register_signal_handlers()
 
         logger.info("🚀 Starting V2 prediction-cycle loop...")
@@ -201,6 +207,16 @@ class V2ExecutionRuntime:
             logger.info("✅ Event consumers bootstrapped (V2 process)")
         except Exception as e:
             logger.warning(f"Consumer bootstrap failed (non-fatal): {e}")
+
+    def _start_scheduler(self):
+        """Start the APScheduler for auxiliary data jobs (fixtures, results, odds, cleanup)."""
+        try:
+            from backend.scheduler import start_scheduler
+            self._scheduler = start_scheduler()
+            logger.info("✅ Auxiliary scheduler started (V2 process)")
+        except Exception as e:
+            logger.warning(f"Could not start auxiliary scheduler (non-fatal): {e}")
+            self._scheduler = None
 
     def _register_signal_handlers(self):
         def handle_shutdown(signum, frame):
