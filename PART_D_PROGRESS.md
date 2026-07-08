@@ -44,8 +44,13 @@ Steps, in order:
 5. [ ] Tonight's 02:00 UTC `daily_run.py` cron entry is the final gate — this is the one path
        intentionally left alone (still root/cron, not touched by D10). Confirm it completes
        normally under the new topology (V1 web/runtime dark, V2 owns the aux scheduler).
-6. [ ] Commit the checkpoint once 1–5 hold, then continue into D7c (archive coordinator.py's
-       remaining dependents), deploy.sh's service list, and Part E's standalone audit.
+6. [~] deploy.sh's service list, docs/deployment_state.md, and docs/codebase_reference.md are
+       done and committed (d5d3a49, 39bcbe6) — SERVICES array trimmed to the two V2 units;
+       deployment_state.md's systemd/cron/log sections mark V1 retired; codebase_reference.md's
+       Entry Points, Startup Sequence, execution_runtime.py/coordinator.py sections, and the
+       Fixture→Prediction data-flow diagram all now describe V2 as sole execution authority
+       instead of V1/parallel-window language. Full D10 checkpoint (this line → [x]) still
+       waits on steps 3 and 5 below, then D7c and Part E follow.
 7. [ ] Tomorrow's ~04:00 UTC scheduled reboot is a free reboot-survival test: on reconnect,
        verify via deploy.sh's check + V2 deploy/heartbeat notifications that the V2-only set
        self-started on the correct commit and both V1 units stayed dark (disabled, not just
@@ -57,7 +62,5 @@ Steps, in order:
   src/betting/*, remaining src/governance/*, performance_tracker.py, src/portfolio/*,
   betting_state.py, system_truth_snapshot.py, web_ui.py) — gated on D10 completing, re-verify
   the reachability graph post-cutover before moving anything.
-- deploy.sh service list update (remove bootball-runtime.service / bootball-web.service).
-- docs/deployment_state.md update.
 - Part E: `AUDIT_V2_STANDALONE.md` — standalone re-audit of V2, follows immediately per the
   user's "don't let a gap open between D and E."
