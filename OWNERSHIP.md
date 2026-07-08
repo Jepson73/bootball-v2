@@ -496,6 +496,48 @@ reboot-survival test — the host's scheduled ~04:00 UTC reboot landed at 04:21 
 all 7 jobs, and both V1 units confirmed `disabled`/`inactive` post-reboot (did not resurrect).
 Full evidence trail: `PART_D_PROGRESS.md`.
 
-D10 is closed. Remaining Part D work: D8's unit-file half (move the now-stopped V1 unit files to
-`V1_archive/ops/`) and D7c (archive `coordinator.py`'s 26 remaining dependents, now unblocked).
-Part E (`AUDIT_V2_STANDALONE.md`) follows immediately after.
+D10 is closed. D8's unit-file half executed the same day (see D8 status update above). Part E
+(`AUDIT_V2_STANDALONE.md`) follows immediately after D7c below.
+
+## D7c executed: coordinator.py's 26 remaining dependents archived, reachability graph re-verified post-cutover
+
+Re-ran the full import-reachability graph from scratch rather than trusting the pre-cutover
+26-item list — the whole point of gating this step on D10 was that reachability can change
+underneath a plan like this, and it did, in both directions:
+
+**One item removed from the safe-to-move set:** `src/betting/alerts.py` and `src/betting/kelly.py`
+turned out to still be reachable. `scripts/odds_poll.py` — one of the five cron scripts that
+remain permanent live entry points — imports `alerts.py` at module scope. Because `alerts.py` is
+a submodule of the `src.betting` package, that import first executes `src/betting/__init__.py`,
+which imports `kelly.py`. Neither import does anything meaningful anymore (Discord alerting has
+been silenced since Phase 30), but *reachability* is what a `git mv` cares about, not whether the
+code fires — moving either file would have handed `odds_poll.py` an `ImportError` on its next
+30-minute cron tick. Both files stay in `src/betting/` until someone deliberately drops the now-
+dead import from `odds_poll.py`.
+
+**Four items added, found only by re-tracing rather than reusing the old list:**
+`backend/runtime/execution_runtime.py` (V1's runtime entry point — its only import was
+`coordinator.py`, and its unit file was already gone since D8, so once `coordinator.py` moved this
+had zero importers too), `src/notifications/agent_reporter.py` (zero live importers, but imports
+`src.agents.shared.state_store` — would have been left silently broken in the live tree pointing
+at a module that no longer existed there), and `src/agents/__init__.py` +
+`src/governance/__init__.py` (both eagerly import submodules that just moved; nothing imports the
+bare package today, but leaving a package `__init__.py` that raises `ModuleNotFoundError` the
+moment anyone touches a sibling file in that package is exactly the kind of landmine this whole
+archival effort exists to remove, not reintroduce).
+
+39 files moved to `V1_archive/`, mirroring their original paths. Verified live: all 10
+live-reachable modules (`v2_runtime`, `web_ui_v2`, `backend.scheduler`, the 5 cron scripts,
+`prediction_cycle`, `unified_prediction_service`) import cleanly post-move via direct `python -c
+"import ..."` in the venv, not just a syntax check. Full-tree grep of `src/`, `backend/`,
+`scripts/`, `config/`, `tests/` for every moved module's dotted path found no remaining
+references outside `V1_archive/` and this doc's own history.
+
+**The manual-retrain gap flagged after D10 is now fully closed off, not just dark.** With
+`scripts/web_ui.py` archived, there is no file left in the live tree that calls
+`Trainer.train_market()` — not disabled, not unreachable, simply absent. Automatic
+drift-triggered recalibration (`LeagueCalibrationEngine.fit_all()`) is a separate path and
+unaffected. This remains a product decision for the user (what a manual-retrain trigger should
+look like in V2's UI, if wanted at all), not something to patch as part of an archival pass.
+
+Part D is now complete. Part E (`AUDIT_V2_STANDALONE.md`) is next.

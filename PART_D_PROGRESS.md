@@ -66,14 +66,37 @@ Steps, in order:
        units confirmed `disabled`/`inactive` post-reboot — they did not resurrect. `ps aux`
        sweep for execution_runtime/coordinator/gunicorn-web_ui:app: zero matches.
 
-**D10 checkpoint closed.** All 7 steps verified live. Continuing into D8's remaining unit-file
-archival, D7c, and Part E per the user's "same momentum" authorization.
+**D10 checkpoint closed.** All 7 steps verified live.
+
+## D7c — COMPLETE (2026-07-08)
+
+Re-ran the full import-reachability graph rooted at the only entry points left post-D10
+(`backend/runtime/v2_runtime.py`, `scripts/web_ui_v2.py`, the 5 cron scripts) before moving
+anything, per the gating note. Confirmed 25 of the original 26-item list had zero live callers;
+moved them plus 4 more found during re-verification:
+
+- **Excluded from the move (must stay live):** `src/betting/alerts.py` and `src/betting/kelly.py`
+  — `scripts/odds_poll.py` (live cron entry point) imports `alerts.py` at module scope, and any
+  `src.betting` submodule import runs `src/betting/__init__.py`, which imports `kelly.py`.
+- **Added to the move, found by re-verification:** `backend/runtime/execution_runtime.py` (V1's
+  runtime entry point, only import was coordinator.py), `src/notifications/agent_reporter.py`
+  (zero live importers, imported the just-moved `state_store.py`), and `src/agents/__init__.py`
+  + `src/governance/__init__.py` (both eagerly imported submodules that just moved — would have
+  broken the bare package import for anyone touching it later).
+
+39 files moved to `V1_archive/`, mirroring original paths (commit `76eb527`). Verified live: all
+10 live-reachable modules (v2_runtime, web_ui_v2, scheduler, the 5 cron scripts,
+prediction_cycle, unified_prediction_service) import cleanly post-move; full grep sweep of
+`src/`, `backend/`, `scripts/`, `config/`, `tests/` for every moved module's dotted path found no
+remaining live-tree references. `docs/codebase_reference.md` and `OWNERSHIP.md` updated
+(commits `32bd973`, next).
+
+**Gap re-flagged, not fixed:** with `scripts/web_ui.py` now archived, nothing in the live tree
+calls `Trainer.train_market()` at all — manual retraining has zero trigger anywhere (automatic
+drift-triggered recalibration is unaffected). Same gap `OWNERSHIP.md` flagged after D10; now
+fully closed off rather than just dark. Product decision for V2's UI, not a mechanical fix.
 
 ## Not started yet
 
-- D7c: archive coordinator.py + its ~26 remaining dependents (src/agents/*, remaining
-  src/betting/*, remaining src/governance/*, performance_tracker.py, src/portfolio/*,
-  betting_state.py, system_truth_snapshot.py, web_ui.py) — gated on D10 completing (now done),
-  re-verify the reachability graph post-cutover before moving anything.
 - Part E: `AUDIT_V2_STANDALONE.md` — standalone re-audit of V2, follows immediately per the
   user's "don't let a gap open between D and E."
