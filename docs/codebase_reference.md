@@ -68,9 +68,10 @@ importers anywhere in the live tree, archived to `V1_archive/backend/app.py`.)
 
 ### Startup Sequence
 
-Two services run, both managed by systemd, since Phase 31 Part D's D10 cutover
-(`bootball-runtime.service` and `bootball-web.service` — V1 — are stopped + disabled; see
-`OWNERSHIP.md` and `PART_D_PROGRESS.md`):
+Two services run, both managed by systemd, since Phase 31 Part D's D10 cutover.
+`bootball-runtime.service` and `bootball-web.service` (V1) no longer exist as systemd units —
+stopped + disabled at D10, unit files archived verbatim to `V1_archive/ops/` and removed from
+`/etc/systemd/system/` at D8 (2026-07-08); see `OWNERSHIP.md` and `PART_D_PROGRESS.md`:
 
 ```
 bootball-web-v2.service  →  scripts/web_ui_v2.py (port 5000, primary)
@@ -135,10 +136,12 @@ APScheduler auxiliary job definitions and circuit breaker.
 
 ### `backend/runtime/execution_runtime.py`
 
-**V1, retired (Phase 31 Part D, D10 cutover, 2026-07-07).** `bootball-runtime.service` is
-stopped + disabled; `backend/runtime/v2_runtime.py` is the sole execution authority now — see
-`OWNERSHIP.md`/`PART_D_PROGRESS.md`. Left in place for reference pending D7c's dependent-archival
-pass. What it used to do:
+**V1, retired (Phase 31 Part D, D10 cutover, 2026-07-07).** `bootball-runtime.service` no
+longer exists as a systemd unit — stopped + disabled at D10, unit file archived to
+`V1_archive/ops/bootball-runtime.service` and removed from `/etc/systemd/system/` at D8
+(2026-07-08). `backend/runtime/v2_runtime.py` is the sole execution authority now — see
+`OWNERSHIP.md`/`PART_D_PROGRESS.md`. This source file itself is left in place for reference
+pending D7c's dependent-archival pass. What it used to do:
 
 - Ran as a separate process from the Flask web UI
 - Called `AgentCoordinator.run_cycle()` every 1200 seconds (20 minutes)
@@ -633,7 +636,7 @@ V1 betting-thesis code they tested.)
 | Script | Purpose | Status |
 |--------|---------|--------|
 | `scripts/web_ui_v2.py` | **Primary UI (V2)** — two-track Flask app on port 5000; strict V1 isolation; registers v2/ blueprints (home, track_a, predictions, collection, explorer) | Active |
-| `scripts/web_ui.py` | V1 Flask UI + APScheduler, port 5001 (via gunicorn in `bootball-web.service`) | **Retired (D10 cutover, 2026-07-07)** — service stopped + disabled, port 5001 dark |
+| `scripts/web_ui.py` | V1 Flask UI + APScheduler, port 5001 (formerly via gunicorn in `bootball-web.service`) | **Retired (D10 cutover, 2026-07-07)** — unit file archived to `V1_archive/ops/`, removed from `/etc/systemd/system/` at D8 (2026-07-08); port 5001 dark |
 | `scripts/deploy.sh` | Post-commit deployment orchestrator; restarts all long-running services and verifies they start with current commit; `check` subcommand reports staleness without restarting | Active |
 | `scripts/daily_run.py` | Data pipeline only (no prediction/betting); enforces `backfill_daily_cap` in `_fetch_completed()`; logs per-run quota snapshots to `logs/quota_log.csv`; `_fetch_completed()`'s per-league `status="FT"` fetch now `force_refresh=True` and `_save_completed()` won't clobber a fixture already in a terminal status (Phase 27); `_force_settlement_baseline()` calls `verify_ft_fixtures()` before settling | Active |
 | `scripts/backfill_all.py` | Historical data ingestion (multi-season) | Active |
