@@ -8,13 +8,13 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 
 ```
 /opt/projects/bootball/
-├── backend/           Core platform infrastructure (scheduler, runtime mode, execution engine)
+├── backend/           Core platform infrastructure (scheduler, runtime mode, execution engine). Phase 31 D7c: runtime/execution_runtime.py and observability_semantics.py archived to V1_archive/backend/ (zero live importers post-D10-cutover)
 ├── src/               Main application logic (models, agents, betting, storage, events)
-│   ├── agents/        Multi-agent coordinator
+│   ├── agents/        **Empty since Phase 31 D7c (2026-07-08)** — coordinator.py + the whole predictor/risk_manager/execution_strategist/adversary/shared package archived to V1_archive/src/agents/, zero live importers post-D10-cutover
 │   ├── analytics/     Reporting and analysis
-│   ├── api/           Internal API utilities
+│   ├── api/           **Empty since Phase 31 D7c** — system_truth_snapshot.py archived to V1_archive/src/api/
 │   ├── backtesting/   Historical simulation framework
-│   ├── betting/       Kelly, portfolio machinery, execution engine — V1-only, still required by the still-running coordinator.py/web_ui.py until Part D's cutover (Phase 31: prediction.py/market_taxonomy.py/league_normalizer.py/temporal_adapter.py/ev.py/shin.py moved out to prediction/lib/ in D4; confidence_weighting.py/markets.py/risk_decisions.py/unified_latent.py/latent_shock.py/stress_testing.py/portfolio_optimizer.py/capital_allocator.py/market_feasibility.py archived to V1_archive/ in D7b as confirmed-safe-now; alerts.py entangled but inert — see OWNERSHIP.md)
+│   ├── betting/       Kelly + Discord alert plumbing only since Phase 31 D7c — everything else (attribution_engine.py, bankroll.py, execution_engine.py, layer_ablation_engine.py, layer_evolution.py, round_manager.py, correlation/, portfolio/) archived to V1_archive/src/betting/. `alerts.py` and `kelly.py` stay: `scripts/odds_poll.py` imports `alerts.py` at module scope (a live cron entry point), and importing any `src.betting` submodule runs `src/betting/__init__.py`, which imports `kelly.py` — both reachable even though Discord alerting itself is silenced (Phase 30). (Phase 31 D4 moved prediction.py/market_taxonomy.py/league_normalizer.py/temporal_adapter.py/ev.py/shin.py out to prediction/lib/; D7b archived confidence_weighting.py/markets.py/risk_decisions.py/unified_latent.py/latent_shock.py/stress_testing.py/portfolio_optimizer.py/capital_allocator.py/market_feasibility.py as confirmed-safe-then.)
 │   ├── calibration/   State calibration engine, calibrator fitting (Phase 31: fit_calibrator_for_market relocated in from backend/execution_engine.py)
 │   ├── cache/         Prediction caching
 │   ├── cli/           Command-line tools (backtest, event replay)
@@ -22,21 +22,21 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 │   ├── evaluation/    Model metrics (Brier score, Sharpe, calibration)
 │   ├── events/        Event-driven architecture (types, store, routing)
 │   ├── features/      Elo (form.py/strength.py/xg_features.py archived to V1_archive/dead/ in Phase 31 D7 — zero live importers, orphaned feeders for the archived per-market models below)
-│   ├── governance/    Policy engine, closed-loop validation — V1-only, pending Part D archive (Phase 31: runtime_lock.py/system_versioning.py/lineage_tracker.py moved out to infra/, the only genuinely generic modules in the directory)
+│   ├── governance/    **Empty since Phase 31 D7c** — policy_engine.py, execution_spine_guard.py, closed_loop_validation_engine.py, temporal_consistency_engine.py, ui_semantic_auto_healing_engine.py, ui_semantic_contract_engine.py, meta_policy/ all archived to V1_archive/src/governance/ (Phase 31 D5 already moved the only genuinely generic modules — runtime_lock.py/system_versioning.py/lineage_tracker.py — out to infra/ earlier)
 │   ├── infra/         Phase 31 Part D: RuntimeLock (single-instance guard), run versioning/lineage tracking — relocated out of governance/, which otherwise means policy/CLVE/meta-policy
 │   ├── ingestion/     API-Football v3 client, backfill pipeline
 │   ├── learning/      Feedback loop, weight optimizer, event replay
 │   ├── maintenance.py Database cleanup utilities
 │   ├── models/        ML model training, calibration, registry, drift detection (Phase 31 D7: the 9 orphaned per-market statistical models — btts/dixon_coles/ensemble/h2h/halftime/injuries/late_goals/overunder/poisson — archived to V1_archive/dead/, zero live importers)
-│   ├── notifications/ Discord notifier, agent reporter
-│   ├── performance/   Performance metrics tracker
-│   ├── portfolio/     Self-optimizing and adaptive allocators
+│   ├── notifications/ Discord notifier (discord_system_notifier.py, v2_discord_notifier.py) — agent_reporter.py archived to V1_archive/src/notifications/ in Phase 31 D7c (zero live importers, imported the just-archived src.agents.shared.state_store)
+│   ├── performance/   **Empty since Phase 31 D7c** — performance_tracker.py archived to V1_archive/src/performance/
+│   ├── portfolio/     **Empty since Phase 31 D7c** — adaptive_allocator.py and state/ (portfolio_state.py, state_manager.py) archived to V1_archive/src/portfolio/
 │   ├── prediction/    Unified prediction service, market normalizer, prediction cycle; lib/ — feature engineering + EV math relocated from betting/ in Phase 31 (prediction.py, market_taxonomy.py, league_normalizer.py, temporal_adapter.py, ev.py, shin.py)
 │   ├── realtime/      WebSocket server, event streaming
 │   ├── security/      HMAC model signing, validation, rate limiting
 │   ├── settlement.py  Bet settlement, result fetching, P/L calculation
 │   ├── simulation/    Monte Carlo engine
-│   ├── state/         Betting state, snapshot store, state reconstructor
+│   ├── state/         Snapshot store, state reconstructor, builders/ — betting_state.py archived to V1_archive/src/state/ in Phase 31 D7c (zero live importers)
 │   └── storage/       SQLAlchemy ORM models and DB session factory
 ├── config/            Settings, leagues, markets, drift thresholds
 ├── scripts/           Executable scripts and CLI utilities (scripts/__init__.py makes it a package for gunicorn)
@@ -134,14 +134,13 @@ APScheduler auxiliary job definitions and circuit breaker.
 - Phase 31 Part D: removed `job_auto_heal_runs`, `job_retrain_models`, `job_run_betting_bot`, `job_run_continuous_cycle`, `MUTATING_JOBS`, and `is_job_allowed_in_mode()` — none of the four job functions were ever wired into the registered list above (confirmed live), and all four only existed to dispatch into V1's `ExecutionEngine`/`AgentCoordinator`/`run_continuous_cycle.py`, which Part D archives. The mode-gating function existed solely to guard these four job types.
 - `_circuit_ok()` / `_circuit_failure()` — fault-tolerant job execution
 
-### `backend/runtime/execution_runtime.py`
+### `backend/runtime/execution_runtime.py` — archived (Phase 31 D7c, 2026-07-08)
 
-**V1, retired (Phase 31 Part D, D10 cutover, 2026-07-07).** `bootball-runtime.service` no
-longer exists as a systemd unit — stopped + disabled at D10, unit file archived to
-`V1_archive/ops/bootball-runtime.service` and removed from `/etc/systemd/system/` at D8
-(2026-07-08). `backend/runtime/v2_runtime.py` is the sole execution authority now — see
-`OWNERSHIP.md`/`PART_D_PROGRESS.md`. This source file itself is left in place for reference
-pending D7c's dependent-archival pass. What it used to do:
+**V1, retired at D10 (2026-07-07), archived to `V1_archive/backend/runtime/execution_runtime.py`
+at D7c.** `bootball-runtime.service` no longer exists as a systemd unit — stopped + disabled at
+D10, unit file archived at D8. Zero live importers by the time this file moved (only import was
+`src.agents.coordinator`, archived in the same commit). `backend/runtime/v2_runtime.py` is the
+sole execution authority now — see `OWNERSHIP.md`/`PART_D_PROGRESS.md`. What it used to do:
 
 - Ran as a separate process from the Flask web UI
 - Called `AgentCoordinator.run_cycle()` every 1200 seconds (20 minutes)
@@ -207,18 +206,23 @@ Key models:
 | `CalibrationDriftState` | market (PK), last_seen_prediction_id, updated_at — Phase 28, persistent dedup for the live-drift monitor (replaces the in-memory set that replayed frozen outcomes on every restart) |
 | `EloRebuildLog` | pool, invoked_at, invoked_by, fixtures_processed, latest_fixture_ceiling — Phase 28, one row per `update_all_ratings()` call |
 
-### `src/agents/coordinator.py`
+### `src/agents/coordinator.py` — archived (Phase 31 D7c, 2026-07-08)
 
-**Central execution spine.** Orchestrates the full prediction-to-execution pipeline.
+**Central execution spine, V1.** Orchestrated the full prediction-to-execution pipeline.
+Archived to `V1_archive/src/agents/coordinator.py`, along with the rest of `src/agents/`
+(predictor/risk_manager/execution_strategist/adversary/shared) — see the flattened file list in
+`PART_D_PROGRESS.md`'s D7c entry. Zero live importers confirmed by re-running the full
+reachability graph rooted at the only entry points left post-D10 (`backend/runtime/v2_runtime.py`,
+`scripts/web_ui_v2.py`, the 5 cron scripts).
 
-Pipeline stages:
+Pipeline stages (historical):
 ```
 Predictor → Risk Manager → Execution Strategist → Portfolio Engine
   → Adversary (stress test) → Policy Engine → Save Bets
   → Feedback Loop → CLVE validation
 ```
 
-- `AgentCoordinator.run_cycle()` — was the primary entrypoint, called by `ExecutionRuntime` every 20 minutes; V1 retired at D10, no live caller remains
+- `AgentCoordinator.run_cycle()` — was the primary entrypoint, called by `ExecutionRuntime` every 20 minutes; no live caller since D10
 - `AgentCoordinator.run()` — thin wrapper that delegates to `run_cycle()`
 - `_write_attribution()` — writes causal attribution for each decision
 
@@ -229,8 +233,7 @@ the live-drift calibration ingest buried in the feedback cycle (Step 7.1/7.3). E
 Risk Manager, Execution Strategist, Portfolio Engine, Adversary, Policy Engine, the `PlacedBet`
 write block, Learning/WeightOptimizer/EventReplay, Meta-Policy, CLVE — ran every cycle against a
 betting ledger that took zero new rows since 2026-06-07. `src/prediction/prediction_cycle.py` is
-the lean V2 replacement, now the sole live caller of both surviving effects; this file itself is
-dead code pending D7c's archival pass.
+the lean V2 replacement, now the sole live caller of both surviving effects.
 
 ### `src/prediction/prediction_cycle.py`
 
@@ -258,13 +261,15 @@ Single source of truth for all predictions.
 - `save_predictions()` — writes h2h prob vector to `prob_home/prob_draw/prob_away` (keys "1"/"X"/"2") for use by `evaluate_track_a()`; also back-fills the vector in both skip paths ("both preliminary" and "downgrade") when `prob_home is None`, so existing NULL-vector records self-heal on the next prediction cycle
 - `evaluate_track_a(market, settled_records)` — scores settled predictions: log-loss, Brier, AUC; h2h requires `prob_home` on each record
 
-### `src/betting/portfolio/portfolio_engine.py`
+### `src/betting/portfolio/portfolio_engine.py` — archived (Phase 31 D7c, 2026-07-08)
 
-**Primary capital allocation orchestrator** — called directly by `AgentCoordinator`.
+**Primary capital allocation orchestrator, V1** — called directly by `AgentCoordinator`.
+Archived to `V1_archive/src/betting/portfolio/portfolio_engine.py` alongside
+`cvxpy_optimizer.py`/`markowitz_optimizer.py` (zero live importers post-D10-cutover).
 
-- Delegates QP solving to `markowitz_optimizer.py` (primary, SCS solver) with `cvxpy_optimizer.py` as fallback
-- `_apply_learning_weights()` — applies market performance weights from `AdaptiveAllocator`
-- `_enforce_market_caps()` — enforces per-market concentration limit (default 60%)
+- Delegated QP solving to `markowitz_optimizer.py` (primary, SCS solver) with `cvxpy_optimizer.py` as fallback
+- `_apply_learning_weights()` — applied market performance weights from `AdaptiveAllocator`
+- `_enforce_market_caps()` — enforced per-market concentration limit (default 60%)
 
 ### `src/betting/kelly.py`
 
@@ -337,12 +342,17 @@ Three-tier, per-league Platt-scaling calibration system.
   - L0000 = global calibration (league_id=NULL in DB)
   - League-specific baseline is compared against L0000 output (not raw) — positive improvement means the league cal genuinely beats global
 
-### `src/governance/policy_engine.py`
+### `src/governance/policy_engine.py` — archived (Phase 31 D7c, 2026-07-08)
 
-Risk constraint enforcement.
+**V1 risk constraint enforcement.** Archived to `V1_archive/src/governance/policy_engine.py`
+along with the rest of `src/governance/` (execution_spine_guard.py,
+closed_loop_validation_engine.py, temporal_consistency_engine.py,
+ui_semantic_auto_healing_engine.py, ui_semantic_contract_engine.py, meta_policy/) — zero live
+importers post-D10-cutover; `src/governance/` is now empty (the generic modules —
+runtime_lock.py/system_versioning.py/lineage_tracker.py — already moved to `src/infra/` at D5).
 
 - `PolicyEngine.validate(candidate_bets)` → `PolicyDecision`
-- Enforces: max correlation, max market concentration, minimum margin threshold
+- Enforced: max correlation, max market concentration, minimum margin threshold
 
 ### `src/settlement.py`
 
@@ -417,8 +427,15 @@ league_calibrations table updated; drift may trigger model retrain
 
 ### Model Lifecycle
 
+**Trigger currently missing (Phase 31 D7c, 2026-07-08):** manual retraining's only caller was
+`scripts/web_ui.py`'s `/api/admin/train` endpoint (already flagged in `OWNERSHIP.md` as a gap once
+port 5001 went dark at D10) — that file is now archived too, so nothing in the live tree calls
+`Trainer.train_market()` at all. Automatic drift-triggered recalibration
+(`LeagueCalibrationEngine.fit_all()`, below) is unaffected. See `OWNERSHIP.md` for the product
+decision this leaves open for V2's UI.
+
 ```
-AgentCoordinator (when drift detected or training mode)
+AgentCoordinator (V1, archived — historical diagram of how this used to trigger)
   ↓  src/models/trainer.py → Trainer.train_market()
 GradientBoostingClassifier.fit(X, y)
   ↓  safe_model_save()
@@ -575,7 +592,7 @@ Rate-limiting and restart-safety both come from one JSON state file (`data/state
 
 | Pattern | Where Used |
 |---------|-----------|
-| Singleton | `RuntimeModeManager`, `ExperimentTracker`, `ModelRegistry`, `event_bus`, `LeagueCalibrationEngine`, `ExecutionEngine` (now only `src/betting/execution_engine.py` — `backend/execution_engine.py`'s same-named class was archived in Phase 31 Part D; this one is V1-only too, moving to `V1_archive/` in Part D's next step) |
+| Singleton | `RuntimeModeManager`, `ExperimentTracker`, `ModelRegistry`, `event_bus`, `LeagueCalibrationEngine` (`ExecutionEngine` — both `backend/execution_engine.py`'s and `src/betting/execution_engine.py`'s same-named classes — fully archived to `V1_archive/` as of Phase 31 D7c) |
 | Context Manager | `get_session()` for DB transactions |
 | Decorator | `@mode_guard()`, `@require_training_or_dev()` for mode authorization |
 | Factory | `create_app()`, `get_model_registry()`, `get_bankroll_manager()` |
@@ -636,7 +653,7 @@ V1 betting-thesis code they tested.)
 | Script | Purpose | Status |
 |--------|---------|--------|
 | `scripts/web_ui_v2.py` | **Primary UI (V2)** — two-track Flask app on port 5000; strict V1 isolation; registers v2/ blueprints (home, track_a, predictions, collection, explorer) | Active |
-| `scripts/web_ui.py` | V1 Flask UI + APScheduler, port 5001 (formerly via gunicorn in `bootball-web.service`) | **Retired (D10 cutover, 2026-07-07)** — unit file archived to `V1_archive/ops/`, removed from `/etc/systemd/system/` at D8 (2026-07-08); port 5001 dark |
+| `scripts/web_ui.py` | V1 Flask UI + APScheduler, port 5001 (formerly via gunicorn in `bootball-web.service`) | **Archived (Phase 31 D7c, 2026-07-08)** — moved to `V1_archive/scripts/web_ui.py`; unit file archived to `V1_archive/ops/`, removed from `/etc/systemd/system/` at D8; port 5001 dark since D10 (2026-07-07) |
 | `scripts/deploy.sh` | Post-commit deployment orchestrator; restarts all long-running services and verifies they start with current commit; `check` subcommand reports staleness without restarting | Active |
 | `scripts/daily_run.py` | Data pipeline only (no prediction/betting); enforces `backfill_daily_cap` in `_fetch_completed()`; logs per-run quota snapshots to `logs/quota_log.csv`; `_fetch_completed()`'s per-league `status="FT"` fetch now `force_refresh=True` and `_save_completed()` won't clobber a fixture already in a terminal status (Phase 27); `_force_settlement_baseline()` calls `verify_ft_fixtures()` before settling | Active |
 | `scripts/backfill_all.py` | Historical data ingestion (multi-season) | Active |
