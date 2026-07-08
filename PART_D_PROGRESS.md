@@ -15,7 +15,7 @@ what's next."
   inert — landed while `bootball-v2-runtime.service` was still running old code, so no double
   scheduler was registered. Activates on this service's next restart.
 
-## D10 — in progress (this checkpoint)
+## D10 — COMPLETE (2026-07-08)
 
 Units before D10: `bootball-runtime.service` (active, enabled), `bootball-web.service` (active,
 enabled, port 5001), `bootball-v2-runtime.service` (active, enabled, old code — no scheduler),
@@ -30,37 +30,47 @@ Steps, in order:
        fetch_odds/cleanup_matches/live_settle/daily_sanity_check/v2_collection_heartbeat),
        then "Added job ... to job store default" x7, "Scheduler started with jobs: [...7...]".
        Prediction cycle #1 started immediately after (1405 NS fixtures fetched).
-3. [ ] Verify as jobs naturally fire (in progress — logged times to watch for):
-       - fetch_results: next hourly fire ~19:17 UTC or later
-       - fetch_fixtures: next 6h fire
-       - odds_trajectory_scheduler: cron, unaffected, ~20 min (sanity check only)
-       - V2 prediction cycle cadence: confirmed continuing (cycle #1 at 18:17:06 UTC)
-       - port 5001 dark (confirmed — ss shows nothing bound), port 5000 serving (confirmed)
+3. [x] Verified as jobs naturally fired, from V2 alone, no double-claim: `fetch_results`
+       completed 2026-07-07 ~19:xx UTC and every hour since (confirmed again 2026-07-08
+       16:27:43 UTC and 17:21:14 UTC in `journalctl -u bootball-v2-runtime.service`);
+       `fetch_fixtures` completed on its 6h cadence (confirmed 2026-07-08 16:28:48 UTC,
+       "next run at: 2026-07-08 22:21:14 UTC"); V2 prediction cycle cadence confirmed
+       continuing (cycle #1 at 18:17:06 UTC 07-07, calibration report generated
+       2026-07-08 16:35:37 UTC); port 5001 dark, port 5000 serving throughout.
 4. [x] Negative checks, confirmed 18:17 UTC: `ps aux` sweep for execution_runtime.py/
        coordinator/gunicorn-web_ui:app → zero matches. `apscheduler_jobs` table has exactly
        7 rows, one per job id (structurally single-claimant — only one process is running).
        V1 Discord already silenced pre-D10 (Phase 30); log confirms
        "V1 Discord-only consumers ... not registered — discord_v1_enabled=False".
-5. [ ] Tonight's 02:00 UTC `daily_run.py` cron entry is the final gate — this is the one path
-       intentionally left alone (still root/cron, not touched by D10). Confirm it completes
-       normally under the new topology (V1 web/runtime dark, V2 owns the aux scheduler).
-6. [~] deploy.sh's service list, docs/deployment_state.md, and docs/codebase_reference.md are
+5. [x] The 02:00 UTC `daily_run.py` cron gate completed cleanly under the new topology.
+       `/var/log/bootball/daily_run.log` mtime 2026-07-08 02:05:51 UTC, last line
+       "Pipeline succeeded: 0 errors in 345.5s" — 1316 backfilled, 1476 upcoming, 12 settled,
+       run_id `1b48d76c-f735-42d7-8bbf-6827419c578a`. V1 web/runtime dark throughout, V2 owned
+       the aux scheduler the whole run.
+6. [x] deploy.sh's service list, docs/deployment_state.md, and docs/codebase_reference.md
        done and committed (d5d3a49, 39bcbe6) — SERVICES array trimmed to the two V2 units;
        deployment_state.md's systemd/cron/log sections mark V1 retired; codebase_reference.md's
        Entry Points, Startup Sequence, execution_runtime.py/coordinator.py sections, and the
-       Fixture→Prediction data-flow diagram all now describe V2 as sole execution authority
-       instead of V1/parallel-window language. Full D10 checkpoint (this line → [x]) still
-       waits on steps 3 and 5 below, then D7c and Part E follow.
-7. [ ] Tomorrow's ~04:00 UTC scheduled reboot is a free reboot-survival test: on reconnect,
-       verify via deploy.sh's check + V2 deploy/heartbeat notifications that the V2-only set
-       self-started on the correct commit and both V1 units stayed dark (disabled, not just
-       stopped-until-now). This is Part D's closing evidence.
+       Fixture→Prediction data-flow diagram all now describe V2 as sole execution authority.
+7. [x] Reboot-survival test passed. Host rebooted 2026-07-08 04:21 UTC (scheduled window).
+       `bootball-v2-runtime.service` self-started same boot (`ExecMainStartTimestamp`
+       2026-07-08 04:21:10 UTC), ran from commit `971da2092` (correct HEAD at boot time),
+       re-claimed all 7 aux jobs ("Scheduler started with jobs: [...7...]"), V2 Discord wired
+       ("✅ V2 Discord notifications active"). `systemctl is-enabled`/`is-active` for both V1
+       units confirmed `disabled`/`inactive` post-reboot — they did not resurrect. `ps aux`
+       sweep for execution_runtime/coordinator/gunicorn-web_ui:app: zero matches.
+
+**D10 checkpoint closed.** All 7 steps verified live. Continuing into D8's remaining unit-file
+archival, D7c, and Part E per the user's "same momentum" authorization.
 
 ## Not started yet
 
+- D8 (unit-file half): move `bootball-runtime.service`/`bootball-web.service` unit files to
+  `V1_archive/ops/` verbatim, now that both are confirmed stopped+disabled and reboot-survived
+  as dark. Cron half already done (see D0-D9 section above).
 - D7c: archive coordinator.py + its ~26 remaining dependents (src/agents/*, remaining
   src/betting/*, remaining src/governance/*, performance_tracker.py, src/portfolio/*,
-  betting_state.py, system_truth_snapshot.py, web_ui.py) — gated on D10 completing, re-verify
-  the reachability graph post-cutover before moving anything.
+  betting_state.py, system_truth_snapshot.py, web_ui.py) — gated on D10 completing (now done),
+  re-verify the reachability graph post-cutover before moving anything.
 - Part E: `AUDIT_V2_STANDALONE.md` — standalone re-audit of V2, follows immediately per the
   user's "don't let a gap open between D and E."

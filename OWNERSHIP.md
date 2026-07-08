@@ -460,3 +460,37 @@ has no equivalent endpoint. Once port 5001 goes dark (this Part D's own cutover 
 retraining loses its only UI trigger — recalibration (drift-triggered, automatic) is unaffected,
 this is specifically the human-initiated full retrain path. Not a regression this phase
 introduces (V2's UI never had this button), but worth the user's attention post-cutover.
+
+**Status as of D10's completion (2026-07-08): this gap is now live, not hypothetical.** Port
+5001 is dark. `/api/admin/train` has no reachable path. Manual retraining has no UI trigger
+anywhere in the running system until V2's web UI grows an equivalent endpoint — flagged for the
+user, not silently patched, since this is a product decision (what the retrain endpoint should
+look like in V2) rather than a mechanical port.
+
+## D9/D10 executed: V2 given scheduler ownership, V1 stopped, cutover verified live
+
+D9 (`b0d4bfc`): `V2ExecutionRuntime.start()` calls `backend.scheduler.start_scheduler()`, shipped
+inert — landed while `bootball-v2-runtime.service` was still running old code (`journalctl`/
+`ActiveEnterTimestamp` confirmed no restart since the edit), so it provably registered no jobs
+until deliberately activated.
+
+D10 (2026-07-07 18:1x–18:17 UTC): `bootball-runtime.service` and `bootball-web.service` stopped
+*and* disabled in the same motion (not stopped-only, since a reboot was hours away and would
+have resurrected an enabled-but-stopped unit). `bootball-v2-runtime.service` restarted; logs
+show it claiming all 7 auxiliary jobs and the prediction cycle continuing uninterrupted.
+Negative checks at cutover: zero V1 processes (`ps` sweep), `apscheduler_jobs` table holding
+exactly 7 rows (structurally single-claimant), V1 Discord already silenced (Phase 30), port 5001
+dark.
+
+Two independent verification windows closed since, both passing: (1) natural-fire verification
+— `fetch_results`/`fetch_fixtures` continued firing hourly/6-hourly from V2 alone through
+2026-07-08, and the 02:00 UTC `daily_run.py` cron gate completed cleanly (`Pipeline succeeded:
+0 errors in 345.5s`, 1316 backfilled/1476 upcoming/12 settled) under the new topology; (2) a
+reboot-survival test — the host's scheduled ~04:00 UTC reboot landed at 04:21 UTC on 2026-07-08,
+`bootball-v2-runtime.service` self-started the same boot on the correct HEAD commit, re-claimed
+all 7 jobs, and both V1 units confirmed `disabled`/`inactive` post-reboot (did not resurrect).
+Full evidence trail: `PART_D_PROGRESS.md`.
+
+D10 is closed. Remaining Part D work: D8's unit-file half (move the now-stopped V1 unit files to
+`V1_archive/ops/`) and D7c (archive `coordinator.py`'s 26 remaining dependents, now unblocked).
+Part E (`AUDIT_V2_STANDALONE.md`) follows immediately after.
