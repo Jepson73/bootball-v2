@@ -11,7 +11,7 @@
 #   scripts/deploy.sh          restart all services, verify each is active
 #   scripts/deploy.sh check    report staleness without restarting anything
 #
-# Cron-triggered scripts (daily_run.py, auto_bet.py, settle_fixtures.py, odds_poll.py,
+# Cron-triggered scripts (daily_run.py, odds_poll.py, odds_trajectory_scheduler.py,
 # backfill_cron.py) are NOT in scope here — each cron invocation is a fresh process that
 # reads current disk state, so they can never go stale between commits.
 set -euo pipefail
@@ -22,11 +22,12 @@ cd "$REPO_ROOT"
 # Every long-running service that imports and executes this repo's code in-process.
 # If you add a new systemd service running app code, add it here too.
 SERVICES=(
-  bootball-runtime.service      # APScheduler + AgentCoordinator + settlement (backend/runtime/execution_runtime.py)
-  bootball-v2-runtime.service   # Phase 31 Part C: V2 prediction-cycle runtime, parallel-verification window (backend/runtime/v2_runtime.py)
+  bootball-v2-runtime.service   # Phase 31 Part D: V2 prediction-cycle runtime + auxiliary scheduler (backend/runtime/v2_runtime.py) — sole execution authority since D10 cutover
   bootball-web-v2.service       # V2 Flask UI, port 5000 (scripts/web_ui_v2.py)
-  bootball-web.service          # V1 Flask UI, port 5001 (scripts/web_ui.py) — reference only, frozen
 )
+# Phase 31 Part D (D10, 2026-07-07): bootball-runtime.service and bootball-web.service (V1)
+# stopped + disabled at cutover. See PART_D_PROGRESS.md / OWNERSHIP.md. Their unit files
+# move to V1_archive/ops/ once D8's ops-archival is complete.
 
 STATE_DIR="$REPO_ROOT/logs/deploy_state"
 mkdir -p "$STATE_DIR"

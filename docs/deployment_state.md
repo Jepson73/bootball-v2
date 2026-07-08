@@ -1,6 +1,12 @@
 # Bootball — Deployment State Reference
-**Last updated:** 2026-07-02 (Phase 25)  
+**Last updated:** 2026-07-07 (Phase 31 Part D — V1/V2 cutover)  
 **Purpose:** Capture out-of-repo operational state so the system can be reproduced if the host is lost.
+
+**Phase 31 Part D (D10, 2026-07-07):** `bootball-runtime.service` and `bootball-web.service` (V1)
+stopped + disabled at cutover. `bootball-v2-runtime.service` is now the sole execution authority —
+it owns both the 20-min prediction cycle and the auxiliary APScheduler jobs V1 used to run. Most
+of this doc below still describes the pre-cutover three/four-service layout; sections affected by
+the cutover are called out inline. See `OWNERSHIP.md` and `PART_D_PROGRESS.md` for the full record.
 
 ---
 
@@ -42,24 +48,27 @@ that can go stale — cron-triggered scripts cannot, see below):
 
 | Service | Runs | Restart needed when... |
 |---|---|---|
-| `bootball-runtime.service` | `backend/runtime/execution_runtime.py` — APScheduler (fetch_fixtures/results/odds, cleanup, live_settle) + `AgentCoordinator.run_cycle()` + `settle_placed_bets`/`settle_predictions` every 20 min | anything under `src/`, `backend/`, or `config/` changes |
+| `bootball-v2-runtime.service` | `backend/runtime/v2_runtime.py` — 20-min prediction cycle (`src.prediction.prediction_cycle`) + APScheduler (fetch_fixtures/results/odds, cleanup, live_settle, daily_sanity_check, v2_collection_heartbeat) since Phase 31 D9/D10 | anything under `src/`, `backend/`, or `config/` changes |
 | `bootball-web-v2.service` | `scripts/web_ui_v2.py` (port 5000) | anything under `v2/` or `src/` changes |
-| `bootball-web.service` | `scripts/web_ui.py` (port 5001, V1 — reference/frozen) | included for completeness; V1 is not modified in normal work, but the service is still in-process and would go stale exactly the same way if it ever were |
 
-**Not in scope, and cannot go stale:** `daily_run.py`, `auto_bet.py`, `settle_fixtures.py`,
-`odds_poll.py`, `backfill_cron.py`, `probe_forward_odds.py` — all cron-triggered (`/etc/cron.d/bootball`,
+**Retired at Phase 31 Part D cutover (2026-07-07):** `bootball-runtime.service` and
+`bootball-web.service` (V1) — stopped + disabled, no longer in scope for `deploy.sh`. Their unit
+files move to `V1_archive/ops/` once D8's ops-archival finishes; see `scripts/deploy.sh`'s
+`SERVICES` array for the current list.
+
+**Not in scope, and cannot go stale:** `daily_run.py`, `odds_poll.py`, `odds_trajectory_scheduler.py`,
+`backfill_cron.py`, `probe_forward_odds.py` — all cron-triggered (`/etc/cron.d/bootball`,
 `crontab -l`). Each invocation is a fresh `python3` process that reads whatever is on disk at
 that moment, so they're automatically current after any commit. No restart mechanism needed or
-possible for these.
+possible for these. (`auto_bet.py --bet-only` and `settle_fixtures.py`'s cron entries were removed
+at Phase 31 D8 — both were confirmed dead; see `V1_archive/ops/cron_bootball_removed_entries.md`.)
 
 ### Detecting a stale service
 
-`bootball-runtime.service` and `bootball-web-v2.service` self-report the git commit they started
+`bootball-v2-runtime.service` and `bootball-web-v2.service` self-report the git commit they started
 from via `src/deploy_info.py` → `logs/deploy_state/<service>.running_commit`, written at process
 startup regardless of *how* the process was restarted (deploy.sh, manual `systemctl restart`, or
-the daily host reboot). `bootball-web.service` (V1, frozen) is not instrumented — `deploy.sh check`
-falls back to its own restart record for that one, which is only accurate if `deploy.sh` was the
-last thing to restart it.
+the daily host reboot).
 
 `scripts/deploy.sh check` compares these against current `HEAD` and reports up-to-date / stale
 (with commit count behind) per service.
@@ -127,9 +136,39 @@ fixed here since Phase 25 adds meaningful write volume.
 
 ## Systemd Services
 
-Three service files under `/etc/systemd/system/`:
+Two live service files under `/etc/systemd/system/` as of Phase 31 Part D's cutover
+(2026-07-07) — `bootball-runtime.service` and `bootball-web.service` (V1) are stopped + disabled,
+kept below for reference until their unit files move to `V1_archive/ops/`:
 
-### `bootball-runtime.service` — Execution engine (coordinator + APScheduler)
+### `bootball-v2-runtime.service` — Execution engine (prediction cycle + APScheduler)
+```ini
+[Unit]
+Description=Bootball V2 Execution Runtime (Phase 31 Part C — parallel-verification window)
+After=network.target
+
+[Service]
+Type=simple
+User=bootball
+Group=bootball
+WorkingDirectory=/opt/projects/bootball
+ExecStart=/opt/projects/bootball/.venv/bin/python3 backend/runtime/v2_runtime.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+**What it runs:** `backend/runtime/v2_runtime.py`  
+- 20-min `src.prediction.prediction_cycle.run_prediction_cycle()` loop (V2 prediction pipeline,
+  `V2_RUNTIME_WRITE_ENABLED=true` — saving live since the parity-verification window)
+- Since Phase 31 D9/D10: APScheduler with the same 7 auxiliary jobs V1 used to run —
+  `fetch_fixtures` (6h), `fetch_results` (1h), `fetch_odds` (1h), `cleanup_matches` (5m),
+  `live_settle` (2m), `daily_sanity_check` (24h), `v2_collection_heartbeat` (24h)
+- The `fetch_results` job is the primary API consumer: ~2,480 calls for the first daily run (cache fill), ~40 calls per subsequent run.
+- `Restart=always` with `RestartSec=5` — **if it restarts after midnight before the first hourly run, the first run costs 2,480 calls (acceptable).**
+
+### `bootball-runtime.service` — V1 execution engine (STOPPED + DISABLED, 2026-07-07)
 ```ini
 [Unit]
 Description=Bootball Execution Runtime
@@ -148,13 +187,11 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-**What it runs:** `backend/runtime/execution_runtime.py`  
-- 20-min `AgentCoordinator.run_cycle()` loop (V1 prediction pipeline, 0 API calls, `bot_enabled=False`)
-- APScheduler with 6 auxiliary jobs: `fetch_fixtures` (6h), `fetch_results` (1h), `fetch_odds` (1h), `cleanup_matches` (5m), `live_settle` (2m), `daily_sanity_check` (24h)
-- The `fetch_results` job is the primary API consumer: ~2,480 calls for the first daily run (cache fill), ~40 calls per subsequent run.
-- `Restart=always` with `RestartSec=5` — **if it restarts after midnight before the first hourly run, the first run costs 2,480 calls (acceptable).**
+Ran `AgentCoordinator.run_cycle()` (V1 prediction pipeline, 0 API calls, `bot_enabled=False`) plus
+the same auxiliary APScheduler now owned by `bootball-v2-runtime.service` above. Retired at Phase
+31 Part D's cutover — see `OWNERSHIP.md`'s "Key finding" for why (~97% dead theater by the end).
 
-### `bootball-web.service` — V1 Flask UI (port 5001, reference)
+### `bootball-web.service` — V1 Flask UI (STOPPED + DISABLED, 2026-07-07 — port 5001)
 ```ini
 [Unit]
 Description=Bootball Web UI (V1 — reference, port 5001)
@@ -177,6 +214,7 @@ WantedBy=multi-user.target
 **Phase 13 change (2026-06-30):** V1 moved from port 5000 to 5001 via gunicorn.
 `scripts/__init__.py` (empty) was added to make `scripts` a Python package importable by gunicorn.
 V1's `app.run(port=5000)` is inside `if __name__ == '__main__':` — gunicorn bypasses it.
+Retired at Phase 31 Part D's cutover; port 5001 is dark.
 
 ### `bootball-web-v2.service` — V2 Web UI (port 5000, primary)
 ```ini
@@ -226,6 +264,10 @@ WantedBy=multi-user.target
 
 ## Cron Jobs — `/etc/cron.d/bootball` (verbatim)
 
+**Updated 2026-07-07 (Phase 31 D8):** the `auto_bet.py --bet-only` and `settle_fixtures.py`
+entries below were removed — both confirmed dead (self-blocked / file long gone). Preserved
+verbatim in `V1_archive/ops/cron_bootball_removed_entries.md` if ever needed for reference.
+
 ```cron
 # Bootball cron jobs
 # Installed: /etc/cron.d/bootball
@@ -238,15 +280,6 @@ PY=/opt/projects/bootball/.venv/bin/python
 # daily_run: settle completed fixtures + generate predictions + find value bets
 # 4 AM CET = 2 AM UTC
 0 2 * * * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/daily_run.py >> /var/log/bootball/daily_run.log 2>&1
-
-# auto_bet: place bets based on value (runs after daily_run has predictions)
-# 5 AM CET = 3 AM UTC
-0 3 * * * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/auto_bet.py --bet-only >> /var/log/bootball/auto_bet.log 2>&1
-
-# settle_fixtures: every 30 min from 4 AM to 1 AM CET (4 AM to 23:00 UTC + 0,1 AM)
-# 4,4:30,5,5:30,...23,0:00,0:30,1:00 CET
-*/30 4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23 * * * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/settle_fixtures.py >> /var/log/bootball/settle_fixtures.log 2>&1
-*/30 0,1 * * * root cd /opt/projects/bootball && PYTHONPATH=/opt/projects/bootball $PY scripts/settle_fixtures.py >> /var/log/bootball/settle_fixtures.log 2>&1
 
 # odds_poll: every 30 min from 8 AM to midnight CET to refresh odds for active predictions
 # 8:00,8:30,9:00,...23:30 CET = 6:00...22:30 UTC
@@ -343,8 +376,6 @@ early-fetch absence proves nothing, Pinnacle often posts close to kickoff).
 | Log | Written by | Path |
 |-----|-----------|------|
 | `daily_run.log` | 2AM cron (root) | `/var/log/bootball/daily_run.log` |
-| `auto_bet.log` | 3AM cron (root) | `/var/log/bootball/auto_bet.log` |
-| `settle_fixtures.log` | */30 cron (root) | `/var/log/bootball/settle_fixtures.log` |
 | `odds_poll.log` | */30 8-23 cron (root) | `/var/log/bootball/odds_poll.log` |
 | `odds_trajectory_scheduler.log` | */30 24/7 cron (root) | `/var/log/bootball/odds_trajectory_scheduler.log` |
 | `probe_tasmania.log` | July 3-4 one-shot (root) | `/var/log/bootball/probe_tasmania.log` |
@@ -415,9 +446,11 @@ mkdir -p /var/log/bootball
 
 # 8. Install systemd services
 cp /opt/projects/bootball/docs/deployment_state.md  # read the service definitions above
-# Create /etc/systemd/system/bootball-runtime.service, bootball-web.service, bootball-web-v2.service
+# Create /etc/systemd/system/bootball-v2-runtime.service, bootball-web-v2.service
+# (V1's bootball-runtime.service / bootball-web.service are retired as of Phase 31 Part D —
+# only install those two if deliberately restoring the pre-cutover reference layout)
 systemctl daemon-reload
-systemctl enable bootball-runtime bootball-web bootball-web-v2
+systemctl enable bootball-v2-runtime bootball-web-v2
 
 # 8b. Allow the bootball system user to run git inside the repo (needed for
 # scripts/deploy.sh's commit self-reporting — see "Required Post-Commit Step" above).
