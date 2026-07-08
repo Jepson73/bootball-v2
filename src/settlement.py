@@ -738,8 +738,6 @@ def settle_placed_bets(days: int | None = None) -> tuple[int, float, list[dict]]
             logger.info(f"Settled {settled} bets, P/L: {total_pnl:+.2f}")
 
             if bet_details:
-                send_settlement_alert(bet_details, total_pnl)
-                
                 from src.events.event_bus import event_bus, Events
                 event_bus.emit(Events.BET_SETTLED, {
                     "settled_count": settled,
@@ -752,47 +750,6 @@ def settle_placed_bets(days: int | None = None) -> tuple[int, float, list[dict]]
         logger.info(f"Done. Settled: {settled}, P/L: {total_pnl:+.2f}")
 
         return settled, total_pnl, bet_details
-
-
-def send_settlement_alert(bet_details: list[dict], total_pnl: float):
-    """Send Discord alert with nicely formatted settled bet results."""
-    if not bet_details:
-        return
-
-    try:
-        from src.betting.alerts import BettingAlerts
-
-        wins = sum(1 for b in bet_details if b['won'])
-        losses = len(bet_details) - wins
-        total_stake = sum(b['stake'] for b in bet_details)
-
-        msg = f"**SETTLED {len(bet_details)} BET(S)**\n"
-        msg += f"{wins}W / {losses}L | P/L: {total_pnl:+.2f} | Stake: SEK {total_stake:.2f}\n"
-        msg += "─────────────────────\n\n"
-
-        for bet in bet_details:
-            market_emoji = {
-                'btts': '⚽',
-                'ou25': '🥅',
-                'ou15': '🥅',
-                'h2h': '🏆',
-            }.get(bet['market'], '📊')
-
-            result_emoji = '💰' if bet['won'] else '💩'
-
-            msg += f"{market_emoji} **{bet['home']}** vs **{bet['away']}**\n"
-            msg += f"   └ {bet['market'].upper()} **{bet['outcome']}** @ {bet['odds']:.2f}\n"
-            msg += f"   └ Result: **{bet['result']}** {result_emoji} | P/L: {bet['pnl']:+.2f}\n"
-            msg += f"   └ {bet['league']}\n\n"
-
-        msg += "─────────────────────\n"
-        msg += f"Net P/L: {total_pnl:+.2f}"
-
-        alerts = BettingAlerts(channels=["discord"], min_ev=5.0, min_odds=1.5, min_kelly=0.03)
-        alerts.send_message(msg)
-        logger.info(f"Sent settlement alert")
-    except Exception as e:
-        logger.warning(f"Failed to send settlement alert: {e}")
 
 
 def fix_incorrect_settlements() -> int:

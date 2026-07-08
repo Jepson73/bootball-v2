@@ -29,7 +29,6 @@ from src.ingestion.odds_snapshot_capture import write_snapshots_from_response
 from src.storage.db import get_session, init_db
 from src.storage.models import Fixture, FixtureOdds, PredictionRecord, PlacedBet
 from src.prediction.lib.ev import expected_value
-from src.betting.alerts import BettingAlerts, BetAlert
 from src.models.calibrator import calibrate_prediction
 from src.calibration.market_blend import blend_with_market
 
@@ -487,102 +486,6 @@ MARKET_BET_TYPE_MAP = {
         "ou15": "over_under",
     }
 
-MARKET_MIN_ODDS = {
-    "h2h": 1.5,
-    "btts": 1.5,
-    "ou25": 1.5,
-    "ou15": 0,  # Skip ou15 entirely
-}
-
-def find_new_value_bets(s, fixture_ids, min_ev=0.05, min_odds=1.5, limit=5):
-    """Find new value bet opportunities after odds update."""
-    field_map = {
-        "h2h": {"1": "odd_home", "X": "odd_draw", "2": "odd_away"},
-        "btts": {"Yes": "odd_btts_yes", "No": "odd_btts_no"},
-        "ou25": {"Over": "odd_over", "Under": "odd_under"},
-        "ou15": {"Over": "odd_over15", "Under": "odd_under15"},
-    }
-
-    from config.leagues import LEAGUES
-    from src.storage.models import Team
-
-    new_bets = []
-
-    for fix_id in fixture_ids:
-        fix = s.execute(select(Fixture).where(Fixture.id == fix_id)).scalar_one_or_none()
-        if not fix:
-            continue
-
-        home_team = s.execute(select(Team).where(Team.id == fix.home_team_id)).scalar_one_or_none()
-        away_team = s.execute(select(Team).where(Team.id == fix.away_team_id)).scalar_one_or_none()
-        if not home_team or not away_team:
-            continue
-
-        home_name = home_team.name
-        away_name = away_team.name
-
-        preds = s.execute(
-            select(PredictionRecord).where(
-                PredictionRecord.fixture_id == fix_id,
-                PredictionRecord.settled == False,
-            )
-        ).scalars().all()
-
-        for pred in preds:
-            # Skip ou15 entirely
-            if pred.market == "ou15":
-                continue
-                
-            # Use market-specific min_odds
-            market_min = MARKET_MIN_ODDS.get(pred.market, min_odds)
-            if market_min == 0:
-                continue
-            
-            # Map market to correct bet_type
-            bet_type = MARKET_BET_TYPE_MAP.get(pred.market, pred.market)
-            
-            odds_row = s.execute(
-                select(FixtureOdds).where(
-                    FixtureOdds.fixture_id == fix_id,
-                    FixtureOdds.bet_type == bet_type,
-                )
-            ).scalars().first()
-
-            if not odds_row:
-                continue
-
-            market_fields = field_map.get(pred.market, {})
-            odd_field = market_fields.get(pred.predicted_outcome)
-            if not odd_field:
-                continue
-
-            odds_decimal = getattr(odds_row, odd_field, None)
-            if not odds_decimal or odds_decimal < market_min:
-                continue
-
-            ev = expected_value(pred.our_prob, odds_decimal)
-            if ev < min_ev:
-                continue
-
-            league_name = LEAGUES.get(fix.league_id, {}).get('name', '')
-            kickoff_utc = fix.date
-            kickoff_local = kickoff_utc.replace(tzinfo=None).strftime('%H:%M') if kickoff_utc else ''
-
-            new_bets.append(BetAlert(
-                market=pred.market,
-                home_team=home_name,
-                away_team=away_name,
-                outcome=pred.predicted_outcome,
-                odds=odds_decimal,
-                ev=ev,
-                kelly=0.05,
-                league=league_name,
-                fixture_date=kickoff_local,
-            ))
-
-    new_bets.sort(key=lambda x: x.ev, reverse=True)
-    return new_bets[:limit]
-
 
 def main():
     parser = argparse.ArgumentParser(description="Selective odds polling")
@@ -628,19 +531,6 @@ def main():
         clv_captured = capture_closing_lines(s, fixture_ids, args.dry_run)
         if clv_captured:
             logger.info(f"Captured CLV for {clv_captured} placed bet(s)")
-
-        if not args.dry_run and updated_odds > 0:
-            new_value_bets = find_new_value_bets(s, fixture_ids, min_ev=0.05, min_odds=1.2)
-            if new_value_bets:
-                alerts = BettingAlerts(
-                    channels=["discord"],
-                    min_ev=0,
-                    min_odds=0,
-                    min_kelly=0,
-                )
-                for bet in new_value_bets:
-                    alerts.send_bet_alert(bet)
-                logger.info(f"Sent {len(new_value_bets)} new value bet alerts")
 
 
 if __name__ == "__main__":
