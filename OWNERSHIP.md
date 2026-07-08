@@ -217,13 +217,18 @@ archive commit for `/etc/cron.d/bootball` preserves these two lines (commented o
 kept-for-reference file under `V1_archive/ops/`) rather than deleting them outright, matching the
 "move, not delete" principle already applied to the DEAD/UNCLEAR code cluster.
 
-**D8 status (2026-07-07): cron half done.** Both lines preserved verbatim in
-`V1_archive/ops/cron_bootball_removed_entries.md`, then removed from the live
-`/etc/cron.d/bootball` (diffed before/after to confirm only those two entries changed; the
-still-load-bearing `daily_run.py` 02:00 line above is untouched, per the "do not drop until
-observed succeeding for a full day post-fix" note above). The unit-file half of D8
-(`bootball-runtime.service`, `bootball-web.service` → `V1_archive/ops/`) waits for D10, since
-those units are still active.
+**D8 status: complete (cron half 2026-07-07, unit-file half 2026-07-08).** Both cron lines
+preserved verbatim in `V1_archive/ops/cron_bootball_removed_entries.md`, then removed from the
+live `/etc/cron.d/bootball` (diffed before/after to confirm only those two entries changed; the
+still-load-bearing `daily_run.py` 02:00 line above is untouched). Unit-file half executed after
+D10's cutover was fully verified (both units confirmed stopped+disabled and reboot-survived):
+`bootball-runtime.service`/`bootball-web.service` diffed byte-identical against copies now at
+`V1_archive/ops/bootball-{runtime,web}.service`, then removed from `/etc/systemd/system/` and
+`daemon-reload`d — `systemctl cat` reports "No files found" for both, `list-units --all
+'bootball*'` shows only the two V2 units. `V1_archive/ops/systemd_units_removed.md` documents
+why and how to restore. Also cleaned up `bootball-v2-runtime.service`'s own `Description=`
+field, which still read "Phase 31 Part C — parallel-verification window" — a metadata-only edit
+via `daemon-reload`, no restart, service stayed active throughout.
 
 ## Major finding during the parallel-run window: cron (root) vs systemd (bootball) UID split has been silently breaking in-process ingestion since 2026-06-29
 

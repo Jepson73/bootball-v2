@@ -1,0 +1,19 @@
+# /etc/systemd/system/bootball-runtime.service
+[Unit]
+Description=Bootball Execution Runtime
+After=network.target
+
+[Service]
+Type=simple
+User=bootball
+Group=bootball
+
+WorkingDirectory=/opt/projects/bootball
+
+ExecStart=/opt/projects/bootball/.venv/bin/python3 backend/runtime/execution_runtime.py
+
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

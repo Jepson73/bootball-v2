@@ -53,8 +53,9 @@ that can go stale — cron-triggered scripts cannot, see below):
 
 **Retired at Phase 31 Part D cutover (2026-07-07):** `bootball-runtime.service` and
 `bootball-web.service` (V1) — stopped + disabled, no longer in scope for `deploy.sh`. Their unit
-files move to `V1_archive/ops/` once D8's ops-archival finishes; see `scripts/deploy.sh`'s
-`SERVICES` array for the current list.
+files are archived verbatim at `V1_archive/ops/bootball-{runtime,web}.service` (D8, 2026-07-08)
+and no longer exist under `/etc/systemd/system/`; see `scripts/deploy.sh`'s `SERVICES` array for
+the current list.
 
 **Not in scope, and cannot go stale:** `daily_run.py`, `odds_poll.py`, `odds_trajectory_scheduler.py`,
 `backfill_cron.py`, `probe_forward_odds.py` — all cron-triggered (`/etc/cron.d/bootball`,

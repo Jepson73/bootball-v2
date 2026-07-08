@@ -1,0 +1,19 @@
+# /etc/systemd/system/bootball-web.service
+[Unit]
+Description=Bootball Web UI (V1 — reference, port 5001)
+After=network.target
+
+[Service]
+Type=simple
+User=bootball
+Group=bootball
+WorkingDirectory=/opt/projects/bootball
+Environment="PYTHONPATH=/opt/projects/bootball"
+
+ExecStart=/opt/projects/bootball/.venv/bin/gunicorn -w 1 -b 0.0.0.0:5001 --timeout 120 scripts.web_ui:app
+
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

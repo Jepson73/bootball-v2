@@ -8,9 +8,15 @@ what's next."
 
 - D0–D7: extraction, resurrection-path removal, relocations (betting→prediction/lib,
   governance→infra, alerts/event_bus→events), DEAD/UNCLEAR + V1-thesis archival. See git log.
-- D8 (cron half): dead `auto_bet.py --bet-only` / `settle_fixtures.py` cron lines preserved in
+- D8 (complete): dead `auto_bet.py --bet-only` / `settle_fixtures.py` cron lines preserved in
   `V1_archive/ops/cron_bootball_removed_entries.md`, removed from live `/etc/cron.d/bootball`.
-  Unit-file half (bootball-runtime.service, bootball-web.service → `V1_archive/ops/`) waits here.
+  Unit-file half: `bootball-runtime.service`/`bootball-web.service` copied verbatim (diffed
+  byte-identical before removal) to `V1_archive/ops/`, alongside `systemd_units_removed.md`
+  explaining why/how to restore; removed from `/etc/systemd/system/`, `daemon-reload`d.
+  `systemctl cat` for both now reports "No files found"; `list-units --all 'bootball*'` shows
+  only the two V2 units. `bootball-v2-runtime.service`'s own `Description=` field updated to
+  drop stale "Phase 31 Part C — parallel-verification window" wording (metadata-only edit,
+  `daemon-reload` without restart — service stayed active throughout).
 - D9: `V2ExecutionRuntime.start()` now calls `backend.scheduler.start_scheduler()`. Shipped
   inert — landed while `bootball-v2-runtime.service` was still running old code, so no double
   scheduler was registered. Activates on this service's next restart.
@@ -65,9 +71,6 @@ archival, D7c, and Part E per the user's "same momentum" authorization.
 
 ## Not started yet
 
-- D8 (unit-file half): move `bootball-runtime.service`/`bootball-web.service` unit files to
-  `V1_archive/ops/` verbatim, now that both are confirmed stopped+disabled and reboot-survived
-  as dark. Cron half already done (see D0-D9 section above).
 - D7c: archive coordinator.py + its ~26 remaining dependents (src/agents/*, remaining
   src/betting/*, remaining src/governance/*, performance_tracker.py, src/portfolio/*,
   betting_state.py, system_truth_snapshot.py, web_ui.py) — gated on D10 completing (now done),

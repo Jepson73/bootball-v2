@@ -26,8 +26,8 @@ SERVICES=(
   bootball-web-v2.service       # V2 Flask UI, port 5000 (scripts/web_ui_v2.py)
 )
 # Phase 31 Part D (D10, 2026-07-07): bootball-runtime.service and bootball-web.service (V1)
-# stopped + disabled at cutover. See PART_D_PROGRESS.md / OWNERSHIP.md. Their unit files
-# move to V1_archive/ops/ once D8's ops-archival is complete.
+# stopped + disabled at cutover. See PART_D_PROGRESS.md / OWNERSHIP.md. Their unit files are
+# archived at V1_archive/ops/bootball-{runtime,web}.service (D8, 2026-07-08).
 
 STATE_DIR="$REPO_ROOT/logs/deploy_state"
 mkdir -p "$STATE_DIR"
