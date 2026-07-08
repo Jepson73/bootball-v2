@@ -57,9 +57,7 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 | Command | Purpose |
 |---------|---------|
 | `python scripts/web_ui_v2.py` | **Primary UI (V2)** — two-track Flask UI on port 5000; Track A accuracy + forward-collection + predictions; no V1 imports |
-| `gunicorn -w 1 -b 0.0.0.0:5001 scripts.web_ui:app` | **V1 UI (reference)** — legacy Flask UI on port 5001 via `bootball-web.service` |
-| `python backend/runtime/execution_runtime.py` | Core execution process — runs `AgentCoordinator.run_cycle()` every 20 minutes |
-| `python backend/runtime/v2_runtime.py` | **Phase 31 Part C** — V2 execution process (`bootball-v2-runtime.service`), runs `src.prediction.prediction_cycle.run_prediction_cycle()` every 20 minutes instead of `AgentCoordinator`; deployed alongside the V1 runtime during the parallel-verification window, gated by `V2_RUNTIME_WRITE_ENABLED` (default `false` = dry-run, generates but does not save); holds its own `RuntimeLock` file (`data/v2_execution_runtime.lock`) so it can run concurrently with V1's (`data/execution_runtime.lock`) — see `OWNERSHIP.md` |
+| `python backend/runtime/v2_runtime.py` | **Sole execution authority since Phase 31 Part D (D10) cutover** — V2 execution process (`bootball-v2-runtime.service`), runs `src.prediction.prediction_cycle.run_prediction_cycle()` every 20 minutes, `V2_RUNTIME_WRITE_ENABLED=true` (saves predictions, runs calibration ingest), and owns `backend/scheduler.py`'s auxiliary APScheduler; holds `RuntimeLock` file `data/v2_execution_runtime.lock` — see `OWNERSHIP.md` and `PART_D_PROGRESS.md` |
 | `python scripts/migrate.py` | Run database schema migrations |
 | `python scripts/backfill_all.py --seasons 2023 2022` | Backfill historical data |
 | `python src/cli/backtest.py` | Historical strategy simulation |
@@ -70,7 +68,9 @@ importers anywhere in the live tree, archived to `V1_archive/backend/app.py`.)
 
 ### Startup Sequence
 
-Two web services run in parallel (both managed by systemd):
+Two services run, both managed by systemd, since Phase 31 Part D's D10 cutover
+(`bootball-runtime.service` and `bootball-web.service` — V1 — are stopped + disabled; see
+`OWNERSHIP.md` and `PART_D_PROGRESS.md`):
 
 ```
 bootball-web-v2.service  →  scripts/web_ui_v2.py (port 5000, primary)
@@ -80,26 +80,16 @@ bootball-web-v2.service  →  scripts/web_ui_v2.py (port 5000, primary)
   4. All routes protected by require_auth() from v2/auth_v2.py
      (cookie: authenticated_v2; no V1 cookie collision)
 
-bootball-web.service  →  gunicorn scripts.web_ui:app (port 5001, V1 reference)
-  1. scripts/web_ui.py loaded (Flask + embedded APScheduler)
-  2. APScheduler starts (backend/scheduler.py) — 6 auxiliary jobs:
-       fetch_fixtures (6h), fetch_results (1h), fetch_odds (1h),
-       cleanup_matches (5m), live_settle (2m), daily_sanity_check (24h)
-
-bootball-runtime.service (separate process):
-  1. record_running_commit("bootball-runtime.service") via src/deploy_info.py
-  2. backend/runtime/execution_runtime.py → AgentCoordinator.run_cycle()
-     (every 20 minutes; all predictions → portfolio → bets)
-
-bootball-v2-runtime.service (Phase 31 Part C, separate process, parallel-verification window):
+bootball-v2-runtime.service (separate process, sole execution authority since D10):
   1. record_running_commit("bootball-v2-runtime.service") via src/deploy_info.py
   2. backend/runtime/v2_runtime.py → src.prediction.prediction_cycle.run_prediction_cycle()
-     (every 20 minutes; V2_RUNTIME_WRITE_ENABLED gates save — default false/dry-run)
-  3. Acquires its own RuntimeLock file (data/v2_execution_runtime.lock), distinct from
-     bootball-runtime.service's (data/execution_runtime.lock), so both can run at once
-  4. Starts backend/scheduler.py's auxiliary APScheduler (Phase 31 D9: fixtures/results/
-     odds/cleanup/live_settle/daily_sanity_check/v2_collection_heartbeat) — code lands in D9,
-     activates at D10's cutover restart once bootball-runtime.service stops owning it
+     (every 20 minutes; V2_RUNTIME_WRITE_ENABLED=true — saves predictions, runs calibration
+     ingest)
+  3. Acquires RuntimeLock file (data/v2_execution_runtime.lock)
+  4. Starts backend/scheduler.py's auxiliary APScheduler — 7 jobs: fetch_fixtures (6h),
+     fetch_results (1h), fetch_odds (1h), cleanup_matches (5m), live_settle (2m),
+     daily_sanity_check (24h), v2_collection_heartbeat — code landed D9, activated at D10's
+     cutover restart (2026-07-07) once bootball-runtime.service stopped owning it
 ```
 
 ---
@@ -145,14 +135,17 @@ APScheduler auxiliary job definitions and circuit breaker.
 
 ### `backend/runtime/execution_runtime.py`
 
-Core execution loop — the single spine driving predictions and bet placement.
+**V1, retired (Phase 31 Part D, D10 cutover, 2026-07-07).** `bootball-runtime.service` is
+stopped + disabled; `backend/runtime/v2_runtime.py` is the sole execution authority now — see
+`OWNERSHIP.md`/`PART_D_PROGRESS.md`. Left in place for reference pending D7c's dependent-archival
+pass. What it used to do:
 
-- Runs as a separate process from the Flask web UI
-- Calls `AgentCoordinator.run_cycle()` every 1200 seconds (20 minutes)
-- `RuntimeLock` enforces single-instance operation (prevents concurrent cycles)
-- Heartbeat watchdog updates every 60s during sleep
-- This is the entry point for all betting activity; APScheduler only handles data-fetch auxiliary jobs
-- `_run_settlement()` calls `src.settlement.verify_ft_fixtures()` (Phase 27) before `settle_placed_bets()`/`settle_predictions()`
+- Ran as a separate process from the Flask web UI
+- Called `AgentCoordinator.run_cycle()` every 1200 seconds (20 minutes)
+- `RuntimeLock` enforced single-instance operation (prevents concurrent cycles)
+- Heartbeat watchdog updated every 60s during sleep
+- Was the entry point for all betting activity; APScheduler only handles data-fetch auxiliary jobs
+- `_run_settlement()` called `src.settlement.verify_ft_fixtures()` (Phase 27) before `settle_placed_bets()`/`settle_predictions()`
 
 ### `backend/experiment_tracker.py`
 
@@ -177,7 +170,7 @@ Graph-based decision explainability.
 
 Deployment state tracking — records which git commit a long-running service started from.
 
-- `record_running_commit(service_name)` — called once at startup by `execution_runtime.py` and `web_ui_v2.py`; writes current HEAD commit to `logs/deploy_state/<service_name>.running_commit`
+- `record_running_commit(service_name)` — called once at startup by `v2_runtime.py` and `web_ui_v2.py`; writes current HEAD commit to `logs/deploy_state/<service_name>.running_commit`
 - Allows `scripts/deploy.sh check` to detect stale services without correlating systemd timelines against git log
 - Non-fatal if git unavailable; designed to survive any restart method (deploy script, manual `systemctl restart`, host reboot)
 
@@ -222,29 +215,31 @@ Predictor → Risk Manager → Execution Strategist → Portfolio Engine
   → Feedback Loop → CLVE validation
 ```
 
-- `AgentCoordinator.run_cycle()` — primary entrypoint called by `ExecutionRuntime` every 20 minutes
+- `AgentCoordinator.run_cycle()` — was the primary entrypoint, called by `ExecutionRuntime` every 20 minutes; V1 retired at D10, no live caller remains
 - `AgentCoordinator.run()` — thin wrapper that delegates to `run_cycle()`
 - `_write_attribution()` — writes causal attribution for each decision
 
-**Phase 31 finding (not yet cut over — see `OWNERSHIP.md`):** of this file's ~1050-line
-`_run_internal()`/`_run_feedback_cycle()`, only two things have had a live effect since betting
-closed (Phase 8, `bot_enabled=False`): the prediction-generation call (Step 1) and the live-drift
-calibration ingest buried in the feedback cycle (Step 7.1/7.3). Everything else — Risk Manager,
-Execution Strategist, Portfolio Engine, Adversary, Policy Engine, the `PlacedBet` write block,
-Learning/WeightOptimizer/EventReplay, Meta-Policy, CLVE — runs every cycle against a betting
-ledger that has taken zero new rows since 2026-06-07. `src/prediction/prediction_cycle.py` is
-the lean V2 replacement, pending Part D's cutover.
+**Phase 31 finding, cut over at D10 (2026-07-07) — see `OWNERSHIP.md`:** of this file's
+~1050-line `_run_internal()`/`_run_feedback_cycle()`, only two things ever had a live effect
+since betting closed (Phase 8, `bot_enabled=False`): the prediction-generation call (Step 1) and
+the live-drift calibration ingest buried in the feedback cycle (Step 7.1/7.3). Everything else —
+Risk Manager, Execution Strategist, Portfolio Engine, Adversary, Policy Engine, the `PlacedBet`
+write block, Learning/WeightOptimizer/EventReplay, Meta-Policy, CLVE — ran every cycle against a
+betting ledger that took zero new rows since 2026-06-07. `src/prediction/prediction_cycle.py` is
+the lean V2 replacement, now the sole live caller of both surviving effects; this file itself is
+dead code pending D7c's archival pass.
 
 ### `src/prediction/prediction_cycle.py`
 
-**Phase 31 Part C.** The V2-owned replacement for `AgentCoordinator.run_cycle()`'s live core,
-built but not yet wired into the runtime service (that's Part D). Contains exactly what has a
-live effect today: fetch NS fixtures, generate + save predictions, then run the live-drift
-calibration ingest that `AgentCoordinator` was previously the sole caller of.
+**The V2-owned replacement for `AgentCoordinator.run_cycle()`'s live core** — wired into
+`bootball-v2-runtime.service` as the sole execution authority since Phase 31 Part D's D10
+cutover (2026-07-07). Contains exactly what has a live effect: fetch NS fixtures, generate +
+save predictions, then run the live-drift calibration ingest that `AgentCoordinator` was
+previously the sole caller of.
 
 - `generate_predictions(save=True, run_id=None)` — fetches NS fixtures, calls
-  `UnifiedPredictionService.generate_with_fixture_data()`/`save_predictions()`; `save=False` is a
-  dry-run used for parity verification against `AgentCoordinator`'s output, writes nothing
+  `UnifiedPredictionService.generate_with_fixture_data()`/`save_predictions()`; `save=False` was
+  used for pre-cutover parity verification against `AgentCoordinator`'s output, writes nothing
 - `run_calibration_ingest()` — calls `state_calibration_engine.ingest_recent_prediction_outcomes()`
   and, if there were new outcomes, `.generate_report()` (fires `CALIBRATION_DRIFT_DETECTED`)
 - `run_prediction_cycle(save=True, run_id=None)` — the full cycle: both of the above together
@@ -403,7 +398,7 @@ of — `src/alerts/` otherwise held only two now-archived, Discord-only dead fil
 API-Football
   ↓  job_fetch_fixtures / job_fetch_odds  (APScheduler auxiliary)
 fixtures, fixture_odds tables
-  ↓  ExecutionRuntime → AgentCoordinator.run_cycle()  (every 20 min)
+  ↓  V2ExecutionRuntime → prediction_cycle.run_prediction_cycle()  (every 20 min, since D10)
 UnifiedPredictionService.generate_with_fixture_data()  →  prediction_records table
   ↓  PortfolioEngine.optimize()  (Markowitz via markowitz_optimizer.py)
 CandidateBet → OptimizedBet
@@ -638,7 +633,7 @@ V1 betting-thesis code they tested.)
 | Script | Purpose | Status |
 |--------|---------|--------|
 | `scripts/web_ui_v2.py` | **Primary UI (V2)** — two-track Flask app on port 5000; strict V1 isolation; registers v2/ blueprints (home, track_a, predictions, collection, explorer) | Active |
-| `scripts/web_ui.py` | V1 Flask UI + APScheduler on port 5001 (via gunicorn in `bootball-web.service`); reference build | Active |
+| `scripts/web_ui.py` | V1 Flask UI + APScheduler, port 5001 (via gunicorn in `bootball-web.service`) | **Retired (D10 cutover, 2026-07-07)** — service stopped + disabled, port 5001 dark |
 | `scripts/deploy.sh` | Post-commit deployment orchestrator; restarts all long-running services and verifies they start with current commit; `check` subcommand reports staleness without restarting | Active |
 | `scripts/daily_run.py` | Data pipeline only (no prediction/betting); enforces `backfill_daily_cap` in `_fetch_completed()`; logs per-run quota snapshots to `logs/quota_log.csv`; `_fetch_completed()`'s per-league `status="FT"` fetch now `force_refresh=True` and `_save_completed()` won't clobber a fixture already in a terminal status (Phase 27); `_force_settlement_baseline()` calls `verify_ft_fixtures()` before settling | Active |
 | `scripts/backfill_all.py` | Historical data ingestion (multi-season) | Active |
@@ -656,7 +651,7 @@ V1 betting-thesis code they tested.)
 | `scripts/daily_sanity_check.py` | Sanity checks run by scheduler | Active |
 | `scripts/capture_forward_odds.py` | Capture open→close odds time-series for the narrow 4-5-league forward-collection (Pinnacle + Bet365 only) | **Superseded (Phase 25)** by `odds_trajectory_scheduler.py`; never wired into cron, kept for reference |
 | `scripts/probe_forward_odds.py` | Tasmania/Norway clock-start check for the same `--league-ids`/`--days-ahead` cron entries — now **read-only** (Phase 25): reads what `odds_trajectory_scheduler.py` already captured and reports Pinnacle presence near kickoff, instead of fetching odds itself | Active |
-| `scripts/verify_v2_parity.py` | **Phase 31 Part C** — read-only dry-run comparison of `src/prediction/prediction_cycle.py`'s output against the most recent stored `PredictionRecord` for the same fixture/market, used to verify the new V2 runner before cutover; writes nothing | Active (verification tool) |
+| `scripts/verify_v2_parity.py` | Read-only dry-run comparison of `src/prediction/prediction_cycle.py`'s output against the most recent stored `PredictionRecord` for the same fixture/market; used pre-D10 to verify the V2 runner before cutover; writes nothing | Reference (cutover complete) |
 
 (Phase 31 Part D: `scripts/auto_bet.py` (dead-but-cron-executing daily, cron line
 removed in Part D), `scripts/live_monitor.py`, `scripts/backtest.py`,
