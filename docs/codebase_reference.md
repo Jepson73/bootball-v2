@@ -14,7 +14,7 @@ Autonomous football betting intelligence platform — Flask + multi-agent + port
 │   ├── analytics/     Reporting and analysis
 │   ├── api/           **Empty since Phase 31 D7c** — system_truth_snapshot.py archived to V1_archive/src/api/
 │   ├── backtesting/   Historical simulation framework
-│   ├── betting/       Kelly + Discord alert plumbing only since Phase 31 D7c — everything else (attribution_engine.py, bankroll.py, execution_engine.py, layer_ablation_engine.py, layer_evolution.py, round_manager.py, correlation/, portfolio/) archived to V1_archive/src/betting/. `alerts.py` and `kelly.py` stay: `scripts/odds_poll.py` imports `alerts.py` at module scope (a live cron entry point), and importing any `src.betting` submodule runs `src/betting/__init__.py`, which imports `kelly.py` — both reachable even though Discord alerting itself is silenced (Phase 30). (Phase 31 D4 moved prediction.py/market_taxonomy.py/league_normalizer.py/temporal_adapter.py/ev.py/shin.py out to prediction/lib/; D7b archived confidence_weighting.py/markets.py/risk_decisions.py/unified_latent.py/latent_shock.py/stress_testing.py/portfolio_optimizer.py/capital_allocator.py/market_feasibility.py as confirmed-safe-then.)
+│   ├── betting/       **Empty since Phase 31 Part E (2026-07-08)** — `alerts.py`/`kelly.py` were the last two files (plus `__init__.py`), kept alive only by `scripts/odds_poll.py`'s module-scope `alerts.py` import (feeding a Discord path permanently gated off by `discord_v1_enabled=False`) and `src/settlement.py`'s dead-by-data `send_settlement_alert()`. Both call sites stripped (not adopted — see `ADOPTION.md`'s dated addendum), freeing the whole directory for archival to `V1_archive/src/betting/`. (Phase 31 D4 moved prediction.py/market_taxonomy.py/league_normalizer.py/temporal_adapter.py/ev.py/shin.py out to prediction/lib/; D7b archived confidence_weighting.py/markets.py/risk_decisions.py/unified_latent.py/latent_shock.py/stress_testing.py/portfolio_optimizer.py/capital_allocator.py/market_feasibility.py; D7c archived the coordinator.py-dependent cluster.)
 │   ├── calibration/   State calibration engine, calibrator fitting (Phase 31: fit_calibrator_for_market relocated in from backend/execution_engine.py)
 │   ├── cache/         Prediction caching
 │   ├── cli/           Command-line tools (backtest, event replay)
@@ -271,9 +271,11 @@ Archived to `V1_archive/src/betting/portfolio/portfolio_engine.py` alongside
 - `_apply_learning_weights()` — applied market performance weights from `AdaptiveAllocator`
 - `_enforce_market_caps()` — enforced per-market concentration limit (default 60%)
 
-### `src/betting/kelly.py`
+### `src/betting/kelly.py` — archived (Phase 31 Part E, 2026-07-08)
 
-Kelly criterion stake sizing.
+**Kelly criterion stake sizing, V1.** Archived to `V1_archive/src/betting/kelly.py` alongside
+`alerts.py` once `scripts/odds_poll.py`'s import of `alerts.py` (which transitively pulled this
+in via `src/betting/__init__.py`) was stripped — see `ADOPTION.md`'s dated addendum.
 
 - `kelly_fraction(p, b)` — full Kelly
 - `fractional_kelly(p, b, fraction)` — risk-reduced Kelly
@@ -568,7 +570,7 @@ Phase 28 retargeted `live_drift_ece` to read newly-settled `PredictionRecord` ro
 V1's coordinator-cycle Discord notifier (per-market picks with Kelly/EV, "Top 3 Picks", `POLICY ENGINE REPORT`, `Cycle Complete`, Adaptation Score / Closed Loop Validation theater) is now silenced by default — betting-era machinery keeps orchestrating (it writes production `PredictionRecord`s via `UnifiedPredictionService`), but it no longer has a live Discord voice. Gated by `settings.discord_v1_enabled` (`config/settings.py`, default `False`) at three independent choke points that previously each read `DISCORD_WEBHOOK_URL` and sent unconditionally:
 - `src/notifications/discord_system_notifier.py::_post()` — the single point every function in that module (and `model_registry.py`'s direct `notify_model_change()` calls) funnels through.
 - `src/events/bootstrap.py::bootstrap_consumers()` — `DiscordConsumer`, `PolicyConsumer`, `CLVEConsumer` (pure-notification consumers) are only registered when the flag is on.
-- `src/betting/alerts.py::DiscordChannel.send()` — the V1 betting-alert path (bet/settlement/bankroll pings), dormant since betting closed at Phase 8 but still wired into `settle_placed_bets()`.
+- `src/betting/alerts.py::DiscordChannel.send()` — the V1 betting-alert path (bet/settlement/bankroll pings), dormant since betting closed at Phase 8. Its `settle_placed_bets()` call site was removed at Phase 31 Part E once confirmed dead-by-data (zero new `PlacedBet` rows since 2026-06-07); `alerts.py` itself is archived (`V1_archive/src/betting/alerts.py`) — this bullet is now purely historical.
 
 One coupling bug found and fixed along the way: `src/events/consumers/calibration_consumer.py`'s `process()` gated its *entire* handling of `CALIBRATION_DRIFT_DETECTED` — including the real auto-recalibration it triggers via `ModelRegistry`, not just the Discord report — behind "webhook configured." Recalibration is a prediction-layer action and must never depend on Discord config; the gate was moved down to `_send_webhook()` only, and `CalibrationConsumer` now always registers.
 

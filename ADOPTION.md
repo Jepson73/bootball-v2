@@ -158,3 +158,34 @@ They move to `V1_archive/dead/` in Part D, as a distinct commit from the V1-mach
 move. This is a move, not a deletion: "not obviously imported" was confirmed by two independent
 agents but dynamic imports / `importlib` / string-based dispatch were not exhaustively ruled out,
 so the code remains recoverable from `V1_archive/dead/` rather than being erased outright.
+
+## `src/betting/alerts.py`, `kelly.py` — resolved 2026-07-08 (Part E): stripped, not adopted
+
+Flagged in `OWNERSHIP.md` as a Part B gap never put through the adoption criteria — D7c's
+re-verified reachability graph found `scripts/odds_poll.py` (a live cron entry point) still
+importing `alerts.py` at module scope, with `kelly.py` dragged in transitively via
+`src/betting/__init__.py`. Per the standing rule that nothing stays live by import-inertia,
+traced both call sites to their actual effect before deciding strip vs. justify:
+
+- `odds_poll.py::main()` built `BetAlert` objects via `find_new_value_bets()` (DB queries +
+  EV recompute, every ~30 min when odds changed) and called `BettingAlerts.send_bet_alert()`
+  with `channels=["discord"]`. **Real code, real execution — not dead by unreachability.**
+  But `DiscordChannel.send()` gates on `settings.discord_v1_enabled` (`False`, Phase 30's
+  Separation Principle), so the call chain always executed fully and always produced zero
+  observable effect. Confirmed live (`discord_v1_enabled = False` checked directly against the
+  running config).
+- `src/settlement.py::send_settlement_alert()` had the same shape one layer down — a lazy,
+  function-scoped `from src.betting.alerts import BettingAlerts` reachable only via a
+  `pending_bets`/`PlacedBet.settled`-driven code path. `PlacedBet` has taken zero new rows since
+  2026-06-07 (confirmed via direct query: 448 total rows, latest `placed_at` 2026-06-07), so this
+  path is dead by permanent data condition (`bot_enabled=False`), not by a flag — same class of
+  finding as the Phase 28 drift-monitor arrow.
+
+**Verdict: strip, not justify-and-keep.** Feeding an archived consumer (V1's Discord alert
+surface, permanently silenced) is exactly the "expected: they feed archived consumers" case, not
+a live dependency worth an ADOPTION.md carve-out. Removed `find_new_value_bets()` and the
+alert-sending block from `odds_poll.py::main()`, and `send_settlement_alert()` (+ its one call
+site) from `settlement.py`. That fully freed `alerts.py`/`kelly.py` — archived both, plus
+`src/betting/__init__.py` itself once it had no remaining submodule to re-export from. `src/betting/`
+no longer exists in the live tree. Verified live: `scripts.odds_poll`, `src.settlement`, and
+every other live-reachable module import cleanly post-strip.
