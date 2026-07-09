@@ -325,20 +325,28 @@ def _read_quota_summary() -> str | None:
 # ─────────────────────────────────────────────────────────────────────────
 
 def notify_deploy_complete(commit_hash: str, services: dict[str, bool]) -> None:
-    """deploy.sh completion — commit hash + services confirmed current.
-    Turns the committed-but-not-running class of bug into a push notification
+    """A service confirmed it's running a new commit — commit hash + services confirmed
+    current. Turns the committed-but-not-running class of bug into a push notification
     instead of a silent gap discovered later.
+
+    Called from two places that must dedup against each other regardless of which fires
+    first: scripts/deploy.sh (after an explicit deploy) and src/deploy_info.py's
+    record_running_commit() (on every service startup, whatever restarted it — deploy.sh,
+    a raw `systemctl restart`, or the host's daily reboot). Both pass the full commit hash
+    (not the short form) so the dedup key always matches for the same commit no matter
+    which caller gets there first.
     """
     state = _load_state()
     if state.get("last_deploy_commit") == commit_hash:
         logger.info("[V2-DISCORD] deploy_complete(%s) suppressed — already notified this commit", commit_hash)
         return
 
+    short_hash = commit_hash[:9]
     all_up = all(services.values())
     lines = [f"{'✅' if up else '❌'} {name}" for name, up in services.items()]
     embed = _embed(
         title="🚀 Deploy Complete" if all_up else "⚠️ Deploy Complete — Service Mismatch",
-        description=f"Commit `{commit_hash}`\n\n" + "\n".join(lines),
+        description=f"Commit `{short_hash}`\n\n" + "\n".join(lines),
         color=GREEN if all_up else RED,
     )
     if _post(embed):

@@ -390,24 +390,38 @@ def get_scheduler() -> BackgroundScheduler:
     except Exception:
         pass
 
+    # daily_sanity_check / v2_collection_heartbeat use 'cron' (fixed wall-clock time),
+    # not 'interval'. An interval trigger's next_run_time is computed from the moment
+    # add_job() runs, so replace_existing=True on every service restart keeps pushing
+    # it another {hours} out — on a host that reboots daily in under 24h, a 24h interval
+    # job can never survive to its own fire time (found 2026-07-09, see
+    # docs/deployment_state.md's "Host reboots daily" section). A cron trigger's next
+    # fire time derives from the wall clock instead, so it's reboot-immune by
+    # construction regardless of when the process happens to (re)start. Times are
+    # deliberately far from the ~04:00-04:20 UTC reboot window, and misfire_grace_time
+    # is generous so a restart that straddles the slot still fires on recovery instead
+    # of silently skipping the day.
     auxiliary_jobs = [
-        ("fetch_fixtures", job_fetch_fixtures, 'interval', {'hours': 6}),
-        ("fetch_results", job_fetch_results, 'interval', {'hours': 1}),
-        ("fetch_odds", job_fetch_odds, 'interval', {'hours': 1}),
-        ("cleanup_matches", job_cleanup_matches, 'interval', {'minutes': 5}),
-        ("live_settle", job_live_settle, 'interval', {'minutes': 2}),
-        ("daily_sanity_check", job_daily_sanity_check, 'interval', {'hours': 24}),
-        ("v2_collection_heartbeat", job_v2_collection_heartbeat, 'interval', {'hours': 24}),
+        ("fetch_fixtures", job_fetch_fixtures, 'interval', {'hours': 6}, None),
+        ("fetch_results", job_fetch_results, 'interval', {'hours': 1}, None),
+        ("fetch_odds", job_fetch_odds, 'interval', {'hours': 1}, None),
+        ("cleanup_matches", job_cleanup_matches, 'interval', {'minutes': 5}, None),
+        ("live_settle", job_live_settle, 'interval', {'minutes': 2}, None),
+        ("daily_sanity_check", job_daily_sanity_check, 'cron', {'hour': 8, 'minute': 0}, 7200),
+        ("v2_collection_heartbeat", job_v2_collection_heartbeat, 'cron', {'hour': 12, 'minute': 0}, 7200),
     ]
-    
-    for job_id, job_func, trigger_type, trigger_args in auxiliary_jobs:
+
+    for job_id, job_func, trigger_type, trigger_args, misfire_grace_time in auxiliary_jobs:
+        job_kwargs = dict(trigger_args)
+        if misfire_grace_time is not None:
+            job_kwargs['misfire_grace_time'] = misfire_grace_time
         scheduler.add_job(
             job_func,
             trigger_type,
             id=job_id,
             name=f"{job_id} ({mode})",
             replace_existing=True,
-            **trigger_args
+            **job_kwargs
         )
         logger.info(f"   → Added auxiliary job: {job_id}")
 

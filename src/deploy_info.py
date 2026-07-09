@@ -25,6 +25,14 @@ def record_running_commit(service_name: str) -> str | None:
 
     Call once at process startup. Returns the commit hash, or None if git isn't available
     (non-fatal — deploy staleness checks just report UNKNOWN for that service).
+
+    Also fires the deploy-confirmation Discord notification when this commit differs from
+    the one last recorded for this service — regardless of whether the restart that got us
+    here came from scripts/deploy.sh, a raw `systemctl restart`, or the host's daily reboot.
+    Previously that notification only ever fired from inside deploy.sh, so any restart that
+    didn't go through it (e.g. every reboot) picked up new code silently, with no confirmation
+    it had. notify_deploy_complete() dedups on commit hash in its own persisted state, so
+    deploy.sh's own call and this one can't double-fire for the same commit.
     """
     try:
         commit = subprocess.check_output(
@@ -34,10 +42,21 @@ def record_running_commit(service_name: str) -> str | None:
         logger.warning(f"Could not determine running commit: {e}")
         return None
 
+    running_commit_file = STATE_DIR / f"{service_name}.running_commit"
+    previous_commit = None
     try:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
-        (STATE_DIR / f"{service_name}.running_commit").write_text(commit + "\n")
+        if running_commit_file.exists():
+            previous_commit = running_commit_file.read_text().strip()
+        running_commit_file.write_text(commit + "\n")
     except Exception as e:
         logger.warning(f"Could not write running-commit state file: {e}")
+
+    if previous_commit != commit:
+        try:
+            from src.notifications.v2_discord_notifier import notify_deploy_complete
+            notify_deploy_complete(commit, {service_name: True})
+        except Exception:
+            logger.warning("Could not send deploy-confirmation notification", exc_info=True)
 
     return commit

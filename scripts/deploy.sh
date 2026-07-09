@@ -111,7 +111,7 @@ python3 -c "
 import json, sys
 sys.path.insert(0, '$REPO_ROOT')
 from src.notifications.v2_discord_notifier import notify_deploy_complete
-notify_deploy_complete('$COMMIT_SHORT', json.loads('$SERVICES_JSON'))
+notify_deploy_complete('$COMMIT', json.loads('$SERVICES_JSON'))
 " || echo "  (deploy notification failed — non-fatal)"
 
 if [ "$FAILED" -ne 0 ]; then
