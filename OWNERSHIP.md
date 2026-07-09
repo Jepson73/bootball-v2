@@ -541,3 +541,19 @@ unaffected. This remains a product decision for the user (what a manual-retrain 
 look like in V2's UI, if wanted at all), not something to patch as part of an archival pass.
 
 Part D is now complete. Part E (`AUDIT_V2_STANDALONE.md`) is next.
+
+## Part E executed: standalone re-audit complete, `bootball.service` found and closed
+
+Full findings in `AUDIT_V2_STANDALONE.md`. Summary: the `odds_poll.py`/`alerts.py`/`kelly.py`
+entanglement left open above was resolved by strip (not justify) — both call sites executed on
+every live tick but bottomed out in a permanently-`False`-gated `DiscordChannel.send()`, so per
+the "no module stays live by import-inertia" rule the call sites were removed and
+`src/betting/{alerts,kelly,__init__}.py` archived. A fresh, from-scratch reachability trace
+(not reused from D7c's list) re-confirmed `run_continuous_cycle`, `bootstrap_system()`, and
+`ExecutionEngine` are all dismantled — but also turned up a previously-undocumented third systemd
+unit, `bootball.service` (dated 2026-04-16, predates this whole phase), pointing at archived
+`scripts.web_ui:app` on the same port the live V2 web service uses. It was disabled/inactive and
+therefore harmless in practice, but present on disk — exactly the "relocated, not dismantled"
+pattern Part E's brief called out. Archived to `V1_archive/ops/bootball.service`, removed from
+`/etc/systemd/system/`, documented in `V1_archive/ops/systemd_units_removed.md`. Phase 31's
+V1/V2 separation is now complete.

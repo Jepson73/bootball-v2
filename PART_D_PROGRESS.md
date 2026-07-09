@@ -96,7 +96,22 @@ calls `Trainer.train_market()` at all — manual retraining has zero trigger any
 drift-triggered recalibration is unaffected). Same gap `OWNERSHIP.md` flagged after D10; now
 fully closed off rather than just dark. Product decision for V2's UI, not a mechanical fix.
 
-## Not started yet
+## Part E — COMPLETE (2026-07-09)
 
-- Part E: `AUDIT_V2_STANDALONE.md` — standalone re-audit of V2, follows immediately per the
-  user's "don't let a gap open between D and E."
+`AUDIT_V2_STANDALONE.md` written — full standalone reachability re-audit, not reused from D7c's
+list. Three items required by the user's directive, all resolved:
+
+1. `odds_poll.py` → `alerts.py`/`kelly.py`: traced both call sites to actual effect (real
+   execution, zero observable effect — permanently-`False`-gated Discord send), stripped both
+   call sites, archived all three `src/betting/` files. Full trace in `ADOPTION.md`.
+2. Resurrection paths independently re-verified dismantled: `run_continuous_cycle`,
+   `bootstrap_system()`, `ExecutionEngine` — all confirmed archived with zero live imports, no
+   job registration, no systemd/cron wiring. Also found and closed a previously-undocumented
+   fourth loose end: `bootball.service` (systemd unit predating this phase, disabled/inactive but
+   still on disk, pointing at archived `web_ui:app` on the live web service's port). Archived to
+   `V1_archive/ops/bootball.service`, removed from `/etc/systemd/system/`.
+3. Manual-retraining gap logged as a known, deliberate, unfixed gap — no action taken, per
+   explicit instruction. Automatic drift-recalibration unaffected; manual retrain trigger is a
+   later V2 UI product decision.
+
+Phase 31's V1/V2 separation (Parts A–E) is now fully complete.

@@ -71,7 +71,12 @@ importers anywhere in the live tree, archived to `V1_archive/backend/app.py`.)
 Two services run, both managed by systemd, since Phase 31 Part D's D10 cutover.
 `bootball-runtime.service` and `bootball-web.service` (V1) no longer exist as systemd units —
 stopped + disabled at D10, unit files archived verbatim to `V1_archive/ops/` and removed from
-`/etc/systemd/system/` at D8 (2026-07-08); see `OWNERSHIP.md` and `PART_D_PROGRESS.md`:
+`/etc/systemd/system/` at D8 (2026-07-08); see `OWNERSHIP.md` and `PART_D_PROGRESS.md`. A third,
+previously-undocumented V1 unit, `bootball.service` (dated 2026-04-16, predating this phase —
+also pointed at archived `scripts.web_ui:app`, on port 5000, colliding with the live V2 web
+service's port), was found during Part E's standalone re-audit and closed the same way: archived
+to `V1_archive/ops/bootball.service`, removed from `/etc/systemd/system/` (2026-07-09). See
+`AUDIT_V2_STANDALONE.md`.
 
 ```
 bootball-web-v2.service  →  scripts/web_ui_v2.py (port 5000, primary)

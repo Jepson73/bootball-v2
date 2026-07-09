@@ -1,0 +1,14 @@
+[Unit]
+Description=Bootball Web UI
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/projects/bootball
+Environment="PYTHONPATH=/opt/projects/bootball"
+ExecStart=/opt/projects/bootball/.venv/bin/gunicorn -w 1 -b 0.0.0.0:5000 --timeout 300 --graceful-timeout 300 'scripts.web_ui:app'
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
