@@ -1,12 +1,14 @@
 # Bootball — Deployment State Reference
-**Last updated:** 2026-07-07 (Phase 31 Part D — V1/V2 cutover)  
+**Last updated:** 2026-07-09 (Phase 31 Part E — standalone audit + close-out sweep)  
 **Purpose:** Capture out-of-repo operational state so the system can be reproduced if the host is lost.
 
-**Phase 31 Part D (D10, 2026-07-07):** `bootball-runtime.service` and `bootball-web.service` (V1)
-stopped + disabled at cutover. `bootball-v2-runtime.service` is now the sole execution authority —
-it owns both the 20-min prediction cycle and the auxiliary APScheduler jobs V1 used to run. Most
-of this doc below still describes the pre-cutover three/four-service layout; sections affected by
-the cutover are called out inline. See `OWNERSHIP.md` and `PART_D_PROGRESS.md` for the full record.
+**Phase 31 complete (Parts A–E).** `bootball-runtime.service` and `bootball-web.service` (V1),
+plus a third undocumented unit `bootball.service` found during Part E, are all stopped, disabled,
+and removed from `/etc/systemd/system/` — archived verbatim to `V1_archive/ops/`.
+`bootball-v2-runtime.service` is the sole execution authority: it owns both the 20-min prediction
+cycle and the auxiliary APScheduler jobs V1 used to run. This doc now describes the live V2-only
+layout throughout — see `OWNERSHIP.md`, `PART_D_PROGRESS.md`, and `AUDIT_V2_STANDALONE.md` for
+the full record of how it got here.
 
 ---
 
@@ -87,6 +89,39 @@ observed via `last reboot`, not a cron job in this repo). This is what silently 
 deploy-gap incident by the next morning — which is also why they went unnoticed for so long. Do not
 rely on it; always run `scripts/deploy.sh` after committing.
 
+**Found 2026-07-09 (Part E close-out sweep): the daily reboot also silently breaks both
+"silence means broken" guards — neither is actually alive right now.**
+
+1. **`v2_collection_heartbeat` (backend/scheduler.py) has structurally never fired since D9/D10
+   gave it to V2 (2026-07-07).** It's a 24h-interval APScheduler job registered with
+   `replace_existing=True` and no explicit `start_date`; every `add_job()` call recomputes
+   `next_run_time` as roughly *now + 24h* from the moment of that call. The host reboots every
+   ~23h38m–23h40m (confirmed via `last reboot` — always a few minutes short of 24h), and each
+   reboot restarts `bootball-v2-runtime.service`, which re-registers the job and pushes
+   `next_run_time` out another 24h — always just out of reach. Confirmed directly against
+   `data/scheduler.db`'s `apscheduler_jobs` table on 2026-07-09 13:07 UTC:
+   `next_run_time = 2026-07-10 04:20:44`, i.e. exactly 24h after that morning's 04:20:44 restart,
+   and `journalctl -u bootball-v2-runtime.service` shows the job being *registered* on every
+   restart (07-07, 07-08, 07-09) but never once *firing* ("JOB: v2_collection_heartbeat starting"
+   never appears in the log). Silence from this channel currently means nothing — it hasn't run,
+   not "ran and found nothing to report."
+2. **`daily_sanity_check` has the identical bug** (same 24h interval, same `replace_existing=True`
+   registration pattern) — `next_run_time` also sits at `2026-07-10 04:20:44` as of this sweep.
+3. **`notify_deploy_complete` (the deploy-confirmation notification, fired only from inside
+   `scripts/deploy.sh`) has not fired since 2026-07-04 20:34** — `logs/deploy_state/*.commit`
+   (the marker `deploy.sh` itself writes mid-run, distinct from the `*.running_commit` files each
+   service self-reports at any process startup) is untouched since then. Every restart since —
+   including the D10 cutover restart and every subsequent daily reboot — happened via direct
+   `systemctl restart`/host reboot, not via `scripts/deploy.sh`, so this notification was never
+   invoked for any of it. (The code itself has stayed current throughout — `running_commit` is
+   self-reported independently of `deploy.sh` — this is specifically about the confirmation
+   notification never being sent, not about stale code.)
+
+**Not fixed as part of this sweep** — flagged for a deliberate decision, since the fix likely
+involves either giving the interval trigger a stable `start_date`/switching to a `cron` trigger
+anchored to a fixed daily time (immune to restart timing), or accepting `scripts/deploy.sh` as
+the only path that ever confirms a deploy and enforcing that it's actually run.
+
 ---
 
 ## System Layout
@@ -102,6 +137,7 @@ rely on it; always run `scripts/deploy.sh` after committing.
 | System log dir | `/var/log/bootball/` — owned root, created manually |
 | Quota log | `logs/quota_log.csv` (inside repo root, gitignored via `logs/`) |
 | Env file | `/opt/projects/bootball/.env` (gitignored — see `.env.example`) |
+| V1 archive | `V1_archive/` (in repo, tracked in git — not gitignored) — 96 `.py` files, ~1.7MB, mirroring their original live-tree paths under `V1_archive/{src,backend,scripts,tests,dead,ops}/`. Everything V1-only that Phase 31 identified as dead: `src/agents/`, `src/governance/` (old), `src/portfolio/`, the old `backend/execution_engine.py`/`execution_runtime.py`, `scripts/web_ui.py`, `scripts/make_predictions.py`, `src/betting/{alerts,kelly}.py`, plus `V1_archive/ops/` for removed systemd unit files and cron lines. Nothing here runs; it exists for reference/possible restoration only. See `OWNERSHIP.md`/`PART_D_PROGRESS.md`/`AUDIT_V2_STANDALONE.md` for what moved when and why. |
 
 ---
 
@@ -121,6 +157,35 @@ The outer `data/raw/api_cache/` directory is owned by `nobody:nogroup` and is no
 **Odds endpoint exception (Phase 25):** `get_odds()` sets `force_refresh=True` unconditionally
 — it must never be served from this cache, since odds are the one endpoint where "the same
 answer as last time" is a stale price, not a saved call. See "Odds Trajectory Capture" below.
+
+---
+
+## Post-separation quota baseline (Phase 31 Part E, measured 2026-07-09)
+
+Full-day totals from `logs/quota_log.csv` (`calls_used` resets to ~0 at UTC midnight; last row of
+the day ≈ that day's total spend): 07-06 (pre-cutover) 60,754 · 07-07 (cutover day, mixed)
+50,386 · **07-08 (first full V1-stopped day) 64,272** · 07-09 (in progress) 33,717 as of 12:30 UTC.
+
+**No drop materialized, and none was mechanically expected.** This doc already records why
+(see `bootball-runtime.service`'s entry above): `AgentCoordinator.run_cycle()` made **0 API
+calls** even before it was stopped — its live component was a DB read (fetch `Fixture` rows) plus
+`UnifiedPredictionService`, not an external fetch. `OWNERSHIP.md`'s Part C finding is the same:
+~97% of the V1 cycle was self-referential dead-portfolio computation, and the ~3% live remainder
+never touched the API-Football client. Stopping V1 therefore removed zero API-call load by
+construction — there was no duplicate real-time fetch path to eliminate.
+
+Actual daily spend is, and was, driven by the shared ingestion pipeline V2 now owns outright:
+`daily_run.py`'s hourly `DailyBaselinePipeline` run (~1,500–3,000 calls per run, ~24 runs/day),
+`odds_trajectory_scheduler.py`'s half-hourly captures (~100–800 calls per tick), and
+`backfill_cron.py`'s daily 09:00 pass (now down to single-digit calls most days — the historical
+backfill campaign is effectively finished, not the ~50k/day driver it was earlier in the project;
+see `project_quota_timeline` — that prediction undershot how long full completion actually took).
+
+**Recorded baseline for future anomaly detection: ~55,000–65,000 calls/day steady state**
+post-separation, dominated by real-time fixture/odds refresh cadence, not backfill and not any V1
+residue. A future reading meaningfully above ~70k or below ~40k on a day with normal fixture
+volume is the signal worth investigating, not a return to some lower pre-cutover number — no such
+lower number exists in this system's actual history once backfill's decline is accounted for.
 
 ---
 
@@ -241,25 +306,15 @@ WantedBy=multi-user.target
 **Auth:** Basic auth — username `bootball`, password from `BOOTBALL_PASSWORD` env, cookie `authenticated_v2` (separate from V1's `authenticated` cookie).  
 **V1 isolation:** Does NOT import from `scripts/web_ui.py`. Shared DB only via `src/storage/db.py`.
 
-### `bootball.service` — legacy gunicorn service (superseded)
-```ini
-[Unit]
-Description=Bootball Web UI
-After=network.target
+### `bootball.service` — REMOVED (2026-07-09, Phase 31 Part E)
 
-[Service]
-Type=simple
-WorkingDirectory=/opt/projects/bootball
-Environment="PYTHONPATH=/opt/projects/bootball"
-ExecStart=/opt/projects/bootball/.venv/bin/gunicorn -w 1 -b 0.0.0.0:5000 --timeout 300 --graceful-timeout 300 'scripts.web_ui:app'
-Restart=always
-RestartSec=5
-
-[Install]
-WantedBy=multi-user.target
-```
-
-**Note:** `bootball.service` is superseded by `bootball-web.service` (5001) + `bootball-web-v2.service` (5000). Runs as root (no `User=`). Keep disabled unless reverting to single-service layout.
+A third, previously-undocumented V1 unit — pointed at archived `scripts.web_ui:app` on port 5000,
+colliding with the live `bootball-web-v2.service`'s port. Predates this whole phase (dated
+2026-04-16) and was missed by D8's original unit-file sweep; found during Part E's standalone
+reachability audit, already `disabled`/`inactive` at that point (zero live effect), but present
+on disk. Archived verbatim to `V1_archive/ops/bootball.service`, removed from
+`/etc/systemd/system/`, `daemon-reload` run. Full detail in
+`V1_archive/ops/systemd_units_removed.md` and `AUDIT_V2_STANDALONE.md`.
 
 ---
 
@@ -314,6 +369,23 @@ PY=/opt/projects/bootball/.venv/bin/python
 ```
 
 **Probe scripts write to `/var/log/bootball/probe_tasmania.log` and `/var/log/bootball/probe_norway.log` — create these with appropriate permissions on fresh deploy.**
+
+### root's personal crontab (verbatim, separate from `/etc/cron.d/bootball` above)
+
+Referenced by name (`backfill_cron.py`, `crontab -l`) but never previously quoted verbatim in
+this doc — closed 2026-07-09 (Part E sweep), since a disaster-recovery reader following only the
+`/etc/cron.d/bootball` block above would otherwise have no way to know this line exists at all:
+
+```cron
+0 9 * * * /opt/projects/bootball/.venv/bin/python3 /opt/projects/bootball/scripts/backfill_cron.py >> /tmp/backfill_cron.log 2>&1
+```
+
+Historical-backfill catch-up pass, `crontab -e` as `root` (not `/etc/cron.d/`, so it has no
+`user` field in the line itself). Effectively near-finished as of 2026-07-09 — most days now
+spend single-digit API calls (see "Post-separation quota baseline" above) since the bulk of
+`ALL_LEAGUE_IDS` historical coverage is already backfilled; kept running rather than removed
+since it self-terminates cheaply (`STOP_AT_REMAINING` gate) when there's nothing left to do, and
+new leagues/seasons appearing over time will still need it.
 
 ---
 
@@ -464,9 +536,11 @@ git config --system --add safe.directory /opt/projects/bootball
 # raw `systemctl start`) — establishes the first self-reported commit baseline.
 scripts/deploy.sh
 
-# 9. Install cron jobs
-cp /etc/cron.d/bootball  # from verbatim block above
+# 9. Install cron jobs — two separate crontabs, both required
+cp /etc/cron.d/bootball  # from the /etc/cron.d/bootball verbatim block above
 # (file is not in repo — must be created manually)
+crontab -e  # as root — add root's personal crontab line from the "root's personal
+            # crontab" verbatim block above (backfill_cron.py, separate from /etc/cron.d/bootball)
 
 # 10. Backfill historical data (see Gaps section below — needs API calls)
 PYTHONPATH=/opt/projects/bootball .venv/bin/python scripts/daily_run.py
@@ -480,21 +554,31 @@ These items are **not** in git and would be lost if the machine is lost:
 
 | Gap | Impact | Mitigation |
 |-----|--------|-----------|
-| `data/db/bootball.db` (SQLite) | All historical fixtures, predictions, settled bets, odds_snapshots, calibration records since project start | Partial rebuild via `daily_run.py` backfill (API calls required). Forward-collection odds_snapshots (currently 0 — clock hasn't started) have no backup. |
+| `data/db/bootball.db` (SQLite) | All historical fixtures, predictions, settled bets, odds_snapshots, calibration records since project start | Partial rebuild via `daily_run.py` backfill (API calls required). Odds-trajectory `odds_snapshots` rows (see below — clock started 2026-07-02) have no backup path at all; see the dedicated row below. |
 | `data/raw/api_cache/api_cache/` (~15GB, 1.2M files) | Cached API responses. Loss means the first post-rebuild `daily_run.py` run costs ~2,480 calls to refill — not catastrophic. | Cache rebuilds itself over 1–2 days automatically. |
 | `.env` (live API keys) | All API calls fail. `capture_forward_odds.py`, `daily_run.py`, `probe_forward_odds.py` all require `API_FOOTBALL_KEY`. | Keys are in your RapidAPI account dashboard. Retrieve and re-create `.env`. |
-| `backend/models/saved/*.pkl` (trained ML models) | Predictions fall back to statistical baseline; no LightGBM outputs. | Retrain via admin UI or `scripts/make_predictions.py`. Requires ~6 months historical data in DB. |
-| `data/raw/api_cache/api_cache/*.sig` (HMAC signatures) | Model signing validation fails — governance layer blocks betting. | Re-sign models after retraining. |
-| `/etc/cron.d/bootball` | Scheduled probes (Tasmania July 3-4, Norway July 24) would NOT fire. Clock-start is lost. | Re-create verbatim from this doc's cron section. |
-| `/etc/systemd/system/bootball-*.service` | Services don't auto-start on boot. | Re-create from this doc's systemd section. |
+| `backend/models/saved/*.pkl` (trained ML models) | Predictions fall back to statistical baseline; no LightGBM outputs. | **No retrain path exists in V2 as of Phase 31 Part E** — `scripts/make_predictions.py` and the V1 admin UI that called `Trainer.train_market()` are both archived (`V1_archive/`). This is a known, deliberate, unfixed gap — see "Standing deliberate gaps" below. Automatic drift-triggered recalibration (`LeagueCalibrationEngine.fit_all()`) is unaffected and needs no manual trigger. |
+| `data/raw/api_cache/api_cache/*.sig` (HMAC signatures) | Model signing validation fails — governance layer blocks betting. | Re-sign models after retraining (see above — no current path). |
+| `/etc/cron.d/bootball` | Scheduled probes (Tasmania, Norway) and the core `daily_run.py`/`odds_poll.py`/`odds_trajectory_scheduler.py` cadence would NOT fire. | Re-create verbatim from this doc's cron section. |
+| root's personal crontab (`backfill_cron.py`, `0 9 * * *`) | Historical-backfill catch-up pass stops running. Not urgent — backfill is near-complete (see "Post-separation quota baseline" above) — but new leagues/seasons would stop getting picked up. | Re-create verbatim from this doc's cron section. |
+| `/etc/systemd/system/bootball-v2-runtime.service`, `bootball-web-v2.service` | Services don't auto-start on boot. | Re-create from this doc's systemd section. |
 | `logs/quota_log.csv` | Quota tracking history lost (future runs create a new file). | Acceptable. |
-| Historical `odds_snapshots` rows in DB | The multi-snapshot time-series cannot be rebuilt — this is the core V2 data asset once the clock starts. **Back up the DB before July 3 when the first probe may write rows.** | Manual DB backup: `cp data/db/bootball.db data/db/bootball_YYYYMMDD.db` |
+| Historical `odds_snapshots` rows in DB | The multi-snapshot time-series cannot be rebuilt — this is the core V2 data asset. As of 2026-07-09: 1,090 fixtures with ≥2 snapshots, 703 settled fixtures with both an early and near-kickoff capture (crossed the Phase 24/25 plan's ≥500-settled-fixture bar on 2026-07-05). | Manual DB backup: `cp data/db/bootball.db data/db/bootball_YYYYMMDD.db`. **Hypervisor-level backup status (Proxmox VM snapshots/vzdump schedule) could not be confirmed from inside the guest OS during this sweep — no `qm`/`pvesm`/`vzdump` tooling is reachable from here, and no Proxmox backup note exists anywhere in this repo. Needs verification directly against the Proxmox host/web UI, not assumed.** |
 
-### Priority before July 3 (next scheduled event)
+### Standing deliberate gaps (as of Phase 31 Part E, 2026-07-09)
 
-1. **Back up `bootball.db`** — once odds_snapshots rows are written, they are the V2 data asset.
-2. **Verify cron is installed** — `crontab -l` / `cat /etc/cron.d/bootball` on host.
-3. **Confirm `API_FOOTBALL_KEY` is accessible** — the probe will silently return 0 rows if the key is invalid or quota is exhausted.
+Logged explicitly so these read as accepted decisions, not oversights:
+
+1. **No manual model-retrain trigger in V2.** `scripts/make_predictions.py` and the V1 admin UI
+   route that called `Trainer.train_market()` are archived; nothing in the live tree calls it.
+   Automatic drift-triggered recalibration is unaffected. Building a manual-retrain trigger is a
+   V2 UI product decision for later — no action taken this phase. See `AUDIT_V2_STANDALONE.md`.
+2. **Vestigial `kelly` computation in `unified_prediction_service.py`.** Computed on every
+   prediction but never persisted (`PredictionRecord` has no kelly-named column) — CPU cost paid,
+   value discarded. Not V1 residue, not live execution; a minor efficiency cleanup left as-is,
+   not an archival-scope concern. See `AUDIT_V2_STANDALONE.md`.
+3. **Proxmox hypervisor backup status unverified** (see Gaps table row above) — flagged this
+   sweep, not previously documented, not yet confirmed either way.
 
 ---
 
