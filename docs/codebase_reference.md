@@ -80,22 +80,27 @@ to `V1_archive/ops/bootball.service`, removed from `/etc/systemd/system/` (2026-
 
 ```
 bootball-web-v2.service  →  scripts/web_ui_v2.py (port 5000, primary)
-  1. record_running_commit("bootball-web-v2.service") via src/deploy_info.py
+  1. record_running_commit("bootball-web-v2.service") via src/deploy_info.py — also fires
+     notify_deploy_complete() if this commit differs from what was last recorded for this
+     service (2026-07-09 fix, see below)
   2. Flask app created; blueprints registered (home, track_a, predictions, collection, explorer)
   3. init_db() via src/storage/db.py
   4. All routes protected by require_auth() from v2/auth_v2.py
      (cookie: authenticated_v2; no V1 cookie collision)
 
 bootball-v2-runtime.service (separate process, sole execution authority since D10):
-  1. record_running_commit("bootball-v2-runtime.service") via src/deploy_info.py
+  1. record_running_commit("bootball-v2-runtime.service") via src/deploy_info.py — same
+     deploy-confirmation dedup-by-commit fire as above
   2. backend/runtime/v2_runtime.py → src.prediction.prediction_cycle.run_prediction_cycle()
      (every 20 minutes; V2_RUNTIME_WRITE_ENABLED=true — saves predictions, runs calibration
      ingest)
   3. Acquires RuntimeLock file (data/v2_execution_runtime.lock)
   4. Starts backend/scheduler.py's auxiliary APScheduler — 7 jobs: fetch_fixtures (6h),
      fetch_results (1h), fetch_odds (1h), cleanup_matches (5m), live_settle (2m),
-     daily_sanity_check (24h), v2_collection_heartbeat — code landed D9, activated at D10's
-     cutover restart (2026-07-07) once bootball-runtime.service stopped owning it
+     daily_sanity_check (cron, 08:00 UTC), v2_collection_heartbeat (cron, 12:00 UTC) — code
+     landed D9, activated at D10's cutover restart (2026-07-07) once bootball-runtime.service
+     stopped owning it. The last two were IntervalTrigger(hours=24) until 2026-07-09, when
+     they were found to never actually fire (see below) and switched to CronTrigger.
 ```
 
 ---
@@ -134,8 +139,9 @@ Unified runtime mode enforcement.
 
 APScheduler auxiliary job definitions and circuit breaker.
 
-- **7 registered auxiliary jobs:** `job_fetch_fixtures` (6h), `job_fetch_results` (1h), `job_fetch_odds` (1h), `job_cleanup_matches` (5m), `job_live_settle` (2m), `job_daily_sanity_check` (24h), `job_v2_collection_heartbeat` (24h)
+- **7 registered auxiliary jobs:** `job_fetch_fixtures` (6h), `job_fetch_results` (1h), `job_fetch_odds` (1h), `job_cleanup_matches` (5m), `job_live_settle` (2m), `job_daily_sanity_check` (cron, 08:00 UTC), `job_v2_collection_heartbeat` (cron, 12:00 UTC)
 - `job_fetch_results` now calls `src.settlement.verify_ft_fixtures()` (Phase 27) right before `settle_all()`, so reversible markets never settle off an unconfirmed FT snapshot
+- **2026-07-09 fix:** `daily_sanity_check`/`v2_collection_heartbeat` were `IntervalTrigger(hours=24)`, re-registered with `replace_existing=True` on every service (re)start. An interval trigger's `next_run_time` is computed from the moment `add_job()` runs, not a fixed clock — and the host reboots daily at ~23h38m–23h40m intervals, always short of 24h, so every reboot pushed the fire time another 24h out before it was ever reached. Neither job had fired even once since D9/D10 gave the scheduler to V2 (confirmed via `data/scheduler.db`'s `next_run_time` and absence of "JOB: ... starting" in `journalctl`). Switched both to `CronTrigger` at fixed wall-clock times, far from the reboot window, with `misfire_grace_time=7200` so a restart straddling the slot still fires on recovery. A cron trigger's next fire time derives from the wall clock, not registration time, so it survives any restart cadence — the fix is the trigger type, not a bigger interval.
 - Phase 31 Part D: removed `job_auto_heal_runs`, `job_retrain_models`, `job_run_betting_bot`, `job_run_continuous_cycle`, `MUTATING_JOBS`, and `is_job_allowed_in_mode()` — none of the four job functions were ever wired into the registered list above (confirmed live), and all four only existed to dispatch into V1's `ExecutionEngine`/`AgentCoordinator`/`run_continuous_cycle.py`, which Part D archives. The mode-gating function existed solely to guard these four job types.
 - `_circuit_ok()` / `_circuit_failure()` — fault-tolerant job execution
 
@@ -180,6 +186,7 @@ Deployment state tracking — records which git commit a long-running service st
 - `record_running_commit(service_name)` — called once at startup by `v2_runtime.py` and `web_ui_v2.py`; writes current HEAD commit to `logs/deploy_state/<service_name>.running_commit`
 - Allows `scripts/deploy.sh check` to detect stale services without correlating systemd timelines against git log
 - Non-fatal if git unavailable; designed to survive any restart method (deploy script, manual `systemctl restart`, host reboot)
+- **2026-07-09 fix:** also reads the *previous* commit recorded for this service before overwriting it, and if it differs, calls `notify_deploy_complete()` with the new commit — regardless of what triggered the restart. Previously that notification only ever fired from inside `scripts/deploy.sh`, so any restart that bypassed it (raw `systemctl restart`, the daily host reboot) picked up new code with zero confirmation; `notify_deploy_complete` had not fired since 2026-07-04 despite the entire Phase 31 Part D/E rollout going live in the interim. Both this call site and `scripts/deploy.sh`'s own call now pass the **full** commit hash (previously `deploy.sh` used the short form, which would have defeated the commit-based dedup and double-fired on a matching commit).
 
 ### `src/storage/db.py`
 
@@ -588,8 +595,8 @@ One coupling bug found and fixed along the way: `src/events/consumers/calibratio
 **V2's Discord voice** (`src/notifications/v2_discord_notifier.py`) is wired unconditionally (independent of `discord_v1_enabled`) and posts under a distinct `Bootball V2` username on the same shared webhook relay (confirmed generic at Phase 15) so provenance is never ambiguous. Four events, no predictions/picks/EV/Kelly ever:
 - `notify_drift_alarm()` — subscribed to `Events.CALIBRATION_DRIFT_DETECTED`; 6h per-market cooldown.
 - `notify_settlement_integrity()` — subscribed to new `Events.SETTLEMENT_INTEGRITY_EVENT`, emitted from three points in `src/settlement.py`: `verify_ft_fixtures()` FT-snapshot corrections, `update_pending_fixture_scores()` forward-dated-live catches, and a new `_check_dead_mark_spike()` in `mark_fixtures_dead()` — a self-computed trailing rolling baseline (no hard-coded number existed) persisted to `data/raw/.dead_mark_history.json`; 15min per-kind cooldown.
-- `notify_collection_heartbeat()` — new daily APScheduler job (`backend/scheduler.py::job_v2_collection_heartbeat`, 24h interval) reporting `odds_snapshots` counts and quota headroom from `logs/quota_log.csv`.
-- `notify_deploy_complete()` — called from `scripts/deploy.sh` after a restart cycle with commit hash + per-service active status, deduped by commit.
+- `notify_collection_heartbeat()` — daily APScheduler job (`backend/scheduler.py::job_v2_collection_heartbeat`, `CronTrigger` at 12:00 UTC since 2026-07-09 — was `IntervalTrigger(hours=24)` and never actually fired, see that file's reference entry above) reporting `odds_snapshots` counts and quota headroom from `logs/quota_log.csv`.
+- `notify_deploy_complete()` — called from two places, deduped against each other by full commit hash: `scripts/deploy.sh` after an explicit restart cycle, and (since 2026-07-09) `src/deploy_info.py::record_running_commit()` on every service startup regardless of what triggered the restart. Takes commit hash + per-service active status; truncates to a short hash for the Discord display only, dedup key stays on the full hash.
 
 Rate-limiting and restart-safety both come from one JSON state file (`data/state/v2_notifier_state.json`, last-sent timestamp per event kind + last-notified deploy commit) — read from disk rather than memory, so a process restart cannot replay an event that already fired.
 
