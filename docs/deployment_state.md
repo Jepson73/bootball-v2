@@ -187,6 +187,41 @@ residue. A future reading meaningfully above ~70k or below ~40k on a day with no
 volume is the signal worth investigating, not a return to some lower pre-cutover number — no such
 lower number exists in this system's actual history once backfill's decline is accounted for.
 
+### Quota decomposition — 07-08's 64,272 broken down by component (2026-07-09)
+
+64,272 / 75,000 is ~86% utilization on an otherwise-ordinary day. Decomposed rather than just
+recorded, since at that utilization a weekend fixture spike is a real risk of hitting the ceiling,
+and this system has been burned by unexplained spend before (the CACHE_DIR permission bug, the
+cron/systemd UID split — see the incident table and Part C's UID-split finding above).
+
+| Component | Calls | Share | Method |
+|---|---|---|---|
+| `DailyBaselinePipeline.run()` — in-process, fired by both `job_fetch_fixtures` (6h) and `job_fetch_results` (1h) inside `bootball-v2-runtime.service` | **39,606** | **61.6%** | Exact — summed `(run_end.calls_used − run_start.calls_used)` across all 24 matched pairs in `quota_log.csv` for 07-08 |
+| `odds_trajectory_scheduler.py` — cron, every 30 min, 24/7 | **12,224** | **19.0%** | Exact — script self-reports `Calls this run` (its own `near_calls + far_calls` tally, not derived from the shared counter) in `/var/log/bootball/odds_trajectory_scheduler.log`; summed across all 47 runs on 07-08 |
+| Everything else — `job_fetch_odds` (in-process, 1h), `odds_poll.py`'s own cron entry (`*/30`, daytime CET), `job_live_settle`'s live-score polling (~7 calls/tick × up to 720 ticks/day), `job_fetch_results`'s post-pipeline settlement calls, `backfill_cron.py` (near-zero, see above) | **12,442** | **19.4%** | Residual (day total minus the two exact components above) — **not further separable with current instrumentation**, see caveat below |
+
+**The dominant cost is fixture/result refresh, not backfill and not trajectory capture** — both of
+which were the *a priori* suspects. `DailyBaselinePipeline.run()` alone is 61.6% of the day, and it
+fires on the union of two independent schedules (`job_fetch_fixtures` @ 6h, `job_fetch_results` @
+1h) that aren't coordinated to avoid overlap — `quota_log.csv` shows both landing in the same
+APScheduler tick at least once on 07-08 (two `run_start` rows both timestamped 10:20:44), meaning
+the pipeline can run twice back-to-back for no added freshness. **If quota pressure ever becomes a
+live problem, this is the lever** — not backfill (already near-finished) and not trajectory (already
+self-capped at `collection_daily_cap`=15,000/day for its daily-phase touches).
+
+**Measurement caveat:** `quota_log.csv` and the per-script "calls remaining" reads all draw from
+one shared, global, cross-process daily counter — there is no per-job API-call instrumentation.
+The `DailyBaselinePipeline` figure above is a clean bracket (before/after the exact call), but if
+`job_fetch_odds` happened to be mid-flight in another thread of the same process during that
+bracket, its calls would leak into the pipeline's number rather than the residual. The residual
+bucket is the least trustworthy line — it's four-plus distinct consumers collapsed into "whatever
+wasn't inside a clean bracket," not a verified breakdown of any one of them. Good enough to confirm
+none of them individually looks anomalous (the two exact components already account for ~81% of
+the day, leaving a residual within the range that live-settle's own documented worst case
+(~5,040/day) plus odds_poll's cron entry plausibly explain) — not good enough to catch a smaller
+regression inside that bucket. Per-job quota tagging would close this gap; not built this pass (no
+code change requested for this rider).
+
 ---
 
 ## SQLite busy_timeout (Phase 25)
