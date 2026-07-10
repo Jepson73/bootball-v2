@@ -400,7 +400,54 @@ class LeagueCalibrationEngine:
         p_cal = _sigmoid(slope * _logit(p_raw) + intercept)
         return p_cal, version_label
 
+    @staticmethod
+    def renormalize_h2h_vector(
+        prob_home: float, prob_draw: float, prob_away: float,
+        predicted_side: str, calibrated_predicted_prob: float,
+    ) -> tuple[float, float, float]:
+        """Phase 33 Task 3 — h2h coherence mechanism.
+
+        apply() only calibrates the scalar predicted-side probability (our_prob) --
+        there is no independent per-class calibration of Home/Draw/Away (fitting
+        three calibrations per league instead of one would need 3x the settled
+        volume per league, and h2h coverage is already the thinnest of the four
+        markets). Serving calibrated_predicted_prob on its own, next to the raw
+        prob_home/prob_draw/prob_away vector, would silently break two invariants
+        at once: the three displayed numbers would stop summing to 1, and the
+        "headline" probability would contradict its own displayed split -- the
+        exact class of bug Phase 32 found and fixed for the binary markets, one
+        level up.
+
+        Rescales the other two classes proportionally so the vector still sums to
+        1 with the predicted side pinned at calibrated_predicted_prob. Not yet
+        wired into any serving path (Phase 33 Task 1 kept raw our_prob as what's
+        served) -- this is the mechanism Task 4's decision package points to for
+        whenever that changes, built and tested now rather than left as a TODO.
+        """
+        raw = {"home": prob_home, "draw": prob_draw, "away": prob_away}
+        if predicted_side not in raw:
+            raise ValueError(f"predicted_side must be one of {sorted(raw)}, got {predicted_side!r}")
+
+        p_new = max(1e-6, min(1 - 1e-6, calibrated_predicted_prob))
+        remaining_raw = 1.0 - raw[predicted_side]
+        remaining_new = 1.0 - p_new
+
+        out = {}
+        for side, p in raw.items():
+            if side == predicted_side:
+                out[side] = p_new
+            elif remaining_raw > 1e-9:
+                out[side] = p / remaining_raw * remaining_new
+            else:
+                # Raw predicted side was ~100% confident -- no ratio to preserve
+                # among the other two, so split what's left evenly.
+                out[side] = remaining_new / 2
+
+        return out["home"], out["draw"], out["away"]
+
     # ── Helpers ───────────────────────────────────────────────────────────────
+
+
 
     def _active_versions(self) -> dict[str, tuple[int, int]]:
         """Return {market: (model_number, calibration_number)} for active versions."""

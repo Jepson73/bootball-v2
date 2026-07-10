@@ -125,12 +125,19 @@ def _format_market(market: dict) -> str:
         return f'<span style="color:{colour};font-weight:600">{pct}%</span>'
 
 
+# Phase 33 Task 3: elo_both/elo_partial/flat_prior/national_elo are written by
+# scripts/generate_gap_predictions.py and generate_wc_predictions.py, neither of
+# which ever calls LeagueCalibrationEngine.apply() -- calibrated_prob is NULL for
+# 100% of these rows. That's the right call (settled volume per market/tier tops
+# out at 61 rows, well under fitting a calibration honestly), but it was silent.
+# Badge titles say so explicitly now so "uncalibrated" is never just an absence.
+_UNCALIBRATED_NOTE = " — raw model probability, not calibrated (too few settled samples to fit one honestly)"
 _CTX_BADGE = {
     "full":         '<span class="badge badge-blue" title="Normal standings-based prediction">Full</span>',
-    "elo_both":     '<span class="badge badge-gray" title="Club Elo — both teams rated">Elo</span>',
-    "elo_partial":  '<span class="badge" style="background:#5a3e00;color:#d29922;border:1px solid #6a4e00" title="Club Elo — one team unrated (1500 default)">Elo~</span>',
-    "flat_prior":   '<span class="badge badge-gray" title="Flat prior H43/D27/A30 — no meaningful rating data">Prior</span>',
-    "national_elo": '<span class="badge badge-blue" title="National-team Elo">Nat</span>',
+    "elo_both":     f'<span class="badge badge-gray" title="Club Elo — both teams rated{_UNCALIBRATED_NOTE}">Elo (raw)</span>',
+    "elo_partial":  f'<span class="badge" style="background:#5a3e00;color:#d29922;border:1px solid #6a4e00" title="Club Elo — one team unrated (1500 default){_UNCALIBRATED_NOTE}">Elo~ (raw)</span>',
+    "flat_prior":   f'<span class="badge badge-gray" title="Flat prior H43/D27/A30 — no meaningful rating data{_UNCALIBRATED_NOTE}">Prior (raw)</span>',
+    "national_elo": f'<span class="badge badge-blue" title="National-team Elo{_UNCALIBRATED_NOTE}">Nat (raw)</span>',
 }
 
 
