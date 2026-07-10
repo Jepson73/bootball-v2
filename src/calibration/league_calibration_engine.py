@@ -69,6 +69,38 @@ def _brier(probs: np.ndarray, actuals: np.ndarray) -> float:
     return float(np.mean((probs - actuals) ** 2))
 
 
+class ActiveCalibrationSnapshot:
+    """In-memory snapshot of every active LeagueCalibration row.
+
+    apply() does 1-2 DB round trips per call, which is fine for a single
+    prediction being written but far too slow for rendering a page of
+    hundreds of rows (Phase 33 Task 4: serving predictions_v2/explorer_v2 and
+    scoring Track A's live-recomputed-calibrated column both need to apply
+    the CURRENT active calibration to many rows in one request). Load once,
+    apply many times, same resolution order and MIN_LEAGUE_SAMPLES gate as
+    LeagueCalibrationEngine.apply() -- this is a read-only mirror of it, not
+    a separate implementation to keep in sync by hand.
+    """
+
+    def __init__(self, league_cal: dict, global_cal: dict):
+        self._league_cal = league_cal   # (market, league_id) -> (slope, intercept, sample_size)
+        self._global_cal = global_cal   # market -> (slope, intercept, version_label)
+
+    def apply(self, market: str, league_id: int | None, p_raw: float) -> tuple[float, str | None]:
+        if league_id is not None:
+            row = self._league_cal.get((market, league_id))
+            if row is not None:
+                slope, intercept, n, version_label = row
+                if n >= LeagueCalibrationEngine._MIN_LEAGUE_SAMPLES:
+                    return _sigmoid(slope * _logit(p_raw) + intercept), version_label
+
+        cal = self._global_cal.get(market)
+        if cal is None:
+            return p_raw, None
+        slope, intercept, version_label = cal
+        return _sigmoid(slope * _logit(p_raw) + intercept), version_label
+
+
 class LeagueCalibrationEngine:
     """Fits and applies per-league Platt-scaling calibration."""
 
@@ -368,6 +400,31 @@ class LeagueCalibrationEngine:
     # Below this threshold, fall back to L0000 (global) calibration.
     # L0000 always has thousands of samples and is safe to use unconditionally.
     _MIN_LEAGUE_SAMPLES = 100
+
+    def load_active_calibrations(self) -> ActiveCalibrationSnapshot:
+        """Load every active LeagueCalibration row once for repeated apply() calls.
+
+        See ActiveCalibrationSnapshot's docstring -- use this instead of calling
+        apply() in a loop over many rows.
+        """
+        league_cal: dict[tuple[str, int], tuple[float, float, int, str]] = {}
+        global_cal: dict[str, tuple[float, float, str]] = {}
+        # Read attributes inside the session -- get_session()'s sessionmaker uses
+        # expire_on_commit=True, so touching ORM attributes after the block exits
+        # raises DetachedInstanceError (the exact class of bug Phase 30 found in
+        # _get_market_odds_set()).
+        with get_session() as s:
+            active_rows = s.execute(
+                select(LeagueCalibration).where(LeagueCalibration.is_active == True)
+            ).scalars().all()
+            for row in active_rows:
+                if row.league_id is None:
+                    global_cal[row.market] = (float(row.slope), float(row.intercept), row.version_label)
+                else:
+                    league_cal[(row.market, row.league_id)] = (
+                        float(row.slope), float(row.intercept), row.sample_size, row.version_label,
+                    )
+        return ActiveCalibrationSnapshot(league_cal, global_cal)
 
     def apply(self, market: str, league_id: int | None, p_raw: float) -> tuple[float, str | None]:
         """Apply calibration: league-specific → L0000 global → raw fallback.

@@ -74,11 +74,17 @@ def _ex_price(val: float | None) -> str:
 
 
 def _mkt_cell(m: dict | None) -> str:
-    """Render one market <td> for the explorer table."""
+    """Render one market <td> for the explorer table.
+
+    Phase 33 Task 4: served_prob is our_prob live-recalibrated for full/NULL
+    tiers (raw for the thin tiers) on UNSETTLED rows only -- v2/db_v2.py's
+    get_explorer_data() deliberately leaves settled rows on raw our_prob so
+    history is never shown differently than what Track A scores.
+    """
     if not m:
         return '<td style="color:#8b949e;text-align:center;padding:6px 10px">—</td>'
 
-    p = m.get("our_prob")
+    p = m.get("served_prob")
     if p is None:
         return '<td style="color:#8b949e;text-align:center;padding:6px 10px">—</td>'
 
@@ -91,9 +97,9 @@ def _mkt_cell(m: dict | None) -> str:
 
     if mkt == "h2h":
         label = _H2H.get(outcome, outcome or "?")
-        ph = m.get("prob_home")
-        pd_ = m.get("prob_draw")
-        pa = m.get("prob_away")
+        ph = m.get("served_prob_home")
+        pd_ = m.get("served_prob_draw")
+        pa = m.get("served_prob_away")
         if ph is not None and pd_ is not None and pa is not None:
             star = ""
             sh = _ex_price(m.get("soft_home"))

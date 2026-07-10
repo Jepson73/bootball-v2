@@ -304,6 +304,37 @@ def get_latest_quota() -> dict | None:
     }
 
 
+# ── Serving calibration (Phase 33 Task 4) ───────────────────────────────────────
+
+_MAINSTREAM_CONTEXTS = (None, "full")
+_H2H_SIDE = {"1": "home", "X": "draw", "2": "away", "H": "home", "D": "draw", "A": "away"}
+
+
+def _load_calibration_snapshot():
+    from src.calibration.league_calibration_engine import LeagueCalibrationEngine
+    return LeagueCalibrationEngine().load_active_calibrations()
+
+
+def _serve_prob(snap, market: str, league_id: int | None, our_prob: float | None, data_context: str | None):
+    """Return (served_prob, is_calibrated) for one prediction.
+
+    Live-recomputes against TODAY's active calibration rather than trusting the
+    stored calibrated_prob column -- that column reflects whatever calibration
+    was active when the prediction was WRITTEN, which for anything older than
+    the most recent fit_all() refit is stale (Phase 33 Task 2: the previous fit
+    sat unrefreshed for 33 days). Only the mainstream pipeline's data_context
+    ('full' or NULL) is calibrated -- Task 4's audit found applying it to the
+    thin tiers (elo_both/elo_partial/flat_prior/national_elo) makes them WORSE,
+    since the calibration was fit exclusively on full/NULL history.
+    """
+    if our_prob is None:
+        return None, False
+    if data_context not in _MAINSTREAM_CONTEXTS:
+        return our_prob, False
+    p_cal, _version = snap.apply(market, league_id, our_prob)
+    return p_cal, True
+
+
 # ── Track A ────────────────────────────────────────────────────────────────────
 
 _BINARY_MARKETS = {"btts", "ou25", "ou15"}
@@ -490,9 +521,14 @@ def get_predictions_for_upcoming() -> list[dict]:
     Upcoming predictions for NS fixtures — includes home/away team names and full
     h2h probability vector where stored.
 
-    Data-gap note: prob_home/prob_draw/prob_away are NULL for all current records
-    (columns added in Phase 11b schema but never populated by the prediction engine).
-    The view falls back to predicted_outcome + our_prob for H2H labelling.
+    prob_home/prob_draw/prob_away are populated for all upcoming fixtures since
+    the Phase 13c backfill (2026-07-01); older settled records may still lack
+    them (re-running the model on past fixtures would leak current standings),
+    in which case the view falls back to predicted_outcome + our_prob.
+
+    Phase 33 Task 4: each market dict carries served_prob (served_prob_home/
+    draw/away for h2h) alongside the raw our_prob/prob_home/draw/away -- see
+    _serve_prob()'s docstring for what's calibrated and what isn't.
     """
     try:
         from src.storage.models import PredictionRecord, Team
@@ -549,6 +585,8 @@ def get_predictions_for_upcoming() -> list[dict]:
             .limit(500)
         ).all()
 
+    cal_snapshot = _load_calibration_snapshot()
+
     fixtures: dict[int, dict] = {}
     for r in rows:
         fid = r.fixture_id
@@ -562,13 +600,39 @@ def get_predictions_for_upcoming() -> list[dict]:
                 "away_team": r.away_team_name or f"Team {fid}",
                 "markets": [],
             }
+
+        our_prob = float(r.our_prob) if r.our_prob is not None else None
+        served_prob, is_calibrated = _serve_prob(
+            cal_snapshot, r.market, r.league_id, our_prob, r.data_context
+        )
+
+        prob_home = float(r.prob_home) if r.prob_home is not None else None
+        prob_draw = float(r.prob_draw) if r.prob_draw is not None else None
+        prob_away = float(r.prob_away) if r.prob_away is not None else None
+        served_home, served_draw, served_away = prob_home, prob_draw, prob_away
+        if (
+            r.market == "h2h" and is_calibrated
+            and prob_home is not None and prob_draw is not None and prob_away is not None
+        ):
+            side = _H2H_SIDE.get(str(r.predicted_outcome).upper())
+            if side is not None:
+                from src.calibration.league_calibration_engine import LeagueCalibrationEngine
+                served_home, served_draw, served_away = LeagueCalibrationEngine.renormalize_h2h_vector(
+                    prob_home, prob_draw, prob_away, side, served_prob
+                )
+
         fixtures[fid]["markets"].append({
             "market": r.market,
-            "our_prob": round(float(r.our_prob), 3) if r.our_prob else None,
+            "our_prob": round(our_prob, 3) if our_prob is not None else None,
+            "served_prob": round(served_prob, 3) if served_prob is not None else None,
+            "is_calibrated": is_calibrated,
             "predicted_outcome": r.predicted_outcome,
-            "prob_home": round(float(r.prob_home), 3) if r.prob_home else None,
-            "prob_draw": round(float(r.prob_draw), 3) if r.prob_draw else None,
-            "prob_away": round(float(r.prob_away), 3) if r.prob_away else None,
+            "prob_home": round(prob_home, 3) if prob_home is not None else None,
+            "prob_draw": round(prob_draw, 3) if prob_draw is not None else None,
+            "prob_away": round(prob_away, 3) if prob_away is not None else None,
+            "served_prob_home": round(served_home, 3) if served_home is not None else None,
+            "served_prob_draw": round(served_draw, 3) if served_draw is not None else None,
+            "served_prob_away": round(served_away, 3) if served_away is not None else None,
             "ev": round(float(r.ev), 4) if r.ev else None,
             "odds_decimal": round(float(r.odds_decimal), 2) if r.odds_decimal else None,
             "bookmaker": r.bookmaker,
@@ -778,6 +842,7 @@ def get_explorer_data(
             Fixture.status.label("fixture_status"),
             Fixture.goals_home,
             Fixture.goals_away,
+            Fixture.league_id,
             League.name.label("league_name"),
             League.country,
             HomeTeam2.name.label("home_team"),
@@ -813,6 +878,14 @@ def get_explorer_data(
 
     t1 = time.time()
 
+    # Phase 33 Task 4: served_prob is only computed for UNSETTLED rows. Settled
+    # predictions are history -- Track A scores them on raw our_prob as the
+    # permanent baseline record, and showing a different, live-recalibrated
+    # number next to the same row here would look like rewriting what was
+    # actually predicted, even though the DB itself is untouched. Unsettled
+    # rows get the same live-recalibrated treatment as predictions_v2.py.
+    cal_snapshot = _load_calibration_snapshot()
+
     # Assemble per-fixture dicts preserving sort order from inner query
     fixtures_map: dict[int, dict] = {}
     fixture_order: list[int] = []
@@ -832,16 +905,47 @@ def get_explorer_data(
                 "markets": {},
             }
             fixture_order.append(fid)
+
+        our_prob = float(r.our_prob) if r.our_prob is not None else None
+        prob_home = float(r.prob_home) if r.prob_home is not None else None
+        prob_draw = float(r.prob_draw) if r.prob_draw is not None else None
+        prob_away = float(r.prob_away) if r.prob_away is not None else None
+
+        if r.settled:
+            served_prob = our_prob
+            served_home, served_draw, served_away = prob_home, prob_draw, prob_away
+            is_calibrated = False
+        else:
+            served_prob, is_calibrated = _serve_prob(
+                cal_snapshot, r.market, r.league_id, our_prob, r.data_context
+            )
+            served_home, served_draw, served_away = prob_home, prob_draw, prob_away
+            if (
+                r.market == "h2h" and is_calibrated
+                and prob_home is not None and prob_draw is not None and prob_away is not None
+            ):
+                side = _H2H_SIDE.get(str(r.predicted_outcome).upper())
+                if side is not None:
+                    from src.calibration.league_calibration_engine import LeagueCalibrationEngine
+                    served_home, served_draw, served_away = LeagueCalibrationEngine.renormalize_h2h_vector(
+                        prob_home, prob_draw, prob_away, side, served_prob
+                    )
+
         fixtures_map[fid]["markets"][r.market] = {
             "market": r.market,
-            "our_prob": round(float(r.our_prob), 3) if r.our_prob is not None else None,
+            "our_prob": round(our_prob, 3) if our_prob is not None else None,
+            "served_prob": round(served_prob, 3) if served_prob is not None else None,
+            "is_calibrated": is_calibrated,
             "predicted_outcome": r.predicted_outcome,
             "actual_outcome": r.actual_outcome,
             "won": r.won,
             "settled": r.settled,
-            "prob_home": round(float(r.prob_home), 3) if r.prob_home is not None else None,
-            "prob_draw": round(float(r.prob_draw), 3) if r.prob_draw is not None else None,
-            "prob_away": round(float(r.prob_away), 3) if r.prob_away is not None else None,
+            "prob_home": round(prob_home, 3) if prob_home is not None else None,
+            "prob_draw": round(prob_draw, 3) if prob_draw is not None else None,
+            "prob_away": round(prob_away, 3) if prob_away is not None else None,
+            "served_prob_home": round(served_home, 3) if served_home is not None else None,
+            "served_prob_draw": round(served_draw, 3) if served_draw is not None else None,
+            "served_prob_away": round(served_away, 3) if served_away is not None else None,
             "data_context": r.data_context,
         }
 

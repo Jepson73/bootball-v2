@@ -51,9 +51,14 @@ def _format_market(market: dict) -> str:
 
     Soft prices are per-outcome from fixture_odds (not prediction_records.odds_decimal).
     Track B (EV) is Pinnacle-only and unchanged — soft prices never feed EV logic.
+
+    Phase 33 Task 4: shows served_prob (live-recalibrated for full/NULL tiers,
+    raw for the thin tiers per _CTX_BADGE below) rather than raw our_prob --
+    see v2/db_v2.py::_serve_prob(). market["our_prob"] is still present in the
+    dict for anyone reading it directly, just not what's rendered here.
     """
     m = market["market"]
-    p = market["our_prob"]
+    p = market.get("served_prob")
     outcome = market.get("predicted_outcome") or ""
 
     if p is None:
@@ -63,9 +68,9 @@ def _format_market(market: dict) -> str:
     book = market.get("soft_book")
 
     if m == "h2h":
-        ph = market.get("prob_home")
-        pd_ = market.get("prob_draw")
-        pa = market.get("prob_away")
+        ph = market.get("served_prob_home")
+        pd_ = market.get("served_prob_draw")
+        pa = market.get("served_prob_away")
         if ph is not None and pd_ is not None and pa is not None:
             def _col(v):
                 c = "#3fb950" if v >= 0.5 else ("#d29922" if v >= 0.35 else "#8b949e")
