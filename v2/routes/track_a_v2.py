@@ -42,28 +42,61 @@ def track_a():
         return page("Track A · Accuracy", content, active="track_a")
 
     # ── Top stats ────────────────────────────────────────────────────────────
+    # Phase 33 Task 4: raw our_prob (the permanent baseline record) alongside a
+    # live-recalibrated column -- our_prob run through TODAY's active
+    # LeagueCalibrationEngine calibration, not the stored calibrated_prob column
+    # (which is frozen at whatever was active when each row was written). This
+    # is scored on the exact same settled rows as the raw column, every time
+    # this page loads, so "is the calibrator actually good" never again needs
+    # a special investigation to answer.
+    by_market_cal = stats.get("by_market_calibrated", {})
     stat_cards = ""
     for mkt, v in stats["by_market"].items():
         colour = _brier_colour(v["brier"], mkt)
+        vc = by_market_cal.get(mkt)
+        cal_block = ""
+        if vc:
+            colour_cal = _brier_colour(vc["brier"], mkt)
+            delta = v["brier"] - vc["brier"]
+            delta_str = f"{'−' if delta >= 0 else '+'}{abs(delta):.4f}" if delta else "±0.0000"
+            cal_block = f"""
+            <div class="grid grid-3" style="margin-top:8px;border-top:1px solid #21262d;padding-top:8px">
+              <div class="stat">
+                <span class="stat-value">{vc['accuracy']*100:.1f}%</span>
+                <span class="stat-label">Accuracy (calibrated, live)</span>
+              </div>
+              <div class="stat">
+                <span class="stat-value"><span class="badge badge-{colour_cal}">{vc['brier']:.4f}</span></span>
+                <span class="stat-label">Brier (calibrated, live) — {delta_str} vs raw</span>
+              </div>
+              <div class="stat">
+                <span class="stat-value">{vc['logloss']:.4f}</span>
+                <span class="stat-label">Log-loss (calibrated, live)</span>
+              </div>
+            </div>
+            """
         stat_cards += f"""
         <div class="card">
           <div class="card-title">{_MARKET_LABELS.get(mkt, mkt)}</div>
           <div class="grid grid-3">
             <div class="stat">
               <span class="stat-value">{v['accuracy']*100:.1f}%</span>
-              <span class="stat-label">Accuracy</span>
+              <span class="stat-label">Accuracy (raw)</span>
             </div>
             <div class="stat">
               <span class="stat-value"><span class="badge badge-{colour}">{v['brier']:.4f}</span></span>
-              <span class="stat-label">Brier score ↓</span>
+              <span class="stat-label">Brier score (raw) ↓</span>
             </div>
             <div class="stat">
               <span class="stat-value">{v['logloss']:.4f}</span>
-              <span class="stat-label">Log-loss ↓</span>
+              <span class="stat-label">Log-loss (raw) ↓</span>
             </div>
           </div>
+          {cal_block}
           <p style="font-size:11px;color:#8b949e;margin-top:8px">n={v['n']:,} &nbsp;|&nbsp;
-             Baseline Brier (random): {_BRIER_BASELINE.get(mkt, 0.25):.3f}</p>
+             Baseline Brier (random): {_BRIER_BASELINE.get(mkt, 0.25):.3f} &nbsp;|&nbsp;
+             "raw" = our_prob, the permanent scoring baseline · "calibrated, live" =
+             our_prob through today's active LeagueCalibrationEngine fit, recomputed on every page load</p>
         </div>
         """
 
@@ -105,9 +138,43 @@ def track_a():
         if rows:
             cal_html += f"""
             <div class="card">
-              <div class="card-title">Calibration — {_MARKET_LABELS.get(mkt, mkt)}</div>
+              <div class="card-title">Calibration — {_MARKET_LABELS.get(mkt, mkt)} (raw)</div>
               <p style="font-size:11px;color:#8b949e;margin-bottom:12px">Blue bar = mean predicted probability · Green bar = actual win rate per bin</p>
               {excluded_note}
+              {rows}
+            </div>
+            """
+
+    for mkt, bins in stats.get("calibration_calibrated", {}).items():
+        rows = ""
+        for b in bins:
+            if b["n"] == 0:
+                continue
+            mp = b["mean_pred"] or 0
+            ar = b["actual_rate"] or 0
+            w = 200
+            pred_w = int(mp * w)
+            act_w = int(ar * w)
+            diff_colour = "green" if abs(mp - ar) < 0.05 else ("amber" if abs(mp - ar) < 0.12 else "red")
+            rows += f"""
+            <div style="margin-bottom:8px">
+              <div style="display:flex;align-items:center;gap:8px;font-size:11px;margin-bottom:2px">
+                <span style="min-width:52px;color:#8b949e">{b['bin_label']}</span>
+                <span style="color:#58a6ff">pred {mp*100:.0f}%</span>
+                <span class="badge badge-{diff_colour}">actual {ar*100:.0f}%</span>
+                <span style="color:#8b949e">n={b['n']}</span>
+              </div>
+              <div style="position:relative;height:6px;background:#21262d;border-radius:3px;width:{w}px">
+                <div style="height:6px;width:{pred_w}px;background:#58a6ff55;border-radius:3px;position:absolute"></div>
+                <div style="height:6px;width:{act_w}px;background:#3fb95077;border-radius:3px;position:absolute;top:0"></div>
+              </div>
+            </div>
+            """
+        if rows:
+            cal_html += f"""
+            <div class="card" style="border-color:#1f6feb">
+              <div class="card-title" style="color:#58a6ff">Calibration — {_MARKET_LABELS.get(mkt, mkt)} (calibrated, live)</div>
+              <p style="font-size:11px;color:#8b949e;margin-bottom:12px">our_prob through today's active calibration, recomputed on every page load — not the stored calibrated_prob column</p>
               {rows}
             </div>
             """

@@ -388,6 +388,50 @@ def _log_corrupted_prob_trail(excluded: dict[str, int]) -> None:
         logger.exception("TRACK_A_SCORING: failed to write correction-trail file")
 
 
+def _score_bucket_row(buckets: dict, mkt: str, p: float, y: int, EPS: float) -> None:
+    p = max(EPS, min(1 - EPS, p))
+    bs = (p - y) ** 2
+    ll = -(y * math.log(p) + (1 - y) * math.log(1 - p))
+    b = buckets.setdefault(mkt, {"n": 0, "wins": 0, "bs_sum": 0.0, "ll_sum": 0.0})
+    b["n"] += 1
+    b["wins"] += y
+    b["bs_sum"] += bs
+    b["ll_sum"] += ll
+
+
+def _calibration_bin_row(calibration: dict, mkt: str, p: float) -> dict:
+    bin_idx = min(int(p * 10), 9)
+    cb = calibration.setdefault(mkt, [{"sum_p": 0.0, "sum_y": 0, "n": 0} for _ in range(10)])
+    return cb[bin_idx]
+
+
+def _finalize_by_market(market_buckets: dict) -> dict:
+    return {
+        mkt: {
+            "n": v["n"],
+            "accuracy": round(v["wins"] / v["n"], 4) if v["n"] else 0,
+            "brier": round(v["bs_sum"] / v["n"], 4) if v["n"] else 0,
+            "logloss": round(v["ll_sum"] / v["n"], 4) if v["n"] else 0,
+        }
+        for mkt, v in sorted(market_buckets.items())
+    }
+
+
+def _finalize_calibration(calibration: dict) -> dict:
+    return {
+        mkt: [
+            {
+                "bin_label": f"{i*10}–{i*10+10}%",
+                "mean_pred": round(cb[i]["sum_p"] / cb[i]["n"], 3) if cb[i]["n"] else None,
+                "actual_rate": round(cb[i]["sum_y"] / cb[i]["n"], 3) if cb[i]["n"] else None,
+                "n": cb[i]["n"],
+            }
+            for i in range(10)
+        ]
+        for mkt, cb in calibration.items()
+    }
+
+
 def get_track_a_stats() -> dict:
     """
     Compute Track A accuracy stats from settled PredictionRecords.
@@ -399,6 +443,16 @@ def get_track_a_stats() -> dict:
     combination is mathematically impossible for a healthy write path (our_prob
     IS the max of the two-outcome dict), so its presence flags corrupted data,
     not a genuinely unconfident model.
+
+    Phase 33 Task 4: also scores a parallel "calibrated" column -- our_prob run
+    live through TODAY's active LeagueCalibrationEngine calibration (not the
+    stored calibrated_prob column, which is frozen at whatever was active when
+    each row was written). This is what keeps the calibrator's live value
+    measurable forever without ever needing another "which ECE is this"
+    investigation: it's always scored against the calibration that's active
+    right now, on the exact same settled rows the raw column uses. our_prob
+    scoring (`by_market`/`calibration`) remains the permanent, unchanged
+    baseline record -- nothing here touches it.
     """
     try:
         from src.storage.models import PredictionRecord
@@ -424,12 +478,17 @@ def get_track_a_stats() -> dict:
         ).all()
 
     if not rows:
-        return {"total": 0, "by_market": {}, "by_league": [], "calibration": {}}
+        return {"total": 0, "by_market": {}, "by_league": [], "calibration": {},
+                "by_market_calibrated": {}, "calibration_calibrated": {}}
+
+    cal_snapshot = _load_calibration_snapshot()
 
     # ── By market ─────────────────────────────────────────────────────────────
     market_buckets: dict[str, dict] = {}
+    market_buckets_cal: dict[str, dict] = {}
     league_buckets: dict[tuple, dict] = {}
     calibration: dict[str, list] = {}
+    calibration_cal: dict[str, list] = {}
     excluded_corrupted: dict[str, int] = {}
 
     for r in rows:
@@ -442,39 +501,26 @@ def get_track_a_stats() -> dict:
 
         p = max(EPS, min(1 - EPS, our_prob))
         y = 1 if r.won else 0
-        bs = (p - y) ** 2
-        ll = -(y * math.log(p) + (1 - y) * math.log(1 - p))
 
-        # market stats
-        mb = market_buckets.setdefault(mkt, {"n": 0, "wins": 0, "bs_sum": 0.0, "ll_sum": 0.0})
-        mb["n"] += 1
-        mb["wins"] += y
-        mb["bs_sum"] += bs
-        mb["ll_sum"] += ll
+        _score_bucket_row(market_buckets, mkt, p, y, EPS)
+        cb = _calibration_bin_row(calibration, mkt, p)
+        cb["sum_p"] += p
+        cb["sum_y"] += y
+        cb["n"] += 1
 
-        # league stats
+        p_cal, _version = cal_snapshot.apply(mkt, r.league_id, our_prob)
+        _score_bucket_row(market_buckets_cal, mkt, p_cal, y, EPS)
+        cb_cal = _calibration_bin_row(calibration_cal, mkt, max(EPS, min(1 - EPS, p_cal)))
+        cb_cal["sum_p"] += max(EPS, min(1 - EPS, p_cal))
+        cb_cal["sum_y"] += y
+        cb_cal["n"] += 1
+
+        # league stats (raw only -- this table is about accuracy by league, not calibration)
         key = (r.league_id, r.league_name)
         lb = league_buckets.setdefault(key, {"n": 0, "wins": 0, "bs_sum": 0.0})
         lb["n"] += 1
         lb["wins"] += y
-        lb["bs_sum"] += bs
-
-        # calibration bins per market
-        bin_idx = min(int(p * 10), 9)
-        cb = calibration.setdefault(mkt, [{"sum_p": 0.0, "sum_y": 0, "n": 0} for _ in range(10)])
-        cb[bin_idx]["sum_p"] += p
-        cb[bin_idx]["sum_y"] += y
-        cb[bin_idx]["n"] += 1
-
-    by_market = {
-        mkt: {
-            "n": v["n"],
-            "accuracy": round(v["wins"] / v["n"], 4) if v["n"] else 0,
-            "brier": round(v["bs_sum"] / v["n"], 4) if v["n"] else 0,
-            "logloss": round(v["ll_sum"] / v["n"], 4) if v["n"] else 0,
-        }
-        for mkt, v in sorted(market_buckets.items())
-    }
+        lb["bs_sum"] += (p - y) ** 2
 
     by_league = sorted(
         [
@@ -490,26 +536,15 @@ def get_track_a_stats() -> dict:
         key=lambda x: -x["n"],
     )[:15]
 
-    calibration_out = {
-        mkt: [
-            {
-                "bin_label": f"{i*10}–{i*10+10}%",
-                "mean_pred": round(cb[i]["sum_p"] / cb[i]["n"], 3) if cb[i]["n"] else None,
-                "actual_rate": round(cb[i]["sum_y"] / cb[i]["n"], 3) if cb[i]["n"] else None,
-                "n": cb[i]["n"],
-            }
-            for i in range(10)
-        ]
-        for mkt, cb in calibration.items()
-    }
-
     _log_corrupted_prob_trail(excluded_corrupted)
 
     return {
         "total": len(rows) - sum(excluded_corrupted.values()),
-        "by_market": by_market,
+        "by_market": _finalize_by_market(market_buckets),
+        "by_market_calibrated": _finalize_by_market(market_buckets_cal),
         "by_league": by_league,
-        "calibration": calibration_out,
+        "calibration": _finalize_calibration(calibration),
+        "calibration_calibrated": _finalize_calibration(calibration_cal),
         "excluded_corrupted": excluded_corrupted,
     }
 
