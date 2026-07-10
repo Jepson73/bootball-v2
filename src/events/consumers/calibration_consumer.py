@@ -117,20 +117,39 @@ class CalibrationConsumer(EventConsumer):
             )
             label = new_ver["version_label"] if new_ver else "unknown"
 
+            # NOT a "recalibration complete" success: get_model_prediction() only
+            # applies calibrator objects exposing .calibrate() (MarketCalibrator),
+            # and explicitly skips raw sklearn IsotonicRegression objects like the
+            # one fit_calibrator_for_market() just produced and register_recalibration()
+            # just archived into the model pickle. This fit is real; its effect on
+            # served predictions is currently zero. See docs/codebase_reference.md
+            # Phase 33 for the audit. Do not restore a success banner here until
+            # Task 2 of that phase makes this artifact (or its successor) load at
+            # inference — verify that before ever calling this "complete" again.
             self._send_webhook({
-                "title": f"✅ RECALIBRATION COMPLETE: {market.upper()}",
-                "description": "Automatic recalibration triggered by live-drift ECE",
-                "color": 3066993,
+                "title": f"🗄️ ISOTONIC ARTIFACT FIT (NOT SERVED): {market.upper()}",
+                "description": (
+                    "Drift-triggered isotonic calibrator fit and archived to the model "
+                    "registry. It is NOT applied at inference — get_model_prediction() "
+                    "only loads calibrators with a .calibrate() method, and this is a "
+                    "raw IsotonicRegression. Predictions continue to serve LeagueCalibrationEngine's "
+                    "Platt-scaled calibrated_prob, unaffected by this fit."
+                ),
+                "color": 15105570,
                 "fields": [
                     {"name": "Market", "value": market.upper(), "inline": True},
-                    {"name": "New Version", "value": f"`{label}`", "inline": True},
+                    {"name": "Archived Version", "value": f"`{label}`", "inline": True},
                     {"name": "Trigger live_drift_ece", "value": f"{trigger_live_drift_ece:.4f}", "inline": True},
-                    {"name": "Post-recal postfit_eval_ece", "value": f"{post_postfit_eval_ece:.4f}", "inline": True},
+                    {"name": "Archived-artifact postfit_eval_ece", "value": f"{post_postfit_eval_ece:.4f} (not served)", "inline": True},
                     {"name": "Reason", "value": payload.get("reason", "drift"), "inline": False},
                 ],
                 "timestamp": payload.get("timestamp", ""),
             })
-            logger.info("[CALIBRATION] Auto-recalibration complete: %s → %s", market, label)
+            logger.warning(
+                "[CALIBRATION] Isotonic artifact fit+archived (NOT served at inference): %s -> %s "
+                "(postfit_eval_ece=%.4f). Predictions still serve LeagueCalibrationEngine's Platt output.",
+                market, label, post_postfit_eval_ece,
+            )
 
         except Exception as e:
             logger.exception("[CALIBRATION] Auto-recalibration failed for %s", market)
