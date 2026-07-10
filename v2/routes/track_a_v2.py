@@ -7,7 +7,7 @@ Works entirely from settled PredictionRecords — no odds required.
 from flask import Blueprint
 from v2.auth_v2 import require_auth
 from v2.templates_v2 import page
-from v2.db_v2 import get_track_a_stats
+from v2.db_v2 import get_track_a_stats, get_track_b_collection_status
 
 bp_track_a = Blueprint("track_a_v2", __name__)
 
@@ -94,11 +94,20 @@ def track_a():
               </div>
             </div>
             """
+        excluded_n = stats.get("excluded_corrupted", {}).get(mkt, 0)
+        excluded_note = (
+            f"""<p style="font-size:11px;color:#f0883e;margin-bottom:12px">
+              ⚠ {excluded_n} rows excluded — known data-quality incident
+              (bad calibrator artifact, 2026-05-09 to 2026-05-12); see
+              data/lineage/track_a_scoring_corrections.json</p>"""
+            if excluded_n else ""
+        )
         if rows:
             cal_html += f"""
             <div class="card">
               <div class="card-title">Calibration — {_MARKET_LABELS.get(mkt, mkt)}</div>
               <p style="font-size:11px;color:#8b949e;margin-bottom:12px">Blue bar = mean predicted probability · Green bar = actual win rate per bin</p>
+              {excluded_note}
               {rows}
             </div>
             """
@@ -129,6 +138,45 @@ def track_a():
     </div>
     """ if league_rows else ""
 
+    # ── Track B — live collection status (never describes a superseded plan) ──
+    cb = get_track_b_collection_status()
+    if not cb.get("started"):
+        track_b_html = """
+        <div class="card" style="background:#0d2340;border-color:#1f6feb">
+          <div class="card-title" style="color:#58a6ff">Track B — Pending Pinnacle Data</div>
+          <p>CLV / EV overlay requires Pinnacle odds snapshots. No odds_snapshots rows yet —
+             collection clock has not started.</p>
+        </div>
+        """
+    else:
+        track_b_html = f"""
+        <div class="card" style="background:#0d2340;border-color:#1f6feb">
+          <div class="card-title" style="color:#58a6ff">Track B — Collection Status (Pinnacle-gated)</div>
+          <p style="margin-bottom:8px">CLV / EV overlay requires paired early + near-kickoff Pinnacle odds
+             snapshots per fixture. Live read of <code>odds_snapshots</code>, not a fixed plan:</p>
+          <div class="grid grid-3" style="margin-bottom:8px">
+            <div class="stat">
+              <span class="stat-value">{cb['days_running']}</span>
+              <span class="stat-label">Days collecting (since {cb['collection_start']})</span>
+            </div>
+            <div class="stat">
+              <span class="stat-value">{cb['fixtures_with_2plus_snapshots']:,}</span>
+              <span class="stat-label">Fixtures with ≥2 snapshots (any book)</span>
+            </div>
+            <div class="stat">
+              <span class="stat-value">{cb['qualifying_pairs_total']:,}</span>
+              <span class="stat-label">Settled, early+near-kickoff pairs</span>
+            </div>
+          </div>
+          <p style="font-size:11px;color:#8b949e">
+             Qualifying rate: ~{cb['recent_daily_qualifying_rate']}/day (last {cb['recent_rate_window_days']} days)
+             &nbsp;|&nbsp; Pinnacle-covered subset: {cb['pinnacle_fixtures_with_2plus_snapshots']:,} fixtures
+             with ≥2 Pinnacle snapshots, collecting since {cb['pinnacle_collection_start']}
+             &nbsp;|&nbsp; Track B overlay is Pinnacle-covered fixtures only — it will not appear for
+             the rest of Track A's leagues regardless of sample size.</p>
+        </div>
+        """
+
     content = f"""
     <div style="margin-bottom:24px">
       <h1>Track A — Prediction Accuracy</h1>
@@ -144,12 +192,7 @@ def track_a():
     {cal_html}
     {league_table}
 
-    <div class="card" style="background:#0d2340;border-color:#1f6feb">
-      <div class="card-title" style="color:#58a6ff">Track B — Pending Pinnacle Data</div>
-      <p>CLV / EV overlay requires Pinnacle odds snapshots. Collection clock hasn't started.
-         Once ~150 days of snapshots are available, Track B will overlay EV signals here
-         for Pinnacle-covered fixtures only.</p>
-    </div>
+    {track_b_html}
     """
 
     return page("Track A · Accuracy", content, active="track_a")

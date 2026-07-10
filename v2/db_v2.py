@@ -192,6 +192,89 @@ def get_snapshot_timeseries() -> list[dict]:
     return [{"day": str(r[0]), "count": r[1]} for r in rows]
 
 
+# "Near-kickoff" matches odds_trajectory_scheduler.py's HOURLY_PHASE_HOURS (the
+# scheduler switches to hourly polling inside this window). "Early" requires a
+# snapshot from well outside that window (the once-daily "far phase"), so a
+# qualifying pair actually spans an open-to-close trajectory rather than two
+# snapshots taken minutes apart.
+_NEAR_KICKOFF_HOURS = 2.0
+_EARLY_MIN_HOURS = 12.0
+_RECENT_RATE_WINDOW_DAYS = 5
+
+
+def get_track_b_collection_status() -> dict:
+    """Live read of odds_snapshots collection progress for the Track B panel.
+
+    Replaces the old hardcoded "clock hasn't started / ~150 days" text. All
+    numbers are computed from odds_snapshots + fixtures on every call — no
+    stored plan, no hand-set thresholds beyond the phase-boundary constants
+    above (which mirror the actual collection scheduler's own cadence).
+    """
+    with get_session() as s:
+        total = s.execute(select(func.count()).select_from(OddsSnapshot)).scalar() or 0
+        if total == 0:
+            return {"started": False}
+
+        earliest = s.execute(select(func.min(OddsSnapshot.captured_at))).scalar()
+        latest = s.execute(select(func.max(OddsSnapshot.captured_at))).scalar()
+
+        fixtures_with_2plus = s.execute(text("""
+            SELECT COUNT(*) FROM (
+                SELECT fixture_id FROM odds_snapshots
+                GROUP BY fixture_id HAVING COUNT(*) >= 2
+            )
+        """)).scalar() or 0
+
+        pinnacle_earliest = s.execute(
+            select(func.min(OddsSnapshot.captured_at)).where(OddsSnapshot.bookmaker_name == "Pinnacle")
+        ).scalar()
+        pinnacle_fixtures_2plus = s.execute(text("""
+            SELECT COUNT(*) FROM (
+                SELECT fixture_id FROM odds_snapshots WHERE bookmaker_name = 'Pinnacle'
+                GROUP BY fixture_id HAVING COUNT(*) >= 2
+            )
+        """)).scalar() or 0
+
+        qualifying_sql = """
+            SELECT {select_expr} FROM (
+                SELECT f.id, f.date AS fixture_date
+                FROM fixtures f
+                JOIN odds_snapshots o ON o.fixture_id = f.id
+                WHERE f.status IN ('FT', 'AET', 'PEN')
+                GROUP BY f.id
+                HAVING
+                    SUM(CASE WHEN (julianday(f.date) - julianday(o.captured_at)) * 24 >= :early_h THEN 1 ELSE 0 END) > 0
+                    AND SUM(CASE WHEN (julianday(f.date) - julianday(o.captured_at)) * 24 BETWEEN -2 AND :near_h THEN 1 ELSE 0 END) > 0
+            ) q
+        """
+        params = {"early_h": _EARLY_MIN_HOURS, "near_h": _NEAR_KICKOFF_HOURS}
+        qualifying_total = s.execute(
+            text(qualifying_sql.format(select_expr="COUNT(*)")), params
+        ).scalar() or 0
+
+        daily_rows = s.execute(
+            text(qualifying_sql.format(select_expr="substr(fixture_date, 1, 10) AS d, COUNT(*)") + " GROUP BY d ORDER BY d"),
+            params,
+        ).all()
+
+    recent_days = daily_rows[-_RECENT_RATE_WINDOW_DAYS:] if daily_rows else []
+    recent_rate = round(sum(r[1] for r in recent_days) / len(recent_days), 1) if recent_days else 0.0
+
+    days_running = (latest.date() - earliest.date()).days + 1 if earliest and latest else 0
+
+    return {
+        "started": True,
+        "collection_start": earliest.date().isoformat() if earliest else None,
+        "days_running": days_running,
+        "fixtures_with_2plus_snapshots": fixtures_with_2plus,
+        "qualifying_pairs_total": qualifying_total,
+        "recent_daily_qualifying_rate": recent_rate,
+        "recent_rate_window_days": len(recent_days),
+        "pinnacle_collection_start": pinnacle_earliest.date().isoformat() if pinnacle_earliest else None,
+        "pinnacle_fixtures_with_2plus_snapshots": pinnacle_fixtures_2plus,
+    }
+
+
 # ── Quota log ─────────────────────────────────────────────────────────────────
 
 def get_quota_log(n: int = 10) -> list[dict]:
@@ -223,11 +306,68 @@ def get_latest_quota() -> dict | None:
 
 # ── Track A ────────────────────────────────────────────────────────────────────
 
+_BINARY_MARKETS = {"btts", "ou25", "ou15"}
+
+
+def _log_corrupted_prob_trail(excluded: dict[str, int]) -> None:
+    """Persist a correction-trail record for rows excluded by the invariant check
+    below, so the exclusion is auditable without re-deriving it from scratch.
+
+    Written once per distinct exclusion-count signature (cheap file existence
+    check) rather than on every page load — get_track_a_stats() runs on every
+    Track A request.
+    """
+    if not excluded:
+        return
+    logger.warning("TRACK_A_SCORING: excluded corrupted our_prob rows (invariant "
+                    "our_prob>=0.5 for argmax-selected binary outcome violated): %s", excluded)
+    trail_path = Path("data/lineage/track_a_scoring_corrections.json")
+    sig = ",".join(f"{k}={v}" for k, v in sorted(excluded.items()))
+    try:
+        if trail_path.exists() and trail_path.read_text().find(sig) != -1:
+            return  # already logged this exact signature
+        trail_path.parent.mkdir(parents=True, exist_ok=True)
+        import json as _json
+        entries = []
+        if trail_path.exists():
+            try:
+                entries = _json.loads(trail_path.read_text())
+            except Exception:
+                entries = []
+        entries.append({
+            "logged_at": datetime.now(timezone.utc).isoformat(),
+            "signature": sig,
+            "excluded_by_market": excluded,
+            "reason": (
+                "our_prob for the argmax-selected (predicted) outcome of a binary "
+                "market can never legitimately be <0.5 -- best_outcome is chosen as "
+                "max(model_probs.items()). Rows violating this were traced (Phase 32 "
+                "Task 2) to a bad embedded per-outcome calibrator live 2026-05-09 to "
+                "2026-05-12 for ou15 model_version_id=10, self-corrected by a "
+                "subsequent model/calibrator swap (model_version 44, 2026-05-12 "
+                "04:12:39). calibrated_prob coverage on the affected rows is too "
+                "sparse (142/411) to use as a substitute, so affected rows are "
+                "excluded from Track A scoring rather than assigned a fabricated "
+                "probability. prediction_records is left untouched -- this is a "
+                "scoring-time exclusion, not a data rewrite."
+            ),
+        })
+        trail_path.write_text(_json.dumps(entries, indent=2))
+    except Exception:
+        logger.exception("TRACK_A_SCORING: failed to write correction-trail file")
+
+
 def get_track_a_stats() -> dict:
     """
     Compute Track A accuracy stats from settled PredictionRecords.
     Returns stats by market and top-10 leagues.
     Does NOT import from web_ui.py.
+
+    Rows where our_prob < 0.5 for a binary market's predicted (argmax-selected)
+    outcome are excluded from scoring -- see _log_corrupted_prob_trail(). That
+    combination is mathematically impossible for a healthy write path (our_prob
+    IS the max of the two-outcome dict), so its presence flags corrupted data,
+    not a genuinely unconfident model.
     """
     try:
         from src.storage.models import PredictionRecord
@@ -259,14 +399,20 @@ def get_track_a_stats() -> dict:
     market_buckets: dict[str, dict] = {}
     league_buckets: dict[tuple, dict] = {}
     calibration: dict[str, list] = {}
+    excluded_corrupted: dict[str, int] = {}
 
     for r in rows:
-        p = float(r.our_prob or 0.5)
-        p = max(EPS, min(1 - EPS, p))
+        mkt = r.market or "unknown"
+        our_prob = float(r.our_prob or 0.5)
+
+        if mkt in _BINARY_MARKETS and our_prob < 0.5:
+            excluded_corrupted[mkt] = excluded_corrupted.get(mkt, 0) + 1
+            continue
+
+        p = max(EPS, min(1 - EPS, our_prob))
         y = 1 if r.won else 0
         bs = (p - y) ** 2
         ll = -(y * math.log(p) + (1 - y) * math.log(1 - p))
-        mkt = r.market or "unknown"
 
         # market stats
         mb = market_buckets.setdefault(mkt, {"n": 0, "wins": 0, "bs_sum": 0.0, "ll_sum": 0.0})
@@ -326,11 +472,14 @@ def get_track_a_stats() -> dict:
         for mkt, cb in calibration.items()
     }
 
+    _log_corrupted_prob_trail(excluded_corrupted)
+
     return {
-        "total": len(rows),
+        "total": len(rows) - sum(excluded_corrupted.values()),
         "by_market": by_market,
         "by_league": by_league,
         "calibration": calibration_out,
+        "excluded_corrupted": excluded_corrupted,
     }
 
 
