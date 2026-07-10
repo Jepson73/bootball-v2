@@ -72,12 +72,25 @@ def _brier(probs: np.ndarray, actuals: np.ndarray) -> float:
 class LeagueCalibrationEngine:
     """Fits and applies per-league Platt-scaling calibration."""
 
-    def fit_all(self) -> list[FitResult]:
-        """Fit calibration for every (market, league_id) with enough data."""
+    def fit_all(self, market: str | None = None) -> list[FitResult]:
+        """Fit calibration for every (market, league_id) with enough data.
+
+        Pass `market` to scope the refit to a single market (used by the
+        drift-triggered path — Phase 33 made this the sole calibrator that
+        serves, so an unscoped fit_all() on every single-market drift event
+        would needlessly refit the other 3 markets' ~150 league calibrations
+        each time and spam notify_calibration_change() for all of them).
+        """
         results: list[FitResult] = []
         with get_session() as s:
-            # Pull all settled predictions with their league context
-            rows = s.execute(
+            # Pull all settled predictions with their league context.
+            # our_prob < 0.5 for a binary market's predicted outcome is the
+            # Phase 32 corruption signature (mathematically impossible for a
+            # healthy write path — our_prob is the max() of the two-outcome
+            # dict) — excluded here too so a refit never re-trains on the
+            # same known-bad rows get_track_a_stats() already excludes from
+            # scoring.
+            query = (
                 select(
                     PredictionRecord.market,
                     Fixture.league_id,
@@ -89,14 +102,21 @@ class LeagueCalibrationEngine:
                 .where(PredictionRecord.settled == True)
                 .where(PredictionRecord.won.isnot(None))
                 .where(PredictionRecord.our_prob.isnot(None))
+                .where(
+                    (PredictionRecord.market.notin_(["btts", "ou25", "ou15"]))
+                    | (PredictionRecord.our_prob >= 0.5)
+                )
                 .order_by(PredictionRecord.created_at)
-            ).all()
+            )
+            if market is not None:
+                query = query.where(PredictionRecord.market == market)
+            rows = s.execute(query).all()
 
         # Group chronologically per (market, league_id)
         from collections import defaultdict
         groups: dict[tuple[str, int], list] = defaultdict(list)
-        for market, league_id, prob, won, ts in rows:
-            groups[(market, league_id)].append((ts, float(prob), int(won)))
+        for mkt, league_id, prob, won, ts in rows:
+            groups[(mkt, league_id)].append((ts, float(prob), int(won)))
 
         # Get active ModelVersion per market for version labels
         version_map = self._active_versions()
@@ -104,16 +124,16 @@ class LeagueCalibrationEngine:
         # Fit L0000 global calibration first (all leagues combined, league_id=None).
         # L0000 delta is vs raw — measures whether global calibration helps at all.
         global_groups: dict[str, list] = {}
-        for (market, _league_id), samples in groups.items():
-            global_groups.setdefault(market, []).extend(samples)
+        for (mkt, _league_id), samples in groups.items():
+            global_groups.setdefault(mkt, []).extend(samples)
         global_results: dict[str, FitResult] = {}
-        for market, samples in global_groups.items():
+        for mkt, samples in global_groups.items():
             if len(samples) >= MIN_SAMPLES:
-                result = self._fit_one(market, None, samples, version_map)
+                result = self._fit_one(mkt, None, samples, version_map)
                 if result:
                     self._save(result)
                     results.append(result)
-                    global_results[market] = result
+                    global_results[mkt] = result
                     logger.info(
                         "Global cal (L0000) %s  bs=%.4f (Δ%+.4f vs raw)  activated=%s",
                         result.version_label, result.brier_score,
@@ -122,11 +142,13 @@ class LeagueCalibrationEngine:
 
         # League-specific calibrations: delta is vs L0000 (not raw) so "positive" means
         # the league cal genuinely beats the global fallback, not just uncalibrated output.
-        for (market, league_id), samples in groups.items():
+        refit_league_keys: set[tuple[str, int]] = set()
+        for (mkt, league_id), samples in groups.items():
             if len(samples) < MIN_SAMPLES:
                 continue
-            global_cal = global_results.get(market)
-            result = self._fit_one(market, league_id, samples, version_map, global_cal=global_cal)
+            refit_league_keys.add((mkt, league_id))
+            global_cal = global_results.get(mkt)
+            result = self._fit_one(mkt, league_id, samples, version_map, global_cal=global_cal)
             if result:
                 self._save(result)
                 results.append(result)
@@ -136,7 +158,37 @@ class LeagueCalibrationEngine:
                     result.brier_score, result.brier_improvement, result.activated
                 )
 
+        # A league whose sample count DROPS below MIN_SAMPLES between refits (e.g.
+        # losing rows to a corruption exclusion, as ou15 league 211 did going from
+        # 25 -> 24 the first time this ran with the Phase 32 filter) is skipped above
+        # -- but its previously-active calibration must not be left silently serving
+        # forever just because nothing newer ever supersedes it. Deactivate any
+        # currently-active league calibration in this fit's scope that isn't among
+        # today's refit leagues, so apply() falls back to L0000/raw as designed.
+        self._deactivate_orphaned_leagues(market, refit_league_keys)
+
         return results
+
+    def _deactivate_orphaned_leagues(self, market: str | None, refit_league_keys: set[tuple[str, int]]) -> None:
+        with get_session() as s:
+            q = select(LeagueCalibration).where(
+                LeagueCalibration.is_active == True,
+                LeagueCalibration.league_id.isnot(None),
+            )
+            if market is not None:
+                q = q.where(LeagueCalibration.market == market)
+            active_league_rows = s.execute(q).scalars().all()
+            for row in active_league_rows:
+                if (row.market, row.league_id) not in refit_league_keys:
+                    logger.warning(
+                        "League cal %s (market=%s league=%d) fell below MIN_SAMPLES=%d "
+                        "on refit -- deactivating so apply() falls back to L0000/raw "
+                        "instead of leaving it silently active.",
+                        row.version_label, row.market, row.league_id, MIN_SAMPLES,
+                    )
+                    row.is_active = False
+            if active_league_rows:
+                s.commit()
 
     def _fit_one(
         self,

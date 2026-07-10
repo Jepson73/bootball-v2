@@ -1,10 +1,24 @@
 """
 Fits an isotonic calibrator on recent settled prediction_records for a market.
 
-Extracted from backend/execution_engine.py during Phase 31 Part D: this is the one
-live, load-bearing function in that file (called by
-src/events/consumers/calibration_consumer.py's CALIBRATION_DRIFT_DETECTED handler) --
-everything else there was dead ExecutionEngine dispatcher machinery archived with V1.
+ARCHIVED, Phase 33: no longer called by anything. calibration_consumer.py's
+CALIBRATION_DRIFT_DETECTED handler used to fit here and archive the result via
+ModelRegistry.register_recalibration() -- but get_model_prediction() only applies
+calibrator objects exposing .calibrate() (MarketCalibrator), and explicitly skips
+the raw sklearn.isotonic.IsotonicRegression this function returns. That refit
+path was therefore a real action with zero effect on served predictions --
+fixed by pointing the drift handler at LeagueCalibrationEngine.fit_all()
+instead (the Platt-scaling stack that actually reaches inference).
+Phase 33 Task 2 compared both algorithms fresh on the same corruption-excluded
+window and found them within noise of each other (Brier/ECE delta <0.01 on
+all 4 markets) -- so this is kept for reference/a possible future ensemble,
+not because it measured worse, but because building a second serving path for
+a statistically-equivalent algorithm wasn't worth the complexity. The drift
+MONITOR that triggers CALIBRATION_DRIFT_DETECTED (StateCalibrationEngine's
+live_drift_ece, computed from PredictionRecord settlements) is unaffected by
+this and remains correct -- only this refit ARTIFACT path was dead.
+
+Extracted from backend/execution_engine.py during Phase 31 Part D.
 """
 
 import logging

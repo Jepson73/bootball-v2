@@ -262,6 +262,14 @@ class ModelRegistry:
 
         The base model pkl is unchanged; only the calibrator is updated.
         Returns the new ModelVersion row.
+
+        ARCHIVED, Phase 33: no longer called by anything. This archived isotonic
+        calibrator objects (from src/calibration/calibrator_fitting.py) into the
+        model pickle's `calibrator` key -- but get_model_prediction() only loads
+        calibrators exposing .calibrate(), so the archived artifact never reached
+        inference. Kept for reference; the live drift-triggered refit path is now
+        LeagueCalibrationEngine.fit_all(market=...), called from
+        src/events/consumers/calibration_consumer.py.
         """
         from src.storage.db import get_session
         from src.storage.models import ModelVersion, RetrainEvent

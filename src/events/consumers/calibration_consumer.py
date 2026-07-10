@@ -83,16 +83,29 @@ class CalibrationConsumer(EventConsumer):
             self._send_drift_notification(payload)
 
     def _run_recalibration(self, market: str, payload: dict[str, Any]) -> None:
-        """Fit a new calibrator for the market, register it, and notify Discord."""
-        try:
-            from src.calibration.calibrator_fitting import fit_calibrator_for_market
-            from src.models.model_registry import get_model_registry
+        """Refit LeagueCalibrationEngine's Platt calibration for `market` and notify Discord.
 
-            calibrator, cal_metrics = fit_calibrator_for_market(market)
-            if calibrator is None:
+        Phase 33: this used to fit+archive an isotonic calibrator
+        (calibrator_fitting.fit_calibrator_for_market) that get_model_prediction()
+        never actually loads — a drift alarm that fired a real action with zero
+        effect on served predictions. Same-window comparison (Phase 33 Task 2)
+        showed isotonic and Platt score within noise of each other on this data,
+        so rather than build a second path to serve, this now refits the ONE
+        stack that already reaches inference: LeagueCalibrationEngine, scoped to
+        just the drifted market (fit_all(market=...) — an unscoped call would
+        needlessly refit the other 3 markets' ~150 league calibrations on every
+        single-market drift event).
+        """
+        try:
+            from src.calibration.league_calibration_engine import LeagueCalibrationEngine
+
+            engine = LeagueCalibrationEngine()
+            fit_results = engine.fit_all(market=market)
+
+            if not fit_results:
                 self._send_webhook({
                     "title": f"⚠️ RECALIBRATION SKIPPED: {market.upper()}",
-                    "description": "Insufficient settled data (< 100 rows). Will retry after next cooldown period.",
+                    "description": "Insufficient settled data (< 25 rows) to fit any calibration. Will retry after next cooldown period.",
                     "color": 15105570,
                     "fields": [
                         {"name": "Market", "value": market.upper(), "inline": True},
@@ -102,53 +115,45 @@ class CalibrationConsumer(EventConsumer):
                 })
                 return
 
+            global_result = next((r for r in fit_results if r.league_id is None), None)
+            league_results = [r for r in fit_results if r.league_id is not None]
+            activated_leagues = sum(1 for r in league_results if r.activated)
+
             # live_drift_ece: the drift monitor's own ECE (recent PredictionRecord
             # settlements, StateCalibrationEngine) — what triggered this recalibration.
-            # postfit_eval_ece: the newly-fit calibrator's held-out eval ECE
-            # (fit_calibrator_for_market) — NOT the same metric; see Phase 27b/28
-            # and the Separation Principle in docs/codebase_reference.md.
+            # See Phase 27b/28 and the Separation Principle in docs/codebase_reference.md
+            # for why this must never be conflated with a calibrator's own fit metrics.
             trigger_live_drift_ece = payload.get("live_drift_ece", 0)
-            post_postfit_eval_ece = (cal_metrics or {}).get("postfit_eval_ece", 0)
-            cal_metrics["trigger_live_drift_ece"] = trigger_live_drift_ece
 
-            registry = get_model_registry()
-            new_ver = registry.register_recalibration(
-                market, calibrator, metrics=cal_metrics, reason="auto_drift"
-            )
-            label = new_ver["version_label"] if new_ver else "unknown"
+            fields = [
+                {"name": "Market", "value": market.upper(), "inline": True},
+                {"name": "Trigger live_drift_ece", "value": f"{trigger_live_drift_ece:.4f}", "inline": True},
+                {"name": "Reason", "value": payload.get("reason", "drift"), "inline": True},
+            ]
+            if global_result:
+                fields.append({
+                    "name": "Global (L0000)",
+                    "value": f"`{global_result.version_label}` Brier={global_result.brier_score:.4f} "
+                             f"(Δ{global_result.brier_improvement:+.4f} vs raw) activated={global_result.activated}",
+                    "inline": False,
+                })
+            fields.append({
+                "name": "League calibrations refit",
+                "value": f"{activated_leagues}/{len(league_results)} activated (beat L0000 on held-out)",
+                "inline": False,
+            })
 
-            # NOT a "recalibration complete" success: get_model_prediction() only
-            # applies calibrator objects exposing .calibrate() (MarketCalibrator),
-            # and explicitly skips raw sklearn IsotonicRegression objects like the
-            # one fit_calibrator_for_market() just produced and register_recalibration()
-            # just archived into the model pickle. This fit is real; its effect on
-            # served predictions is currently zero. See docs/codebase_reference.md
-            # Phase 33 for the audit. Do not restore a success banner here until
-            # Task 2 of that phase makes this artifact (or its successor) load at
-            # inference — verify that before ever calling this "complete" again.
             self._send_webhook({
-                "title": f"🗄️ ISOTONIC ARTIFACT FIT (NOT SERVED): {market.upper()}",
-                "description": (
-                    "Drift-triggered isotonic calibrator fit and archived to the model "
-                    "registry. It is NOT applied at inference — get_model_prediction() "
-                    "only loads calibrators with a .calibrate() method, and this is a "
-                    "raw IsotonicRegression. Predictions continue to serve LeagueCalibrationEngine's "
-                    "Platt-scaled calibrated_prob, unaffected by this fit."
-                ),
-                "color": 15105570,
-                "fields": [
-                    {"name": "Market", "value": market.upper(), "inline": True},
-                    {"name": "Archived Version", "value": f"`{label}`", "inline": True},
-                    {"name": "Trigger live_drift_ece", "value": f"{trigger_live_drift_ece:.4f}", "inline": True},
-                    {"name": "Archived-artifact postfit_eval_ece", "value": f"{post_postfit_eval_ece:.4f} (not served)", "inline": True},
-                    {"name": "Reason", "value": payload.get("reason", "drift"), "inline": False},
-                ],
+                "title": f"✅ RECALIBRATION COMPLETE: {market.upper()}",
+                "description": "LeagueCalibrationEngine refit (Platt scaling) — this IS the stack applied at inference.",
+                "color": 3066993,
+                "fields": fields,
                 "timestamp": payload.get("timestamp", ""),
             })
-            logger.warning(
-                "[CALIBRATION] Isotonic artifact fit+archived (NOT served at inference): %s -> %s "
-                "(postfit_eval_ece=%.4f). Predictions still serve LeagueCalibrationEngine's Platt output.",
-                market, label, post_postfit_eval_ece,
+            logger.info(
+                "[CALIBRATION] Recalibration complete (served): %s — global %s, %d/%d league cals activated",
+                market, global_result.version_label if global_result else "n/a",
+                activated_leagues, len(league_results),
             )
 
         except Exception as e:
