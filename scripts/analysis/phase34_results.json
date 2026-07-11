@@ -1,0 +1,1830 @@
+{
+  "generated_from_rows": 193177,
+  "task1_data_quality": {
+    "snapshots_per_fixture": {
+      "n_fixtures": 1526,
+      "mean": 126.6,
+      "median": 115.0,
+      "p10": 27.0,
+      "p25": 71.0,
+      "p75": 176.0,
+      "p90": 229.0,
+      "max": 665,
+      "n_with_1_snapshot": 3,
+      "n_with_ge2": 1523
+    },
+    "settled_snapshots_per_fixture": {
+      "n_fixtures": 1087,
+      "mean": 140.4,
+      "median": 126.0
+    },
+    "qualifying_settled_fixtures": {
+      "n": 915,
+      "has_early_only_no_near": 3,
+      "has_near_only_no_early": 169
+    },
+    "capture_spacing": {
+      "daily_phase_design_hours": 24.0,
+      "daily_phase_actual": {
+        "n": 54383,
+        "median_hours": 20.45,
+        "p25_hours": 11.5,
+        "p75_hours": 20.5
+      },
+      "hourly_phase_design_hours": 1.0,
+      "hourly_phase_actual": {
+        "n": 101877,
+        "median_hours": 1.49,
+        "p25_hours": 1.0,
+        "p75_hours": 1.5
+      }
+    },
+    "bookmaker_presence_by_bucket": [
+      {
+        "bucket": "0-1h",
+        "n_fixtures_with_any_snapshot": 791,
+        "pinnacle_pct": 87.7,
+        "1xBet_pct": 95.1
+      },
+      {
+        "bucket": "1-2h",
+        "n_fixtures_with_any_snapshot": 1016,
+        "pinnacle_pct": 88.3,
+        "1xBet_pct": 96.5
+      },
+      {
+        "bucket": "2-6h",
+        "n_fixtures_with_any_snapshot": 1287,
+        "pinnacle_pct": 88.2,
+        "1xBet_pct": 98.0
+      },
+      {
+        "bucket": "6-24h",
+        "n_fixtures_with_any_snapshot": 1048,
+        "pinnacle_pct": 43.9,
+        "1xBet_pct": 97.5
+      },
+      {
+        "bucket": "24-72h",
+        "n_fixtures_with_any_snapshot": 704,
+        "pinnacle_pct": 53.3,
+        "1xBet_pct": 94.3
+      },
+      {
+        "bucket": "72-168h",
+        "n_fixtures_with_any_snapshot": 243,
+        "pinnacle_pct": 63.0,
+        "1xBet_pct": 95.5
+      }
+    ],
+    "modal_soft_book": "1xBet",
+    "pinnacle_rows_by_market": {
+      "h2h": 6257,
+      "ou25": 5567,
+      "btts": 0
+    },
+    "daily_capture_volume": {
+      "2026-07-02": {
+        "rows": 9599,
+        "fixtures": 331
+      },
+      "2026-07-03": {
+        "rows": 22926,
+        "fixtures": 549
+      },
+      "2026-07-04": {
+        "rows": 39344,
+        "fixtures": 535
+      },
+      "2026-07-05": {
+        "rows": 24552,
+        "fixtures": 264
+      },
+      "2026-07-06": {
+        "rows": 7083,
+        "fixtures": 199
+      },
+      "2026-07-07": {
+        "rows": 11149,
+        "fixtures": 275
+      },
+      "2026-07-08": {
+        "rows": 12934,
+        "fixtures": 277
+      },
+      "2026-07-09": {
+        "rows": 13156,
+        "fixtures": 368
+      },
+      "2026-07-10": {
+        "rows": 25322,
+        "fixtures": 560
+      },
+      "2026-07-11": {
+        "rows": 27112,
+        "fixtures": 371
+      }
+    }
+  },
+  "task2_movement": {
+    "magnitude_by_market_bookmaker": [
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "10Bet",
+        "n": 420,
+        "mean_abs_delta_pp": 2.43,
+        "median_abs_delta_pp": 1.68,
+        "p75_abs_delta_pp": 3.67,
+        "mean_signed_delta_pp": 0.25
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "1xBet",
+        "n": 879,
+        "mean_abs_delta_pp": 3.39,
+        "median_abs_delta_pp": 2.31,
+        "p75_abs_delta_pp": 4.75,
+        "mean_signed_delta_pp": 0.3
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "888Sport",
+        "n": 231,
+        "mean_abs_delta_pp": 1.91,
+        "median_abs_delta_pp": 1.16,
+        "p75_abs_delta_pp": 2.77,
+        "mean_signed_delta_pp": 0.69
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "Bet365",
+        "n": 836,
+        "mean_abs_delta_pp": 3.28,
+        "median_abs_delta_pp": 2.38,
+        "p75_abs_delta_pp": 4.93,
+        "mean_signed_delta_pp": 0.06
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "BetVictor",
+        "n": 434,
+        "mean_abs_delta_pp": 2.28,
+        "median_abs_delta_pp": 1.54,
+        "p75_abs_delta_pp": 3.33,
+        "mean_signed_delta_pp": 0.28
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "Betano",
+        "n": 716,
+        "mean_abs_delta_pp": 3.14,
+        "median_abs_delta_pp": 2.24,
+        "p75_abs_delta_pp": 4.62,
+        "mean_signed_delta_pp": 0.26
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "Betfair",
+        "n": 767,
+        "mean_abs_delta_pp": 3.1,
+        "median_abs_delta_pp": 2.14,
+        "p75_abs_delta_pp": 4.74,
+        "mean_signed_delta_pp": 0.25
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "Dafabet",
+        "n": 767,
+        "mean_abs_delta_pp": 3.1,
+        "median_abs_delta_pp": 2.04,
+        "p75_abs_delta_pp": 4.62,
+        "mean_signed_delta_pp": 0.05
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "Marathonbet",
+        "n": 814,
+        "mean_abs_delta_pp": 3.21,
+        "median_abs_delta_pp": 2.16,
+        "p75_abs_delta_pp": 4.64,
+        "mean_signed_delta_pp": 0.34
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "Pinnacle",
+        "n": 439,
+        "mean_abs_delta_pp": 2.13,
+        "median_abs_delta_pp": 1.32,
+        "p75_abs_delta_pp": 3.0,
+        "mean_signed_delta_pp": 0.2
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "SBO",
+        "n": 225,
+        "mean_abs_delta_pp": 1.6,
+        "median_abs_delta_pp": 0.96,
+        "p75_abs_delta_pp": 2.25,
+        "mean_signed_delta_pp": -0.02
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "Superbet",
+        "n": 119,
+        "mean_abs_delta_pp": 1.3,
+        "median_abs_delta_pp": 0.16,
+        "p75_abs_delta_pp": 1.72,
+        "mean_signed_delta_pp": -0.04
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "Unibet",
+        "n": 500,
+        "mean_abs_delta_pp": 1.66,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 2.91,
+        "mean_signed_delta_pp": 0.44
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "William Hill",
+        "n": 514,
+        "mean_abs_delta_pp": 2.44,
+        "median_abs_delta_pp": 1.44,
+        "p75_abs_delta_pp": 3.44,
+        "mean_signed_delta_pp": 0.26
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "10Bet",
+        "n": 420,
+        "mean_abs_delta_pp": 0.89,
+        "median_abs_delta_pp": 0.62,
+        "p75_abs_delta_pp": 1.28,
+        "mean_signed_delta_pp": -0.08
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "1xBet",
+        "n": 879,
+        "mean_abs_delta_pp": 1.36,
+        "median_abs_delta_pp": 0.94,
+        "p75_abs_delta_pp": 1.88,
+        "mean_signed_delta_pp": -0.13
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "888Sport",
+        "n": 231,
+        "mean_abs_delta_pp": 0.99,
+        "median_abs_delta_pp": 0.79,
+        "p75_abs_delta_pp": 1.36,
+        "mean_signed_delta_pp": -0.33
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "Bet365",
+        "n": 836,
+        "mean_abs_delta_pp": 1.11,
+        "median_abs_delta_pp": 0.79,
+        "p75_abs_delta_pp": 1.59,
+        "mean_signed_delta_pp": -0.21
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "BetVictor",
+        "n": 434,
+        "mean_abs_delta_pp": 0.8,
+        "median_abs_delta_pp": 0.63,
+        "p75_abs_delta_pp": 1.08,
+        "mean_signed_delta_pp": -0.24
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "Betano",
+        "n": 716,
+        "mean_abs_delta_pp": 1.21,
+        "median_abs_delta_pp": 0.85,
+        "p75_abs_delta_pp": 1.78,
+        "mean_signed_delta_pp": -0.16
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "Betfair",
+        "n": 767,
+        "mean_abs_delta_pp": 1.06,
+        "median_abs_delta_pp": 0.79,
+        "p75_abs_delta_pp": 1.52,
+        "mean_signed_delta_pp": 0.05
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "Dafabet",
+        "n": 767,
+        "mean_abs_delta_pp": 1.17,
+        "median_abs_delta_pp": 0.77,
+        "p75_abs_delta_pp": 1.59,
+        "mean_signed_delta_pp": -0.14
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "Marathonbet",
+        "n": 815,
+        "mean_abs_delta_pp": 1.26,
+        "median_abs_delta_pp": 0.83,
+        "p75_abs_delta_pp": 1.74,
+        "mean_signed_delta_pp": -0.12
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "Pinnacle",
+        "n": 439,
+        "mean_abs_delta_pp": 0.99,
+        "median_abs_delta_pp": 0.69,
+        "p75_abs_delta_pp": 1.34,
+        "mean_signed_delta_pp": -0.38
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "SBO",
+        "n": 225,
+        "mean_abs_delta_pp": 0.78,
+        "median_abs_delta_pp": 0.46,
+        "p75_abs_delta_pp": 1.05,
+        "mean_signed_delta_pp": -0.42
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "Superbet",
+        "n": 119,
+        "mean_abs_delta_pp": 0.52,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 0.82,
+        "mean_signed_delta_pp": -0.02
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "Unibet",
+        "n": 500,
+        "mean_abs_delta_pp": 0.59,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 0.87,
+        "mean_signed_delta_pp": -0.12
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "William Hill",
+        "n": 515,
+        "mean_abs_delta_pp": 0.99,
+        "median_abs_delta_pp": 0.79,
+        "p75_abs_delta_pp": 1.39,
+        "mean_signed_delta_pp": -0.29
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "10Bet",
+        "n": 420,
+        "mean_abs_delta_pp": 2.13,
+        "median_abs_delta_pp": 1.4,
+        "p75_abs_delta_pp": 3.22,
+        "mean_signed_delta_pp": -0.16
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "1xBet",
+        "n": 878,
+        "mean_abs_delta_pp": 3.12,
+        "median_abs_delta_pp": 1.97,
+        "p75_abs_delta_pp": 4.45,
+        "mean_signed_delta_pp": -0.12
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "888Sport",
+        "n": 231,
+        "mean_abs_delta_pp": 1.66,
+        "median_abs_delta_pp": 1.06,
+        "p75_abs_delta_pp": 2.49,
+        "mean_signed_delta_pp": -0.28
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "Bet365",
+        "n": 836,
+        "mean_abs_delta_pp": 3.05,
+        "median_abs_delta_pp": 2.09,
+        "p75_abs_delta_pp": 4.55,
+        "mean_signed_delta_pp": 0.03
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "BetVictor",
+        "n": 434,
+        "mean_abs_delta_pp": 2.05,
+        "median_abs_delta_pp": 1.19,
+        "p75_abs_delta_pp": 2.96,
+        "mean_signed_delta_pp": -0.15
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "Betano",
+        "n": 716,
+        "mean_abs_delta_pp": 2.78,
+        "median_abs_delta_pp": 1.97,
+        "p75_abs_delta_pp": 4.17,
+        "mean_signed_delta_pp": -0.13
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "Betfair",
+        "n": 767,
+        "mean_abs_delta_pp": 2.8,
+        "median_abs_delta_pp": 1.91,
+        "p75_abs_delta_pp": 4.08,
+        "mean_signed_delta_pp": -0.07
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "Dafabet",
+        "n": 767,
+        "mean_abs_delta_pp": 2.78,
+        "median_abs_delta_pp": 1.89,
+        "p75_abs_delta_pp": 4.03,
+        "mean_signed_delta_pp": -0.25
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "Marathonbet",
+        "n": 815,
+        "mean_abs_delta_pp": 2.92,
+        "median_abs_delta_pp": 1.69,
+        "p75_abs_delta_pp": 4.23,
+        "mean_signed_delta_pp": -0.2
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "Pinnacle",
+        "n": 439,
+        "mean_abs_delta_pp": 1.89,
+        "median_abs_delta_pp": 1.26,
+        "p75_abs_delta_pp": 2.67,
+        "mean_signed_delta_pp": -0.43
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "SBO",
+        "n": 225,
+        "mean_abs_delta_pp": 1.48,
+        "median_abs_delta_pp": 0.86,
+        "p75_abs_delta_pp": 2.06,
+        "mean_signed_delta_pp": -0.74
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "Superbet",
+        "n": 119,
+        "mean_abs_delta_pp": 1.14,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 1.41,
+        "mean_signed_delta_pp": 0.05
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "Unibet",
+        "n": 500,
+        "mean_abs_delta_pp": 1.34,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 2.21,
+        "mean_signed_delta_pp": -0.27
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "William Hill",
+        "n": 515,
+        "mean_abs_delta_pp": 2.24,
+        "median_abs_delta_pp": 1.52,
+        "p75_abs_delta_pp": 3.0,
+        "mean_signed_delta_pp": 0.02
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "bookmaker": "10Bet",
+        "n": 381,
+        "mean_abs_delta_pp": 1.7,
+        "median_abs_delta_pp": 0.89,
+        "p75_abs_delta_pp": 2.85,
+        "mean_signed_delta_pp": 0.41
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "bookmaker": "1xBet",
+        "n": 865,
+        "mean_abs_delta_pp": 2.5,
+        "median_abs_delta_pp": 1.48,
+        "p75_abs_delta_pp": 3.47,
+        "mean_signed_delta_pp": 0.54
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "bookmaker": "888Sport",
+        "n": 232,
+        "mean_abs_delta_pp": 1.83,
+        "median_abs_delta_pp": 1.19,
+        "p75_abs_delta_pp": 2.48,
+        "mean_signed_delta_pp": 0.74
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "bookmaker": "Bet365",
+        "n": 823,
+        "mean_abs_delta_pp": 2.29,
+        "median_abs_delta_pp": 1.66,
+        "p75_abs_delta_pp": 3.27,
+        "mean_signed_delta_pp": 0.34
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "bookmaker": "BetVictor",
+        "n": 406,
+        "mean_abs_delta_pp": 1.63,
+        "median_abs_delta_pp": 1.0,
+        "p75_abs_delta_pp": 2.22,
+        "mean_signed_delta_pp": 0.57
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "bookmaker": "Betano",
+        "n": 538,
+        "mean_abs_delta_pp": 1.82,
+        "median_abs_delta_pp": 1.13,
+        "p75_abs_delta_pp": 2.58,
+        "mean_signed_delta_pp": 0.3
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "bookmaker": "Betfair",
+        "n": 514,
+        "mean_abs_delta_pp": 2.37,
+        "median_abs_delta_pp": 1.64,
+        "p75_abs_delta_pp": 3.2,
+        "mean_signed_delta_pp": 0.91
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "bookmaker": "Marathonbet",
+        "n": 787,
+        "mean_abs_delta_pp": 2.38,
+        "median_abs_delta_pp": 1.31,
+        "p75_abs_delta_pp": 3.24,
+        "mean_signed_delta_pp": 0.5
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "bookmaker": "Pinnacle",
+        "n": 392,
+        "mean_abs_delta_pp": 1.7,
+        "median_abs_delta_pp": 1.03,
+        "p75_abs_delta_pp": 2.42,
+        "mean_signed_delta_pp": 0.45
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "bookmaker": "SBO",
+        "n": 77,
+        "mean_abs_delta_pp": 1.28,
+        "median_abs_delta_pp": 0.6,
+        "p75_abs_delta_pp": 1.78,
+        "mean_signed_delta_pp": 0.38
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "bookmaker": "Superbet",
+        "n": 111,
+        "mean_abs_delta_pp": 0.66,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 0.64,
+        "mean_signed_delta_pp": 0.15
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "bookmaker": "Unibet",
+        "n": 506,
+        "mean_abs_delta_pp": 1.19,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 1.71,
+        "mean_signed_delta_pp": 0.16
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "bookmaker": "10Bet",
+        "n": 381,
+        "mean_abs_delta_pp": 1.7,
+        "median_abs_delta_pp": 0.98,
+        "p75_abs_delta_pp": 2.55,
+        "mean_signed_delta_pp": -0.42
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "bookmaker": "1xBet",
+        "n": 865,
+        "mean_abs_delta_pp": 2.35,
+        "median_abs_delta_pp": 1.55,
+        "p75_abs_delta_pp": 3.29,
+        "mean_signed_delta_pp": -0.33
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "bookmaker": "888Sport",
+        "n": 232,
+        "mean_abs_delta_pp": 1.9,
+        "median_abs_delta_pp": 1.28,
+        "p75_abs_delta_pp": 2.74,
+        "mean_signed_delta_pp": -0.73
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "bookmaker": "Bet365",
+        "n": 823,
+        "mean_abs_delta_pp": 2.25,
+        "median_abs_delta_pp": 1.67,
+        "p75_abs_delta_pp": 3.13,
+        "mean_signed_delta_pp": -0.31
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "bookmaker": "BetVictor",
+        "n": 406,
+        "mean_abs_delta_pp": 1.7,
+        "median_abs_delta_pp": 1.02,
+        "p75_abs_delta_pp": 2.4,
+        "mean_signed_delta_pp": -0.58
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "bookmaker": "Betano",
+        "n": 538,
+        "mean_abs_delta_pp": 1.79,
+        "median_abs_delta_pp": 1.12,
+        "p75_abs_delta_pp": 2.64,
+        "mean_signed_delta_pp": -0.28
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "bookmaker": "Betfair",
+        "n": 514,
+        "mean_abs_delta_pp": 2.41,
+        "median_abs_delta_pp": 1.67,
+        "p75_abs_delta_pp": 3.21,
+        "mean_signed_delta_pp": -0.09
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "bookmaker": "Marathonbet",
+        "n": 787,
+        "mean_abs_delta_pp": 2.23,
+        "median_abs_delta_pp": 1.33,
+        "p75_abs_delta_pp": 3.12,
+        "mean_signed_delta_pp": -0.35
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "bookmaker": "Pinnacle",
+        "n": 392,
+        "mean_abs_delta_pp": 1.72,
+        "median_abs_delta_pp": 1.1,
+        "p75_abs_delta_pp": 2.45,
+        "mean_signed_delta_pp": -0.8
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "bookmaker": "SBO",
+        "n": 77,
+        "mean_abs_delta_pp": 1.2,
+        "median_abs_delta_pp": 0.24,
+        "p75_abs_delta_pp": 1.81,
+        "mean_signed_delta_pp": -0.68
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "bookmaker": "Superbet",
+        "n": 111,
+        "mean_abs_delta_pp": 0.63,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 0.55,
+        "mean_signed_delta_pp": -0.12
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "bookmaker": "Unibet",
+        "n": 506,
+        "mean_abs_delta_pp": 1.19,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 1.72,
+        "mean_signed_delta_pp": -0.15
+      },
+      {
+        "market": "btts",
+        "side": "yes",
+        "bookmaker": "10Bet",
+        "n": 381,
+        "mean_abs_delta_pp": 1.65,
+        "median_abs_delta_pp": 1.11,
+        "p75_abs_delta_pp": 2.62,
+        "mean_signed_delta_pp": 0.24
+      },
+      {
+        "market": "btts",
+        "side": "yes",
+        "bookmaker": "1xBet",
+        "n": 860,
+        "mean_abs_delta_pp": 2.23,
+        "median_abs_delta_pp": 1.48,
+        "p75_abs_delta_pp": 3.13,
+        "mean_signed_delta_pp": 0.01
+      },
+      {
+        "market": "btts",
+        "side": "yes",
+        "bookmaker": "888Sport",
+        "n": 234,
+        "mean_abs_delta_pp": 1.34,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 2.34,
+        "mean_signed_delta_pp": 0.37
+      },
+      {
+        "market": "btts",
+        "side": "yes",
+        "bookmaker": "Bet365",
+        "n": 400,
+        "mean_abs_delta_pp": 1.9,
+        "median_abs_delta_pp": 1.83,
+        "p75_abs_delta_pp": 2.78,
+        "mean_signed_delta_pp": -0.02
+      },
+      {
+        "market": "btts",
+        "side": "yes",
+        "bookmaker": "BetVictor",
+        "n": 440,
+        "mean_abs_delta_pp": 1.61,
+        "median_abs_delta_pp": 1.17,
+        "p75_abs_delta_pp": 2.38,
+        "mean_signed_delta_pp": 0.17
+      },
+      {
+        "market": "btts",
+        "side": "yes",
+        "bookmaker": "Betano",
+        "n": 432,
+        "mean_abs_delta_pp": 1.87,
+        "median_abs_delta_pp": 1.23,
+        "p75_abs_delta_pp": 2.73,
+        "mean_signed_delta_pp": -0.04
+      },
+      {
+        "market": "btts",
+        "side": "yes",
+        "bookmaker": "Betfair",
+        "n": 528,
+        "mean_abs_delta_pp": 2.14,
+        "median_abs_delta_pp": 1.39,
+        "p75_abs_delta_pp": 3.16,
+        "mean_signed_delta_pp": 0.3
+      },
+      {
+        "market": "btts",
+        "side": "yes",
+        "bookmaker": "Marathonbet",
+        "n": 805,
+        "mean_abs_delta_pp": 2.06,
+        "median_abs_delta_pp": 1.28,
+        "p75_abs_delta_pp": 2.85,
+        "mean_signed_delta_pp": -0.1
+      },
+      {
+        "market": "btts",
+        "side": "yes",
+        "bookmaker": "Superbet",
+        "n": 117,
+        "mean_abs_delta_pp": 0.65,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 0.61,
+        "mean_signed_delta_pp": 0.06
+      },
+      {
+        "market": "btts",
+        "side": "yes",
+        "bookmaker": "Unibet",
+        "n": 393,
+        "mean_abs_delta_pp": 0.93,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 1.11,
+        "mean_signed_delta_pp": -0.11
+      },
+      {
+        "market": "btts",
+        "side": "yes",
+        "bookmaker": "William Hill",
+        "n": 516,
+        "mean_abs_delta_pp": 1.47,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 2.5,
+        "mean_signed_delta_pp": 0.23
+      },
+      {
+        "market": "btts",
+        "side": "no",
+        "bookmaker": "10Bet",
+        "n": 381,
+        "mean_abs_delta_pp": 1.65,
+        "median_abs_delta_pp": 1.06,
+        "p75_abs_delta_pp": 2.38,
+        "mean_signed_delta_pp": -0.25
+      },
+      {
+        "market": "btts",
+        "side": "no",
+        "bookmaker": "1xBet",
+        "n": 860,
+        "mean_abs_delta_pp": 2.2,
+        "median_abs_delta_pp": 1.46,
+        "p75_abs_delta_pp": 3.1,
+        "mean_signed_delta_pp": 0.13
+      },
+      {
+        "market": "btts",
+        "side": "no",
+        "bookmaker": "888Sport",
+        "n": 234,
+        "mean_abs_delta_pp": 1.4,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 2.36,
+        "mean_signed_delta_pp": -0.37
+      },
+      {
+        "market": "btts",
+        "side": "no",
+        "bookmaker": "Bet365",
+        "n": 400,
+        "mean_abs_delta_pp": 1.85,
+        "median_abs_delta_pp": 1.8,
+        "p75_abs_delta_pp": 2.61,
+        "mean_signed_delta_pp": -0.01
+      },
+      {
+        "market": "btts",
+        "side": "no",
+        "bookmaker": "BetVictor",
+        "n": 440,
+        "mean_abs_delta_pp": 1.61,
+        "median_abs_delta_pp": 1.22,
+        "p75_abs_delta_pp": 2.21,
+        "mean_signed_delta_pp": -0.18
+      },
+      {
+        "market": "btts",
+        "side": "no",
+        "bookmaker": "Betano",
+        "n": 432,
+        "mean_abs_delta_pp": 1.86,
+        "median_abs_delta_pp": 1.3,
+        "p75_abs_delta_pp": 2.64,
+        "mean_signed_delta_pp": 0.05
+      },
+      {
+        "market": "btts",
+        "side": "no",
+        "bookmaker": "Betfair",
+        "n": 528,
+        "mean_abs_delta_pp": 2.15,
+        "median_abs_delta_pp": 1.28,
+        "p75_abs_delta_pp": 3.12,
+        "mean_signed_delta_pp": -0.41
+      },
+      {
+        "market": "btts",
+        "side": "no",
+        "bookmaker": "Marathonbet",
+        "n": 805,
+        "mean_abs_delta_pp": 2.07,
+        "median_abs_delta_pp": 1.38,
+        "p75_abs_delta_pp": 2.86,
+        "mean_signed_delta_pp": 0.06
+      },
+      {
+        "market": "btts",
+        "side": "no",
+        "bookmaker": "Superbet",
+        "n": 117,
+        "mean_abs_delta_pp": 0.68,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 0.76,
+        "mean_signed_delta_pp": -0.05
+      },
+      {
+        "market": "btts",
+        "side": "no",
+        "bookmaker": "Unibet",
+        "n": 393,
+        "mean_abs_delta_pp": 0.92,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 1.11,
+        "mean_signed_delta_pp": 0.1
+      },
+      {
+        "market": "btts",
+        "side": "no",
+        "bookmaker": "William Hill",
+        "n": 516,
+        "mean_abs_delta_pp": 1.48,
+        "median_abs_delta_pp": 0.0,
+        "p75_abs_delta_pp": 2.43,
+        "mean_signed_delta_pp": -0.24
+      }
+    ],
+    "direction": [
+      {
+        "market": "h2h",
+        "cut": "favorite (highest opening implied prob)",
+        "n": 7660,
+        "pct_shortened": 38.7,
+        "pct_drifted": 40.7,
+        "pct_flat": 20.6,
+        "mean_signed_delta_pp": 0.02
+      },
+      {
+        "market": "ou25",
+        "cut": "favorite (highest opening implied prob)",
+        "n": 5632,
+        "pct_shortened": 39.6,
+        "pct_drifted": 31.6,
+        "pct_flat": 28.8,
+        "mean_signed_delta_pp": 0.3
+      },
+      {
+        "market": "ou25",
+        "cut": "Over side specifically (fdco-era finding check)",
+        "n": 5632,
+        "pct_over_shortened": 40.3,
+        "pct_over_drifted": 31.4,
+        "mean_signed_delta_pp": 0.47
+      },
+      {
+        "market": "btts",
+        "cut": "favorite (highest opening implied prob)",
+        "n": 5106,
+        "pct_shortened": 34.8,
+        "pct_drifted": 33.3,
+        "pct_flat": 32.0,
+        "mean_signed_delta_pp": 0.08
+      }
+    ],
+    "timing": [
+      {
+        "market": "h2h",
+        "side": "home",
+        "bookmaker": "Pinnacle",
+        "n": 439,
+        "mean_abs_move_open_to_6h_pp": 1.63,
+        "mean_abs_move_6h_to_close_pp": 0.95,
+        "pct_of_total_move_in_final_6h": 36.8
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "bookmaker": "Pinnacle",
+        "n": 439,
+        "mean_abs_move_open_to_6h_pp": 0.8,
+        "mean_abs_move_6h_to_close_pp": 0.43,
+        "pct_of_total_move_in_final_6h": 35.1
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "bookmaker": "Pinnacle",
+        "n": 439,
+        "mean_abs_move_open_to_6h_pp": 1.43,
+        "mean_abs_move_6h_to_close_pp": 0.86,
+        "pct_of_total_move_in_final_6h": 37.5
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "bookmaker": "Pinnacle",
+        "n": 392,
+        "mean_abs_move_open_to_6h_pp": 1.33,
+        "mean_abs_move_6h_to_close_pp": 0.87,
+        "pct_of_total_move_in_final_6h": 39.6
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "bookmaker": "Pinnacle",
+        "n": 392,
+        "mean_abs_move_open_to_6h_pp": 1.33,
+        "mean_abs_move_6h_to_close_pp": 0.83,
+        "pct_of_total_move_in_final_6h": 38.4
+      }
+    ],
+    "book_vs_book_lead_lag": [
+      {
+        "market": "h2h",
+        "side": "home",
+        "soft_book": "William Hill",
+        "n_pinnacle_move_events": 572,
+        "pct_soft_moves_same_touch": 66.8,
+        "pct_soft_moves_same_touch_same_direction": 63.6,
+        "pct_soft_follows_next_touch": 3.0,
+        "pct_soft_follows_next_touch_same_direction": 2.1,
+        "pct_soft_never_follows_within_1_touch": 30.2
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "soft_book": "Bet365",
+        "n_pinnacle_move_events": 555,
+        "pct_soft_moves_same_touch": 67.9,
+        "pct_soft_moves_same_touch_same_direction": 62.0,
+        "pct_soft_follows_next_touch": 3.1,
+        "pct_soft_follows_next_touch_same_direction": 2.3,
+        "pct_soft_never_follows_within_1_touch": 29.0
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "soft_book": "Marathonbet",
+        "n_pinnacle_move_events": 563,
+        "pct_soft_moves_same_touch": 78.2,
+        "pct_soft_moves_same_touch_same_direction": 77.4,
+        "pct_soft_follows_next_touch": 1.6,
+        "pct_soft_follows_next_touch_same_direction": 0.9,
+        "pct_soft_never_follows_within_1_touch": 20.2
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "soft_book": "Unibet",
+        "n_pinnacle_move_events": 473,
+        "pct_soft_moves_same_touch": 24.9,
+        "pct_soft_moves_same_touch_same_direction": 21.6,
+        "pct_soft_follows_next_touch": 4.7,
+        "pct_soft_follows_next_touch_same_direction": 3.8,
+        "pct_soft_never_follows_within_1_touch": 70.4
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "soft_book": "Betfair",
+        "n_pinnacle_move_events": 565,
+        "pct_soft_moves_same_touch": 65.0,
+        "pct_soft_moves_same_touch_same_direction": 60.5,
+        "pct_soft_follows_next_touch": 3.5,
+        "pct_soft_follows_next_touch_same_direction": 2.5,
+        "pct_soft_never_follows_within_1_touch": 31.5
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "soft_book": "1xBet",
+        "n_pinnacle_move_events": 574,
+        "pct_soft_moves_same_touch": 74.9,
+        "pct_soft_moves_same_touch_same_direction": 73.0,
+        "pct_soft_follows_next_touch": 2.4,
+        "pct_soft_follows_next_touch_same_direction": 1.7,
+        "pct_soft_never_follows_within_1_touch": 22.6
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "soft_book": "Betano",
+        "n_pinnacle_move_events": 548,
+        "pct_soft_moves_same_touch": 60.4,
+        "pct_soft_moves_same_touch_same_direction": 57.1,
+        "pct_soft_follows_next_touch": 5.7,
+        "pct_soft_follows_next_touch_same_direction": 4.2,
+        "pct_soft_never_follows_within_1_touch": 33.9
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "soft_book": "Dafabet",
+        "n_pinnacle_move_events": 545,
+        "pct_soft_moves_same_touch": 59.6,
+        "pct_soft_moves_same_touch_same_direction": 56.9,
+        "pct_soft_follows_next_touch": 3.9,
+        "pct_soft_follows_next_touch_same_direction": 2.9,
+        "pct_soft_never_follows_within_1_touch": 36.5
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "soft_book": "10Bet",
+        "n_pinnacle_move_events": 458,
+        "pct_soft_moves_same_touch": 63.1,
+        "pct_soft_moves_same_touch_same_direction": 58.1,
+        "pct_soft_follows_next_touch": 4.4,
+        "pct_soft_follows_next_touch_same_direction": 2.8,
+        "pct_soft_never_follows_within_1_touch": 32.5
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "soft_book": "BetVictor",
+        "n_pinnacle_move_events": 442,
+        "pct_soft_moves_same_touch": 70.6,
+        "pct_soft_moves_same_touch_same_direction": 67.2,
+        "pct_soft_follows_next_touch": 2.5,
+        "pct_soft_follows_next_touch_same_direction": 2.0,
+        "pct_soft_never_follows_within_1_touch": 26.9
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "soft_book": "SBO",
+        "n_pinnacle_move_events": 282,
+        "pct_soft_moves_same_touch": 42.9,
+        "pct_soft_moves_same_touch_same_direction": 36.2,
+        "pct_soft_follows_next_touch": 5.0,
+        "pct_soft_follows_next_touch_same_direction": 3.9,
+        "pct_soft_never_follows_within_1_touch": 52.1
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "soft_book": "Superbet",
+        "n_pinnacle_move_events": 73,
+        "pct_soft_moves_same_touch": 38.4,
+        "pct_soft_moves_same_touch_same_direction": 35.6,
+        "pct_soft_follows_next_touch": 0.0,
+        "pct_soft_follows_next_touch_same_direction": 0.0,
+        "pct_soft_never_follows_within_1_touch": 61.6
+      },
+      {
+        "market": "h2h",
+        "side": "home",
+        "soft_book": "888Sport",
+        "n_pinnacle_move_events": 241,
+        "pct_soft_moves_same_touch": 62.2,
+        "pct_soft_moves_same_touch_same_direction": 58.9,
+        "pct_soft_follows_next_touch": 3.7,
+        "pct_soft_follows_next_touch_same_direction": 3.3,
+        "pct_soft_never_follows_within_1_touch": 34.0
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "soft_book": "William Hill",
+        "n_pinnacle_move_events": 282,
+        "pct_soft_moves_same_touch": 59.9,
+        "pct_soft_moves_same_touch_same_direction": 58.2,
+        "pct_soft_follows_next_touch": 2.8,
+        "pct_soft_follows_next_touch_same_direction": 1.4,
+        "pct_soft_never_follows_within_1_touch": 37.2
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "soft_book": "Bet365",
+        "n_pinnacle_move_events": 278,
+        "pct_soft_moves_same_touch": 46.0,
+        "pct_soft_moves_same_touch_same_direction": 43.5,
+        "pct_soft_follows_next_touch": 4.3,
+        "pct_soft_follows_next_touch_same_direction": 1.4,
+        "pct_soft_never_follows_within_1_touch": 49.6
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "soft_book": "Marathonbet",
+        "n_pinnacle_move_events": 280,
+        "pct_soft_moves_same_touch": 56.1,
+        "pct_soft_moves_same_touch_same_direction": 56.1,
+        "pct_soft_follows_next_touch": 1.4,
+        "pct_soft_follows_next_touch_same_direction": 0.7,
+        "pct_soft_never_follows_within_1_touch": 42.5
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "soft_book": "Unibet",
+        "n_pinnacle_move_events": 223,
+        "pct_soft_moves_same_touch": 16.6,
+        "pct_soft_moves_same_touch_same_direction": 14.8,
+        "pct_soft_follows_next_touch": 1.3,
+        "pct_soft_follows_next_touch_same_direction": 1.3,
+        "pct_soft_never_follows_within_1_touch": 82.1
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "soft_book": "Betfair",
+        "n_pinnacle_move_events": 276,
+        "pct_soft_moves_same_touch": 42.8,
+        "pct_soft_moves_same_touch_same_direction": 42.0,
+        "pct_soft_follows_next_touch": 3.3,
+        "pct_soft_follows_next_touch_same_direction": 2.9,
+        "pct_soft_never_follows_within_1_touch": 54.0
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "soft_book": "1xBet",
+        "n_pinnacle_move_events": 285,
+        "pct_soft_moves_same_touch": 56.8,
+        "pct_soft_moves_same_touch_same_direction": 56.5,
+        "pct_soft_follows_next_touch": 1.1,
+        "pct_soft_follows_next_touch_same_direction": 0.7,
+        "pct_soft_never_follows_within_1_touch": 42.1
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "soft_book": "Betano",
+        "n_pinnacle_move_events": 267,
+        "pct_soft_moves_same_touch": 44.2,
+        "pct_soft_moves_same_touch_same_direction": 42.7,
+        "pct_soft_follows_next_touch": 3.7,
+        "pct_soft_follows_next_touch_same_direction": 1.9,
+        "pct_soft_never_follows_within_1_touch": 52.1
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "soft_book": "Dafabet",
+        "n_pinnacle_move_events": 261,
+        "pct_soft_moves_same_touch": 41.8,
+        "pct_soft_moves_same_touch_same_direction": 41.4,
+        "pct_soft_follows_next_touch": 3.4,
+        "pct_soft_follows_next_touch_same_direction": 1.5,
+        "pct_soft_never_follows_within_1_touch": 54.8
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "soft_book": "10Bet",
+        "n_pinnacle_move_events": 217,
+        "pct_soft_moves_same_touch": 36.4,
+        "pct_soft_moves_same_touch_same_direction": 35.0,
+        "pct_soft_follows_next_touch": 1.8,
+        "pct_soft_follows_next_touch_same_direction": 1.4,
+        "pct_soft_never_follows_within_1_touch": 61.8
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "soft_book": "BetVictor",
+        "n_pinnacle_move_events": 215,
+        "pct_soft_moves_same_touch": 46.5,
+        "pct_soft_moves_same_touch_same_direction": 46.0,
+        "pct_soft_follows_next_touch": 2.8,
+        "pct_soft_follows_next_touch_same_direction": 1.4,
+        "pct_soft_never_follows_within_1_touch": 50.7
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "soft_book": "SBO",
+        "n_pinnacle_move_events": 111,
+        "pct_soft_moves_same_touch": 33.3,
+        "pct_soft_moves_same_touch_same_direction": 30.6,
+        "pct_soft_follows_next_touch": 5.4,
+        "pct_soft_follows_next_touch_same_direction": 5.4,
+        "pct_soft_never_follows_within_1_touch": 61.3
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "soft_book": "Superbet",
+        "n_pinnacle_move_events": 31,
+        "pct_soft_moves_same_touch": 25.8,
+        "pct_soft_moves_same_touch_same_direction": 22.6,
+        "pct_soft_follows_next_touch": 0.0,
+        "pct_soft_follows_next_touch_same_direction": 0.0,
+        "pct_soft_never_follows_within_1_touch": 74.2
+      },
+      {
+        "market": "h2h",
+        "side": "draw",
+        "soft_book": "888Sport",
+        "n_pinnacle_move_events": 108,
+        "pct_soft_moves_same_touch": 56.5,
+        "pct_soft_moves_same_touch_same_direction": 56.5,
+        "pct_soft_follows_next_touch": 4.6,
+        "pct_soft_follows_next_touch_same_direction": 1.9,
+        "pct_soft_never_follows_within_1_touch": 38.9
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "soft_book": "William Hill",
+        "n_pinnacle_move_events": 503,
+        "pct_soft_moves_same_touch": 69.0,
+        "pct_soft_moves_same_touch_same_direction": 65.6,
+        "pct_soft_follows_next_touch": 3.2,
+        "pct_soft_follows_next_touch_same_direction": 2.0,
+        "pct_soft_never_follows_within_1_touch": 27.8
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "soft_book": "Bet365",
+        "n_pinnacle_move_events": 486,
+        "pct_soft_moves_same_touch": 66.9,
+        "pct_soft_moves_same_touch_same_direction": 61.7,
+        "pct_soft_follows_next_touch": 3.7,
+        "pct_soft_follows_next_touch_same_direction": 2.1,
+        "pct_soft_never_follows_within_1_touch": 29.4
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "soft_book": "Marathonbet",
+        "n_pinnacle_move_events": 496,
+        "pct_soft_moves_same_touch": 76.0,
+        "pct_soft_moves_same_touch_same_direction": 75.6,
+        "pct_soft_follows_next_touch": 1.4,
+        "pct_soft_follows_next_touch_same_direction": 1.0,
+        "pct_soft_never_follows_within_1_touch": 22.6
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "soft_book": "Unibet",
+        "n_pinnacle_move_events": 416,
+        "pct_soft_moves_same_touch": 23.8,
+        "pct_soft_moves_same_touch_same_direction": 20.4,
+        "pct_soft_follows_next_touch": 3.4,
+        "pct_soft_follows_next_touch_same_direction": 3.1,
+        "pct_soft_never_follows_within_1_touch": 72.8
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "soft_book": "Betfair",
+        "n_pinnacle_move_events": 496,
+        "pct_soft_moves_same_touch": 68.8,
+        "pct_soft_moves_same_touch_same_direction": 63.1,
+        "pct_soft_follows_next_touch": 3.0,
+        "pct_soft_follows_next_touch_same_direction": 2.2,
+        "pct_soft_never_follows_within_1_touch": 28.2
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "soft_book": "1xBet",
+        "n_pinnacle_move_events": 502,
+        "pct_soft_moves_same_touch": 74.5,
+        "pct_soft_moves_same_touch_same_direction": 72.5,
+        "pct_soft_follows_next_touch": 1.8,
+        "pct_soft_follows_next_touch_same_direction": 1.0,
+        "pct_soft_never_follows_within_1_touch": 23.7
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "soft_book": "Betano",
+        "n_pinnacle_move_events": 482,
+        "pct_soft_moves_same_touch": 63.5,
+        "pct_soft_moves_same_touch_same_direction": 60.6,
+        "pct_soft_follows_next_touch": 3.9,
+        "pct_soft_follows_next_touch_same_direction": 2.7,
+        "pct_soft_never_follows_within_1_touch": 32.6
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "soft_book": "Dafabet",
+        "n_pinnacle_move_events": 473,
+        "pct_soft_moves_same_touch": 60.0,
+        "pct_soft_moves_same_touch_same_direction": 57.5,
+        "pct_soft_follows_next_touch": 3.0,
+        "pct_soft_follows_next_touch_same_direction": 1.9,
+        "pct_soft_never_follows_within_1_touch": 37.0
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "soft_book": "10Bet",
+        "n_pinnacle_move_events": 403,
+        "pct_soft_moves_same_touch": 60.3,
+        "pct_soft_moves_same_touch_same_direction": 54.6,
+        "pct_soft_follows_next_touch": 4.2,
+        "pct_soft_follows_next_touch_same_direction": 3.7,
+        "pct_soft_never_follows_within_1_touch": 35.5
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "soft_book": "BetVictor",
+        "n_pinnacle_move_events": 394,
+        "pct_soft_moves_same_touch": 70.3,
+        "pct_soft_moves_same_touch_same_direction": 67.8,
+        "pct_soft_follows_next_touch": 3.8,
+        "pct_soft_follows_next_touch_same_direction": 2.8,
+        "pct_soft_never_follows_within_1_touch": 25.9
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "soft_book": "SBO",
+        "n_pinnacle_move_events": 246,
+        "pct_soft_moves_same_touch": 37.4,
+        "pct_soft_moves_same_touch_same_direction": 32.5,
+        "pct_soft_follows_next_touch": 5.3,
+        "pct_soft_follows_next_touch_same_direction": 5.3,
+        "pct_soft_never_follows_within_1_touch": 57.3
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "soft_book": "Superbet",
+        "n_pinnacle_move_events": 55,
+        "pct_soft_moves_same_touch": 47.3,
+        "pct_soft_moves_same_touch_same_direction": 45.5,
+        "pct_soft_follows_next_touch": 0.0,
+        "pct_soft_follows_next_touch_same_direction": 0.0,
+        "pct_soft_never_follows_within_1_touch": 52.7
+      },
+      {
+        "market": "h2h",
+        "side": "away",
+        "soft_book": "888Sport",
+        "n_pinnacle_move_events": 200,
+        "pct_soft_moves_same_touch": 63.5,
+        "pct_soft_moves_same_touch_same_direction": 59.0,
+        "pct_soft_follows_next_touch": 6.0,
+        "pct_soft_follows_next_touch_same_direction": 4.0,
+        "pct_soft_never_follows_within_1_touch": 30.5
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "soft_book": "Bet365",
+        "n_pinnacle_move_events": 445,
+        "pct_soft_moves_same_touch": 55.7,
+        "pct_soft_moves_same_touch_same_direction": 48.3,
+        "pct_soft_follows_next_touch": 5.4,
+        "pct_soft_follows_next_touch_same_direction": 4.3,
+        "pct_soft_never_follows_within_1_touch": 38.9
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "soft_book": "Marathonbet",
+        "n_pinnacle_move_events": 452,
+        "pct_soft_moves_same_touch": 75.4,
+        "pct_soft_moves_same_touch_same_direction": 75.0,
+        "pct_soft_follows_next_touch": 1.8,
+        "pct_soft_follows_next_touch_same_direction": 1.1,
+        "pct_soft_never_follows_within_1_touch": 22.8
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "soft_book": "Unibet",
+        "n_pinnacle_move_events": 375,
+        "pct_soft_moves_same_touch": 20.5,
+        "pct_soft_moves_same_touch_same_direction": 17.3,
+        "pct_soft_follows_next_touch": 2.9,
+        "pct_soft_follows_next_touch_same_direction": 2.7,
+        "pct_soft_never_follows_within_1_touch": 76.5
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "soft_book": "Betfair",
+        "n_pinnacle_move_events": 360,
+        "pct_soft_moves_same_touch": 57.2,
+        "pct_soft_moves_same_touch_same_direction": 50.8,
+        "pct_soft_follows_next_touch": 4.7,
+        "pct_soft_follows_next_touch_same_direction": 3.6,
+        "pct_soft_never_follows_within_1_touch": 38.1
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "soft_book": "1xBet",
+        "n_pinnacle_move_events": 457,
+        "pct_soft_moves_same_touch": 72.2,
+        "pct_soft_moves_same_touch_same_direction": 71.3,
+        "pct_soft_follows_next_touch": 1.5,
+        "pct_soft_follows_next_touch_same_direction": 0.7,
+        "pct_soft_never_follows_within_1_touch": 26.3
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "soft_book": "10Bet",
+        "n_pinnacle_move_events": 341,
+        "pct_soft_moves_same_touch": 48.4,
+        "pct_soft_moves_same_touch_same_direction": 45.5,
+        "pct_soft_follows_next_touch": 2.3,
+        "pct_soft_follows_next_touch_same_direction": 2.1,
+        "pct_soft_never_follows_within_1_touch": 49.3
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "soft_book": "BetVictor",
+        "n_pinnacle_move_events": 345,
+        "pct_soft_moves_same_touch": 67.2,
+        "pct_soft_moves_same_touch_same_direction": 66.1,
+        "pct_soft_follows_next_touch": 2.3,
+        "pct_soft_follows_next_touch_same_direction": 1.4,
+        "pct_soft_never_follows_within_1_touch": 30.4
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "soft_book": "SBO",
+        "n_pinnacle_move_events": 79,
+        "pct_soft_moves_same_touch": 32.9,
+        "pct_soft_moves_same_touch_same_direction": 29.1,
+        "pct_soft_follows_next_touch": 5.1,
+        "pct_soft_follows_next_touch_same_direction": 3.8,
+        "pct_soft_never_follows_within_1_touch": 62.0
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "soft_book": "Betano",
+        "n_pinnacle_move_events": 403,
+        "pct_soft_moves_same_touch": 44.2,
+        "pct_soft_moves_same_touch_same_direction": 41.7,
+        "pct_soft_follows_next_touch": 4.5,
+        "pct_soft_follows_next_touch_same_direction": 3.2,
+        "pct_soft_never_follows_within_1_touch": 51.4
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "soft_book": "Superbet",
+        "n_pinnacle_move_events": 49,
+        "pct_soft_moves_same_touch": 22.4,
+        "pct_soft_moves_same_touch_same_direction": 20.4,
+        "pct_soft_follows_next_touch": 0.0,
+        "pct_soft_follows_next_touch_same_direction": 0.0,
+        "pct_soft_never_follows_within_1_touch": 77.6
+      },
+      {
+        "market": "ou25",
+        "side": "over",
+        "soft_book": "888Sport",
+        "n_pinnacle_move_events": 198,
+        "pct_soft_moves_same_touch": 65.7,
+        "pct_soft_moves_same_touch_same_direction": 61.6,
+        "pct_soft_follows_next_touch": 4.5,
+        "pct_soft_follows_next_touch_same_direction": 3.5,
+        "pct_soft_never_follows_within_1_touch": 29.8
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "soft_book": "Bet365",
+        "n_pinnacle_move_events": 434,
+        "pct_soft_moves_same_touch": 55.8,
+        "pct_soft_moves_same_touch_same_direction": 48.8,
+        "pct_soft_follows_next_touch": 5.1,
+        "pct_soft_follows_next_touch_same_direction": 3.9,
+        "pct_soft_never_follows_within_1_touch": 39.2
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "soft_book": "Marathonbet",
+        "n_pinnacle_move_events": 442,
+        "pct_soft_moves_same_touch": 74.2,
+        "pct_soft_moves_same_touch_same_direction": 74.0,
+        "pct_soft_follows_next_touch": 1.4,
+        "pct_soft_follows_next_touch_same_direction": 1.1,
+        "pct_soft_never_follows_within_1_touch": 24.4
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "soft_book": "Unibet",
+        "n_pinnacle_move_events": 368,
+        "pct_soft_moves_same_touch": 20.1,
+        "pct_soft_moves_same_touch_same_direction": 16.6,
+        "pct_soft_follows_next_touch": 3.0,
+        "pct_soft_follows_next_touch_same_direction": 2.4,
+        "pct_soft_never_follows_within_1_touch": 76.9
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "soft_book": "Betfair",
+        "n_pinnacle_move_events": 347,
+        "pct_soft_moves_same_touch": 57.3,
+        "pct_soft_moves_same_touch_same_direction": 51.6,
+        "pct_soft_follows_next_touch": 4.0,
+        "pct_soft_follows_next_touch_same_direction": 3.2,
+        "pct_soft_never_follows_within_1_touch": 38.6
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "soft_book": "1xBet",
+        "n_pinnacle_move_events": 445,
+        "pct_soft_moves_same_touch": 71.2,
+        "pct_soft_moves_same_touch_same_direction": 69.9,
+        "pct_soft_follows_next_touch": 1.6,
+        "pct_soft_follows_next_touch_same_direction": 1.3,
+        "pct_soft_never_follows_within_1_touch": 27.2
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "soft_book": "10Bet",
+        "n_pinnacle_move_events": 333,
+        "pct_soft_moves_same_touch": 48.0,
+        "pct_soft_moves_same_touch_same_direction": 45.9,
+        "pct_soft_follows_next_touch": 3.3,
+        "pct_soft_follows_next_touch_same_direction": 3.0,
+        "pct_soft_never_follows_within_1_touch": 48.6
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "soft_book": "BetVictor",
+        "n_pinnacle_move_events": 331,
+        "pct_soft_moves_same_touch": 67.1,
+        "pct_soft_moves_same_touch_same_direction": 65.6,
+        "pct_soft_follows_next_touch": 2.1,
+        "pct_soft_follows_next_touch_same_direction": 1.2,
+        "pct_soft_never_follows_within_1_touch": 30.8
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "soft_book": "SBO",
+        "n_pinnacle_move_events": 77,
+        "pct_soft_moves_same_touch": 28.6,
+        "pct_soft_moves_same_touch_same_direction": 26.0,
+        "pct_soft_follows_next_touch": 6.5,
+        "pct_soft_follows_next_touch_same_direction": 5.2,
+        "pct_soft_never_follows_within_1_touch": 64.9
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "soft_book": "Betano",
+        "n_pinnacle_move_events": 390,
+        "pct_soft_moves_same_touch": 46.2,
+        "pct_soft_moves_same_touch_same_direction": 42.8,
+        "pct_soft_follows_next_touch": 3.1,
+        "pct_soft_follows_next_touch_same_direction": 2.6,
+        "pct_soft_never_follows_within_1_touch": 50.8
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "soft_book": "Superbet",
+        "n_pinnacle_move_events": 45,
+        "pct_soft_moves_same_touch": 17.8,
+        "pct_soft_moves_same_touch_same_direction": 17.8,
+        "pct_soft_follows_next_touch": 0.0,
+        "pct_soft_follows_next_touch_same_direction": 0.0,
+        "pct_soft_never_follows_within_1_touch": 82.2
+      },
+      {
+        "market": "ou25",
+        "side": "under",
+        "soft_book": "888Sport",
+        "n_pinnacle_move_events": 193,
+        "pct_soft_moves_same_touch": 71.5,
+        "pct_soft_moves_same_touch_same_direction": 69.9,
+        "pct_soft_follows_next_touch": 2.6,
+        "pct_soft_follows_next_touch_same_direction": 2.6,
+        "pct_soft_never_follows_within_1_touch": 25.9
+      }
+    ],
+    "book_vs_book_move_threshold_pp": 1.0
+  },
+  "task3_our_predictions": {
+    "reference_bookmaker_by_market": {
+      "h2h": "Pinnacle",
+      "ou25": "Pinnacle",
+      "btts": "1xBet"
+    },
+    "n_matched": 1634,
+    "overall": {
+      "n": 1634,
+      "pct_toward_us": 41.0,
+      "pct_away_from_us": 46.8,
+      "pct_unchanged": 12.2,
+      "mean_dist_open_pp": 20.2,
+      "mean_dist_close_pp": 20.34
+    },
+    "by_market": {
+      "h2h": {
+        "n": 433,
+        "pct_toward_us": 40.0,
+        "pct_away_from_us": 50.1,
+        "pct_unchanged": 9.9,
+        "mean_dist_open_pp": 17.17,
+        "mean_dist_close_pp": 17.44
+      },
+      "ou25": {
+        "n": 377,
+        "pct_toward_us": 39.5,
+        "pct_away_from_us": 46.9,
+        "pct_unchanged": 13.5,
+        "mean_dist_open_pp": 15.68,
+        "mean_dist_close_pp": 15.74
+      },
+      "btts": {
+        "n": 824,
+        "pct_toward_us": 42.2,
+        "pct_away_from_us": 44.9,
+        "pct_unchanged": 12.9,
+        "mean_dist_open_pp": 23.86,
+        "mean_dist_close_pp": 23.96
+      }
+    },
+    "disagreement_threshold_p75_pp": 29.33,
+    "strong_disagreement_cut": {
+      "n": 409,
+      "pct_toward_us": 42.1,
+      "pct_away_from_us": 47.2,
+      "pct_unchanged": 10.8,
+      "mean_dist_open_pp": 37.7,
+      "mean_dist_close_pp": 37.64
+    },
+    "weak_disagreement_cut": {
+      "n": 1225,
+      "pct_toward_us": 40.7,
+      "pct_away_from_us": 46.6,
+      "pct_unchanged": 12.7,
+      "mean_dist_open_pp": 14.36,
+      "mean_dist_close_pp": 14.56
+    }
+  }
+}
