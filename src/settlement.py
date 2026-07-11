@@ -180,6 +180,7 @@ def update_pending_fixture_scores() -> int:
 
     updated = 0
     forward_dated_catches = []
+    newly_live_fixture_ids = []
     with get_session() as s:
         for fix_data in all_live:
             fix_info = fix_data.get("fixture", {})
@@ -193,6 +194,7 @@ def update_pending_fixture_scores() -> int:
             new_status = fix_info.get("status", {}).get("short", "")
             elapsed = fix_info.get("status", {}).get("elapsed")
             changed = False
+            was_ns = fix.status == "NS"
             # Forward-dated-but-live: the fixture is confirmed live/in-play RIGHT NOW,
             # yet our stored date is materially in the future — the mirror image of the
             # past-dated-stale case resync_stale_fixtures() handles. Correct immediately;
@@ -220,6 +222,11 @@ def update_pending_fixture_scores() -> int:
             if new_status and new_status != fix.status:
                 fix.status = new_status
                 changed = True
+                if was_ns and new_status != "NS":
+                    # First live sighting -- freeze served_prob now, at kickoff, so
+                    # it survives whatever the calibration does before this fixture
+                    # settles (see v2/db_v2.py::freeze_served_probs_for_fixture()).
+                    newly_live_fixture_ids.append(fix_id)
             if elapsed is not None and getattr(fix, "elapsed", None) != elapsed:
                 try:
                     fix.elapsed = elapsed
@@ -241,6 +248,21 @@ def update_pending_fixture_scores() -> int:
             s.commit()
 
     logger.info("update_pending_fixture_scores: updated %d fixtures (checked %d live globally)", updated, len(all_live))
+
+    if newly_live_fixture_ids:
+        try:
+            from v2.db_v2 import freeze_served_probs_for_fixture
+            frozen = sum(freeze_served_probs_for_fixture(fid) for fid in newly_live_fixture_ids)
+            logger.info(
+                "update_pending_fixture_scores: froze served_prob for %d predictions "
+                "across %d newly-live fixtures", frozen, len(newly_live_fixture_ids),
+            )
+        except Exception:
+            logger.exception(
+                "update_pending_fixture_scores: failed to freeze served_prob for newly-live "
+                "fixtures %s -- these rows will fall back to settle_predictions()'s "
+                "settlement-time freeze instead of a true kickoff freeze", newly_live_fixture_ids,
+            )
 
     if forward_dated_catches:
         try:
@@ -1163,6 +1185,7 @@ def settle_predictions(days: int | None = None) -> int:
     from src.storage.models import PredictionRecord, Fixture
 
     settled = 0
+    unfrozen_fixture_ids: set[int] = set()
     with get_session() as s:
         query = (
             select(PredictionRecord, Fixture)
@@ -1198,9 +1221,33 @@ def settle_predictions(days: int | None = None) -> int:
             pred.settled = True
             pred.settled_at = datetime.utcnow()
             settled += 1
+            # served_prob should already be frozen from update_pending_fixture_scores()'s
+            # NS->live catch (Phase 33b). A row reaching settlement without it means that
+            # catch was missed (e.g. abandoned/awarded fixtures that skip straight past a
+            # live status) -- freeze now as a fallback, but this is a settlement-time
+            # value, not a true kickoff one (calibration may have moved in between).
+            if pred.served_prob is None:
+                unfrozen_fixture_ids.add(fixture.id)
 
         if settled > 0:
             s.commit()
+
+    if unfrozen_fixture_ids:
+        try:
+            from v2.db_v2 import freeze_served_probs_for_fixture
+            frozen = sum(freeze_served_probs_for_fixture(fid) for fid in unfrozen_fixture_ids)
+            logger.warning(
+                "settle_predictions: %d predictions across %d fixtures settled without ever "
+                "being caught live -- froze served_prob at SETTLEMENT time as a fallback "
+                "(not a true kickoff value). fixture_ids=%s",
+                frozen, len(unfrozen_fixture_ids), sorted(unfrozen_fixture_ids),
+            )
+        except Exception:
+            logger.exception(
+                "settle_predictions: failed to apply served_prob settlement-time fallback "
+                "for fixture_ids=%s -- these rows will keep served_prob NULL indefinitely",
+                sorted(unfrozen_fixture_ids),
+            )
 
     logger.info(f"Settled {settled} predictions (days={days})")
     return settled

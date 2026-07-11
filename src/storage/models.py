@@ -379,6 +379,16 @@ class PredictionRecord(Base):
     won: Mapped[bool | None] = mapped_column(Boolean)
     data_context: Mapped[str | None] = mapped_column(String(20), nullable=True)
 
+    # Frozen at kickoff (Phase 33b) -- what predictions_v2/explorer_v2 actually served a
+    # user pre-match, via v2/db_v2.py::freeze_served_probs_for_fixture(). Distinct from
+    # calibrated_prob (frozen at write time, hours/days earlier) and from re-deriving
+    # served_prob live against today's calibration (which is what get_explorer_data() did
+    # for settled rows before this, and is exactly the discontinuity this column fixes --
+    # see migration 031). NULL for rows settled before this migration and for any row a
+    # bug lets slip past both the live-transition and settle_predictions() fallback hooks.
+    served_prob: Mapped[float | None] = mapped_column(Float, nullable=True)
+    served_calibration_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     settled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     timestamp: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)

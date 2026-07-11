@@ -77,9 +77,15 @@ def _mkt_cell(m: dict | None) -> str:
     """Render one market <td> for the explorer table.
 
     Phase 33 Task 4: served_prob is our_prob live-recalibrated for full/NULL
-    tiers (raw for the thin tiers) on UNSETTLED rows only -- v2/db_v2.py's
-    get_explorer_data() deliberately leaves settled rows on raw our_prob so
-    history is never shown differently than what Track A scores.
+    tiers (raw for the thin tiers) on UNSETTLED rows.
+
+    Phase 33b: settled rows now show served_prob too, but FROZEN at kickoff
+    (v2/db_v2.py::freeze_served_probs_for_fixture()) rather than raw-only --
+    a settled row that was calibrated at freeze time renders "served X% ·
+    raw Y%" so the displayed history stays honest about what a user actually
+    saw pre-match, instead of silently swapping in the raw number once the
+    match ends. Rows settled before this existed (or that slipped past both
+    freeze hooks) have no frozen value and fall back to raw-only, unchanged.
     """
     if not m:
         return '<td style="color:#8b949e;text-align:center;padding:6px 10px">—</td>'
@@ -167,7 +173,21 @@ def _mkt_cell(m: dict | None) -> str:
     else:
         result = ""
 
-    pred = f'<span style="color:{color};font-weight:600">{label}&nbsp;{pct}%{star}</span>{result}{dist}'
+    headline_title = "Served at kickoff (frozen)" if settled else "Served now (live-recalibrated)"
+    headline = (
+        f'<span style="color:{color};font-weight:600" title="{headline_title}">'
+        f'{label}&nbsp;{pct}%{star}</span>'
+    )
+    raw_note = ""
+    if settled and m.get("is_calibrated") and m.get("our_prob") is not None:
+        raw_pct = round(m["our_prob"] * 100)
+        if raw_pct != pct:
+            raw_note = (
+                f'<span style="color:#6e7681;font-size:10px;margin-left:4px" '
+                f'title="Raw model output, before calibration">&middot; raw {raw_pct}%</span>'
+            )
+
+    pred = f'{headline}{result}{raw_note}{dist}'
 
     return f'<td style="white-space:nowrap;padding:6px 10px">{pred}</td>'
 

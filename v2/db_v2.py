@@ -315,6 +315,56 @@ def _load_calibration_snapshot():
     return LeagueCalibrationEngine().load_active_calibrations()
 
 
+def freeze_served_probs_for_fixture(fixture_id: int) -> int:
+    """Persist served_prob (+ served_calibration_version) for every PredictionRecord of
+    one fixture that doesn't have it yet -- write-once, never overwritten afterwards.
+
+    Phase 33b acceptance found a settlement display discontinuity: served_prob was
+    computed live on every request and never stored, so a settled row had no record
+    of what was actually shown to a user pre-match -- get_explorer_data() fell back to
+    raw our_prob for settled rows (see _mkt_cell()'s docstring in explorer_v2.py), so a
+    fixture displayed at "61%" pre-match could show "94% X" once settled with no way to
+    recover that 61% was ever served.
+
+    Called from src/settlement.py::update_pending_fixture_scores() the moment a fixture
+    is first observed live (NS -> 1H/2H/HT/...) -- so the frozen value is what was being
+    served at kickoff, not at settlement (calibration can refit in between, especially
+    now that a weekly fit_all floor exists -- Phase 33b). settle_predictions() also calls
+    this as a fallback for any row that reaches settlement without ever being caught live
+    (abandoned/awarded fixtures, resync gaps); that fallback freezes at settlement time
+    instead of true kickoff and logs loudly, since it's a materially different guarantee.
+    """
+    from src.storage.models import PredictionRecord, Fixture
+
+    with get_session() as s:
+        fixture = s.get(Fixture, fixture_id)
+        if fixture is None:
+            return 0
+        rows = s.execute(
+            select(PredictionRecord)
+            .where(PredictionRecord.fixture_id == fixture_id)
+            .where(PredictionRecord.served_prob.is_(None))
+        ).scalars().all()
+        if not rows:
+            return 0
+
+        snap = _load_calibration_snapshot()
+        updated = 0
+        for pred in rows:
+            if pred.our_prob is None:
+                continue
+            if pred.data_context in _MAINSTREAM_CONTEXTS:
+                p_cal, version = snap.apply(pred.market, fixture.league_id, pred.our_prob)
+                pred.served_prob = p_cal
+                pred.served_calibration_version = version
+            else:
+                pred.served_prob = pred.our_prob
+                pred.served_calibration_version = None
+            updated += 1
+        s.commit()
+    return updated
+
+
 def _serve_prob(snap, market: str, league_id: int | None, our_prob: float | None, data_context: str | None):
     """Return (served_prob, is_calibrated) for one prediction.
 
@@ -892,6 +942,8 @@ def get_explorer_data(
             PredictionRecord.prob_draw,
             PredictionRecord.prob_away,
             PredictionRecord.data_context,
+            PredictionRecord.served_prob.label("frozen_served_prob"),
+            PredictionRecord.served_calibration_version,
         )
         .select_from(inner_q)
         .join(Fixture, Fixture.id == inner_q.c.fid)
@@ -913,12 +965,15 @@ def get_explorer_data(
 
     t1 = time.time()
 
-    # Phase 33 Task 4: served_prob is only computed for UNSETTLED rows. Settled
-    # predictions are history -- Track A scores them on raw our_prob as the
-    # permanent baseline record, and showing a different, live-recalibrated
-    # number next to the same row here would look like rewriting what was
-    # actually predicted, even though the DB itself is untouched. Unsettled
-    # rows get the same live-recalibrated treatment as predictions_v2.py.
+    # Phase 33b: settled rows now display the served_prob FROZEN at kickoff
+    # (v2/db_v2.py::freeze_served_probs_for_fixture()) alongside raw our_prob,
+    # rather than silently falling back to raw alone -- see _mkt_cell()'s
+    # "served X% · raw Y%" rendering. Track A itself is untouched and keeps
+    # scoring settled history on raw our_prob as the permanent baseline record;
+    # this is purely a display concern (what did we actually SHOW someone).
+    # Rows settled before this migration have no frozen value (era boundary --
+    # settled history is never rewritten) and fall back to raw-only, exactly
+    # as before. Unsettled rows still get the live-recalibrated treatment.
     cal_snapshot = _load_calibration_snapshot()
 
     # Assemble per-fixture dicts preserving sort order from inner query
@@ -947,9 +1002,20 @@ def get_explorer_data(
         prob_away = float(r.prob_away) if r.prob_away is not None else None
 
         if r.settled:
-            served_prob = our_prob
+            frozen = float(r.frozen_served_prob) if r.frozen_served_prob is not None else None
+            is_calibrated = frozen is not None and r.served_calibration_version is not None
+            served_prob = frozen if frozen is not None else our_prob
             served_home, served_draw, served_away = prob_home, prob_draw, prob_away
-            is_calibrated = False
+            if (
+                is_calibrated and r.market == "h2h"
+                and prob_home is not None and prob_draw is not None and prob_away is not None
+            ):
+                side = _H2H_SIDE.get(str(r.predicted_outcome).upper())
+                if side is not None:
+                    from src.calibration.league_calibration_engine import LeagueCalibrationEngine
+                    served_home, served_draw, served_away = LeagueCalibrationEngine.renormalize_h2h_vector(
+                        prob_home, prob_draw, prob_away, side, served_prob
+                    )
         else:
             served_prob, is_calibrated = _serve_prob(
                 cal_snapshot, r.market, r.league_id, our_prob, r.data_context
