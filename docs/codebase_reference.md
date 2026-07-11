@@ -95,12 +95,15 @@ bootball-v2-runtime.service (separate process, sole execution authority since D1
      (every 20 minutes; V2_RUNTIME_WRITE_ENABLED=true — saves predictions, runs calibration
      ingest)
   3. Acquires RuntimeLock file (data/v2_execution_runtime.lock)
-  4. Starts backend/scheduler.py's auxiliary APScheduler — 7 jobs: fetch_fixtures (6h),
+  4. Starts backend/scheduler.py's auxiliary APScheduler — 8 jobs: fetch_fixtures (6h),
      fetch_results (1h), fetch_odds (1h), cleanup_matches (5m), live_settle (2m),
-     daily_sanity_check (cron, 08:00 UTC), v2_collection_heartbeat (cron, 12:00 UTC) — code
-     landed D9, activated at D10's cutover restart (2026-07-07) once bootball-runtime.service
-     stopped owning it. The last two were IntervalTrigger(hours=24) until 2026-07-09, when
-     they were found to never actually fire (see below) and switched to CronTrigger.
+     daily_sanity_check (cron, 08:00 UTC), v2_collection_heartbeat (cron, 12:00 UTC),
+     weekly_calibration_refit (cron, Mon 06:00 UTC) — code landed D9, activated at D10's
+     cutover restart (2026-07-07) once bootball-runtime.service stopped owning it. The
+     daily_sanity_check/v2_collection_heartbeat pair were IntervalTrigger(hours=24) until
+     2026-07-09, when they were found to never actually fire (see below) and switched to
+     CronTrigger. weekly_calibration_refit was added Phase 33b as a backstop under
+     fit_all()'s only other caller (drift events) — see that phase's section below.
 ```
 
 ---
@@ -139,7 +142,8 @@ Unified runtime mode enforcement.
 
 APScheduler auxiliary job definitions and circuit breaker.
 
-- **7 registered auxiliary jobs:** `job_fetch_fixtures` (6h), `job_fetch_results` (1h), `job_fetch_odds` (1h), `job_cleanup_matches` (5m), `job_live_settle` (2m), `job_daily_sanity_check` (cron, 08:00 UTC), `job_v2_collection_heartbeat` (cron, 12:00 UTC)
+- **8 registered auxiliary jobs:** `job_fetch_fixtures` (6h), `job_fetch_results` (1h), `job_fetch_odds` (1h), `job_cleanup_matches` (5m), `job_live_settle` (2m), `job_daily_sanity_check` (cron, 08:00 UTC), `job_v2_collection_heartbeat` (cron, 12:00 UTC), `job_weekly_calibration_refit` (cron, Mon 06:00 UTC)
+- **`job_weekly_calibration_refit` (Phase 33b):** unscoped `LeagueCalibrationEngine().fit_all()` across all 4 markets, weekly. `fit_all()`'s only other caller is the drift-triggered path (`src/events/consumers/calibration_consumer.py`), which can leave a quiet market's calibration stale indefinitely if it never crosses the drift threshold — this is the backstop under that gap, using the same `CronTrigger` reboot-immune pattern as `daily_sanity_check`/`v2_collection_heartbeat` above. `fit_all()` is idempotent (just re-fits on the current settled set), so this is a no-op when drift-triggered refits are already keeping a market fresh.
 - `job_fetch_results` now calls `src.settlement.verify_ft_fixtures()` (Phase 27) right before `settle_all()`, so reversible markets never settle off an unconfirmed FT snapshot
 - **2026-07-09 fix:** `daily_sanity_check`/`v2_collection_heartbeat` were `IntervalTrigger(hours=24)`, re-registered with `replace_existing=True` on every service (re)start. An interval trigger's `next_run_time` is computed from the moment `add_job()` runs, not a fixed clock — and the host reboots daily at ~23h38m–23h40m intervals, always short of 24h, so every reboot pushed the fire time another 24h out before it was ever reached. Neither job had fired even once since D9/D10 gave the scheduler to V2 (confirmed via `data/scheduler.db`'s `next_run_time` and absence of "JOB: ... starting" in `journalctl`). Switched both to `CronTrigger` at fixed wall-clock times, far from the reboot window, with `misfire_grace_time=7200` so a restart straddling the slot still fires on recovery. A cron trigger's next fire time derives from the wall clock, not registration time, so it survives any restart cadence — the fix is the trigger type, not a bigger interval.
 - Phase 31 Part D: removed `job_auto_heal_runs`, `job_retrain_models`, `job_run_betting_bot`, `job_run_continuous_cycle`, `MUTATING_JOBS`, and `is_job_allowed_in_mode()` — none of the four job functions were ever wired into the registered list above (confirmed live), and all four only existed to dispatch into V1's `ExecutionEngine`/`AgentCoordinator`/`run_continuous_cycle.py`, which Part D archives. The mode-gating function existed solely to guard these four job types.
