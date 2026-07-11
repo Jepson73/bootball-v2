@@ -213,6 +213,9 @@ def track_a():
           <div class="card-title" style="color:#58a6ff">Track B — Pending Pinnacle Data</div>
           <p>CLV / EV overlay requires Pinnacle odds snapshots. No odds_snapshots rows yet —
              collection clock has not started.</p>
+          <p style="font-size:11px;color:#d29922;margin-top:6px">
+             BTTS: Pinnacle carries no BTTS market at this provider — the BTTS overlay will
+             never populate regardless of collection progress. This is permanent, not pending.</p>
         </div>
         """
     else:
@@ -241,6 +244,10 @@ def track_a():
              with ≥2 Pinnacle snapshots, collecting since {cb['pinnacle_collection_start']}
              &nbsp;|&nbsp; Track B overlay is Pinnacle-covered fixtures only — it will not appear for
              the rest of Track A's leagues regardless of sample size.</p>
+          <p style="font-size:11px;color:#d29922;margin-top:6px">
+             BTTS: Pinnacle carries no BTTS market at this provider (verified against every
+             odds_snapshots and fixture_odds row captured to date) — the BTTS overlay will
+             never populate. This is permanent, not pending collection.</p>
         </div>
         """
 
