@@ -349,6 +349,37 @@ def job_v2_collection_heartbeat():
         logger.exception("JOB: v2_collection_heartbeat failed")
 
 
+def job_weekly_calibration_refit():
+    """Phase 33b: the floor under the drift-triggered refit.
+
+    Phase 33 Task 2 found fit_all() had gone 33 days stale because the only
+    caller was CALIBRATION_DRIFT_DETECTED (src/events/consumers/calibration_consumer.py)
+    -- a market that stays quiet (low volume, or a live_drift_ece that never
+    crosses threshold) can go indefinitely without a refit even while serving
+    calibrated probabilities, which is exactly the staleness that made Task 4's
+    serving flip necessary to re-audit in the first place. This is an unscoped
+    weekly fit_all() across all 4 markets as a backstop -- if drift-triggered
+    refits are firing normally this is mostly a no-op (fit_all() is idempotent:
+    it just re-fits on the current settled set), but it guarantees no market can
+    silently exceed 7 days without a refit regardless of drift-detector behavior.
+    """
+    if not _circuit_ok("weekly_calibration_refit"):
+        return
+    logger.info("JOB: weekly_calibration_refit starting")
+    try:
+        from src.calibration.league_calibration_engine import LeagueCalibrationEngine
+        results = LeagueCalibrationEngine().fit_all()
+        activated = sum(1 for r in results if r.activated)
+        logger.info(
+            "JOB: weekly_calibration_refit completed — %d calibrations fit, %d activated",
+            len(results), activated,
+        )
+        _circuit_success("weekly_calibration_refit")
+    except Exception:
+        _circuit_failure("weekly_calibration_refit")
+        logger.exception("JOB: weekly_calibration_refit failed")
+
+
 def get_scheduler() -> BackgroundScheduler:
     """Create and configure the scheduler.
     
@@ -409,6 +440,8 @@ def get_scheduler() -> BackgroundScheduler:
         ("live_settle", job_live_settle, 'interval', {'minutes': 2}, None),
         ("daily_sanity_check", job_daily_sanity_check, 'cron', {'hour': 8, 'minute': 0}, 7200),
         ("v2_collection_heartbeat", job_v2_collection_heartbeat, 'cron', {'hour': 12, 'minute': 0}, 7200),
+        ("weekly_calibration_refit", job_weekly_calibration_refit,
+         'cron', {'day_of_week': 'mon', 'hour': 6, 'minute': 0}, 7200),
     ]
 
     for job_id, job_func, trigger_type, trigger_args, misfire_grace_time in auxiliary_jobs:
