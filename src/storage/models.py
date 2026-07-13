@@ -147,11 +147,59 @@ class Injury(Base):
     player_position: Mapped[str | None] = mapped_column(String(20), nullable=True)  # Goalkeeper, Defender, Midfielder, Attacker, Forward
     fixture_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     team_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    
+
     type: Mapped[str] = mapped_column(String(100))  # e.g., "Leg Injury", "Illness"
     status: Mapped[str] = mapped_column(String(50))  # "injured", "suspended", "doubt", "recovered"
     start_date: Mapped[datetime] = mapped_column(DateTime)
     end_date: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    # Migration 032 (Phase 37 Part A.2). API-Football's /injuries payload nests
+    # the actual free-text detail under player.reason ("Calf Injury",
+    # "Suspended"), not team.reason -- scripts/fetch_player_data.py (dead code)
+    # got this wrong, which is why `type`/`status` above are near-useless on
+    # the 586 pre-existing rows. `reason` is the field to read going forward.
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    league_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    season: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # NULL for rows predating this column (era boundary, not backfilled).
+    # Leakage boundary for FORWARD collection only -- see migration 032.
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class Lineup(Base):
+    """Migration 032 (Phase 37 Part A.2) -- confirmed-XI tier storage.
+
+    Schema-only for now: Part A.3 deliberately does not bulk-backfill this
+    table. It only matters for Part C (confirmed-XI tier), which ships only
+    on a Part B pass -- see config/covered_leagues.py.
+    """
+    __tablename__ = "lineups"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fixture_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    team_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    is_home: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    formation: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    coach_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    coach_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    fetched_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    # (fixture.date - fetched_at) in minutes -- NULL for historical backfill,
+    # where "how long before kickoff" isn't a meaningful question.
+    minutes_before_kickoff: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (UniqueConstraint("fixture_id", "team_id"),)
+
+
+class LineupPlayer(Base):
+    __tablename__ = "lineup_players"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    lineup_id: Mapped[int] = mapped_column(ForeignKey("lineups.id"))
+    player_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    player_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    position: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    grid: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    is_starter: Mapped[bool] = mapped_column(Boolean, nullable=False)  # True = startXI, False = substitute
 
 
 # ── Core match table ──────────────────────────────────────────────────────────

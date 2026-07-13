@@ -283,6 +283,60 @@ def job_fetch_odds():
         logger.exception("JOB: fetch_odds — failed to write ingestion_log")
 
 
+def job_fetch_covered_injuries():
+    """Phase 37 Part A.4 — forward injuries/availability collection for
+    config.covered_leagues.COVERED_LEAGUE_IDS NS fixtures only. Feeds the
+    availability-tier features (Part B). Confirmed lineups near kickoff are a
+    separate, Part-C-gated concern -- not built here regardless of this job's
+    outcome (see config/covered_leagues.py and scripts/covered_injuries_poll.py)."""
+    if not _circuit_ok("fetch_covered_injuries"):
+        return
+    logger.info("JOB: fetch_covered_injuries starting")
+    from src.storage.db import get_session
+    from sqlalchemy import text
+
+    success = False
+    error_msg = None
+    rows_written = 0
+
+    try:
+        from src.ingestion.client import APIFootballClient, calls_remaining_today
+        from scripts.covered_injuries_poll import find_league_date_pairs_needing_injuries, poll_and_store_injuries
+
+        remaining = calls_remaining_today()
+        if remaining < 50:
+            logger.warning(f"JOB: fetch_covered_injuries — low API calls ({remaining}), skipping")
+            return
+
+        client = APIFootballClient()
+        with get_session() as s:
+            pairs = find_league_date_pairs_needing_injuries(s)
+            if not pairs:
+                logger.info("JOB: fetch_covered_injuries — no covered-league NS fixtures in horizon")
+                _circuit_success("fetch_covered_injuries")
+                return
+            rows_written = poll_and_store_injuries(s, client, pairs)
+
+        success = True
+        _circuit_success("fetch_covered_injuries")
+        logger.info(f"JOB: fetch_covered_injuries completed — {rows_written} injury rows written across {len(pairs)} (league, date) pairs")
+    except Exception as e:
+        error_msg = str(e)
+        _circuit_failure("fetch_covered_injuries")
+        logger.exception("JOB: fetch_covered_injuries failed")
+
+    try:
+        with get_session() as s:
+            s.execute(
+                text("""INSERT INTO ingestion_log (job_name, success, fixtures_updated, error_message)
+                       VALUES (:job, :success, :updated, :error)"""),
+                {"job": "fetch_covered_injuries", "success": success, "updated": rows_written, "error": error_msg}
+            )
+            s.commit()
+    except Exception:
+        logger.exception("JOB: fetch_covered_injuries — failed to write ingestion_log")
+
+
 def job_cleanup_matches():
     """Cleanup stale live matches and archive old finished matches."""
     if not _circuit_ok("cleanup_matches"):
@@ -436,6 +490,15 @@ def get_scheduler() -> BackgroundScheduler:
         ("fetch_fixtures", job_fetch_fixtures, 'interval', {'hours': 6}, None),
         ("fetch_results", job_fetch_results, 'interval', {'hours': 1}, None),
         ("fetch_odds", job_fetch_odds, 'interval', {'hours': 1}, None),
+        # fetch_covered_injuries: NOT registered. Phase 37 Part B evaluated the
+        # availability-tier features this job feeds and got a FAIL against the
+        # pre-registered bar (scripts/analysis/phase37_closure_note.md) -- btts/
+        # ou25 showed no detectable improvement at n=442, and ou15's Fold B
+        # degradation was statistically real, not noise. The brief's FAIL branch
+        # says stop; running a live job for a closed lever is exactly the kind
+        # of silent ongoing footprint that contradicts "closed." The function
+        # and scripts/covered_injuries_poll.py are left intact, undeleted --
+        # re-add this tuple if the lever is ever deliberately revisited.
         ("cleanup_matches", job_cleanup_matches, 'interval', {'minutes': 5}, None),
         ("live_settle", job_live_settle, 'interval', {'minutes': 2}, None),
         ("daily_sanity_check", job_daily_sanity_check, 'cron', {'hour': 8, 'minute': 0}, 7200),
